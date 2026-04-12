@@ -3,24 +3,10 @@
 Minimal stdlib-only CLI for the Alaska Legislature BASIS API.
 
 Examples:
-  python3 query_basis.py --section bills --session 34 --chamber H
-  python3 query_basis.py --section bills --session 34 --query "Bills;title=*Oil*" --query "Actions"
-  python3 query_basis.py --section members --query "Members;lastname=*Edgmon*"
-  python3 query_basis.py --section committees --options
-  python3 query_basis.py --section bills --session 34 --chamber H --head
-  python3 query_basis.py --section bills --session 34 --range "..10"
-  python3 query_basis.py --section bills --session 34 --out bills.xml
-
-Notes:
-- The BASIS public API documentation describes:
-  * URL format: /basis/<section>[/<subsection>]
-  * sections: bills | members | committees | sessions
-  * params: session | chamber | minifyresult
-  * required header: X-Alaska-Legislature-Basis-Version: 1.0
-  * optional repeated headers: X-Alaska-Legislature-Basis-Query
-  * optional header: X-Alaska-Query-ResultRange
-
-- If the live host differs from the documented path, change --base-url once.
+  python3 query_basis.py --section bills --session 34
+  python3 query_basis.py --section bills --session 34 --query "Actions" --range "..1"
+  python3 query_basis.py --section meetings --session 34 --query "Media" --range "..3"
+  python3 query_basis.py --section bills --session 34 --head
 """
 
 from __future__ import annotations
@@ -33,13 +19,14 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Iterable, List, Tuple
+import xml.etree.ElementTree as ET
 from xml.dom import minidom
 from xml.parsers.expat import ExpatError
 
 
 DEFAULT_BASE_URL = "https://www.akleg.gov/publicservice/basis"
 DEFAULT_VERSION = "1.4"
-VALID_SECTIONS = ("bills", "members", "committees", "sessions")
+VALID_SECTIONS = ("bills", "members", "committees", "sessions", "meetings")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -227,6 +214,168 @@ def save_output(path: Path, data: bytes) -> None:
 def print_headers(headers) -> None:
     for key, value in headers.items():
         print(f"{key}: {value}")
+
+
+def strip_ns(tag: str) -> str:
+    if "}" in tag:
+        return tag.rsplit("}", 1)[1]
+    return tag
+
+
+def parse_xml_root(xml_source: bytes | str) -> ET.Element | None:
+    if isinstance(xml_source, bytes):
+        text = xml_source.decode("utf-8", errors="replace")
+    else:
+        text = xml_source
+    try:
+        return ET.fromstring(text)
+    except ET.ParseError:
+        return None
+
+
+def first_child(elem: ET.Element, name: str) -> ET.Element | None:
+    for child in elem:
+        if strip_ns(child.tag) == name:
+            return child
+    return None
+
+
+def child_text(elem: ET.Element, name: str) -> str:
+    child = first_child(elem, name)
+    if child is None or child.text is None:
+        return ""
+    return child.text.strip()
+
+
+def xml_error_info(xml_source: bytes | str) -> tuple[str, str] | None:
+    root = parse_xml_root(xml_source)
+    if root is None:
+        return None
+    for elem in root.iter():
+        if strip_ns(elem.tag) != "Error":
+            continue
+        return child_text(elem, "Code"), child_text(elem, "Description")
+    return None
+
+
+def extract_meeting_media(xml_source: bytes | str) -> list[dict[str, str]]:
+    root = parse_xml_root(xml_source)
+    if root is None:
+        return []
+    items: list[dict[str, str]] = []
+    for meeting in root.iter():
+        if strip_ns(meeting.tag) != "Meeting":
+            continue
+        media = first_child(meeting, "Media")
+        if media is None:
+            continue
+        common = {
+            "chamber": child_text(meeting, "chamber"),
+            "schedule": child_text(meeting, "Schedule"),
+            "title": child_text(meeting, "Title"),
+            "sponsor": child_text(meeting, "Sponsor"),
+            "sponsor_type": first_child(meeting, "Sponsor").attrib.get("type", "") if first_child(meeting, "Sponsor") is not None else "",
+        }
+        contents = [child for child in media if strip_ns(child.tag) == "Content"]
+        if not contents:
+            items.append({**common, "media_type": "", "url": "", "duration": "", "start_time": ""})
+        for content in contents:
+            items.append(
+                {
+                    **common,
+                    "media_type": content.attrib.get("MediaType", ""),
+                    "duration": content.attrib.get("Duration", ""),
+                    "start_time": content.attrib.get("StartTime", ""),
+                    "url": child_text(content, "Url"),
+                }
+            )
+    return items
+
+
+def extract_meeting_documents(xml_source: bytes | str) -> list[dict[str, str]]:
+    root = parse_xml_root(xml_source)
+    if root is None:
+        return []
+    items: list[dict[str, str]] = []
+    for meeting in root.iter():
+        if strip_ns(meeting.tag) != "Meeting":
+            continue
+        documents = first_child(meeting, "Documents")
+        if documents is None:
+            continue
+        common = {
+            "chamber": child_text(meeting, "chamber"),
+            "schedule": child_text(meeting, "Schedule"),
+            "title": child_text(meeting, "Title"),
+            "sponsor": child_text(meeting, "Sponsor"),
+            "sponsor_type": first_child(meeting, "Sponsor").attrib.get("type", "") if first_child(meeting, "Sponsor") is not None else "",
+        }
+        for content in documents:
+            if strip_ns(content.tag) != "Content":
+                continue
+            items.append(
+                {
+                    **common,
+                    "doc_id": content.attrib.get("DocID", ""),
+                    "url": child_text(content, "Url"),
+                    "name": child_text(content, "name"),
+                }
+            )
+    return items
+
+
+def extract_bill_actions(xml_source: bytes | str) -> list[dict[str, str]]:
+    root = parse_xml_root(xml_source)
+    if root is None:
+        return []
+    items: list[dict[str, str]] = []
+    for bill in root.iter():
+        if strip_ns(bill.tag) != "Bill":
+            continue
+        actions = first_child(bill, "Actions")
+        if actions is None:
+            continue
+        billnumber = bill.attrib.get("billnumber", "").strip()
+        chamber = bill.attrib.get("chamber", "").strip()
+        for action in actions:
+            if strip_ns(action.tag) != "Action":
+                continue
+            items.append(
+                {
+                    "billnumber": billnumber,
+                    "chamber": chamber,
+                    "code": action.attrib.get("code", ""),
+                    "action_chamber": action.attrib.get("chamber", ""),
+                    "journal_date": action.attrib.get("journaldate", ""),
+                    "journal_page": action.attrib.get("journalpage", ""),
+                    "text": child_text(action, "ActionText"),
+                }
+            )
+    return items
+
+
+def extract_bill_sponsor_statements(xml_source: bytes | str) -> list[dict[str, str]]:
+    root = parse_xml_root(xml_source)
+    if root is None:
+        return []
+    items: list[dict[str, str]] = []
+    for bill in root.iter():
+        if strip_ns(bill.tag) != "Bill":
+            continue
+        sponsors = first_child(bill, "Sponsors")
+        if sponsors is None:
+            continue
+        statement = child_text(sponsors, "SponsorStatement")
+        if not statement:
+            continue
+        items.append(
+            {
+                "billnumber": bill.attrib.get("billnumber", "").strip(),
+                "chamber": bill.attrib.get("chamber", "").strip(),
+                "url": statement,
+            }
+        )
+    return items
 
 
 def fetch_basis(

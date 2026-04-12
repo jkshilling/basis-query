@@ -2,71 +2,48 @@
 
 Tiny stdlib-only Python CLI for querying the Alaska Legislature BASIS API.
 
-## What It Is
+This repo contains:
+- `query_basis.py` for direct BASIS API requests
+- `chat_basis.py` for an optional plain-English terminal wrapper
 
-This project is a very small local command-line tool for sending read-only requests to the Alaska Legislature BASIS API.
-
-It uses:
-- Python standard library only
-- one main script: `query_basis.py`
-- no dependencies
-
-## Defaults
-
-By default, the script uses:
+Defaults:
 - base URL: `https://www.akleg.gov/publicservice/basis`
 - BASIS version: `1.4`
 
 ## Quick Start
 
-Run help:
-
 ```bash
 python3 query_basis.py --help
-```
-
-Basic request:
-
-```bash
 python3 query_basis.py --section bills --session 34
-```
-
-HEAD request:
-
-```bash
 python3 query_basis.py --section bills --session 34 --head
+python3 query_basis.py --section bills --session 34 --query "Actions" --range "..1"
+python3 query_basis.py --section meetings --session 34 --query "Media" --range "..3"
+python3 query_basis.py --section meetings --session 34 --query "Documents" --range "..3"
 ```
 
-Filter by chamber:
+Optional chat wrapper:
 
 ```bash
-python3 query_basis.py --section bills --session 34 --chamber S
+python3 chat_basis.py --help
+export OPENAI_API_KEY=your_key_here
+python3 chat_basis.py
 ```
 
-Use a BASIS query header:
-
-```bash
-python3 query_basis.py --section bills --session 34 --query "Bills;committeecode=RES"
-```
-
-Save the raw response:
-
-```bash
-python3 query_basis.py --section bills --session 34 --out bills.xml
-```
-
-## What The Script Supports
-
+Supports:
 - `GET`, `HEAD`, and `OPTIONS`
-- top-level sections: `bills`, `members`, `committees`, `sessions`
+- sections: `bills`, `members`, `committees`, `sessions`, `meetings`
 - query params like `session`, `chamber`, and `minifyresult`
-- repeated `X-Alaska-Legislature-Basis-Query` inputs
+- repeated `X-Alaska-Legislature-Basis-Query`
 - optional `X-Alaska-Query-ResultRange`
 - XML pretty-printing when possible
 
+Current caution:
+- `meetings` + `Documents` is real, but broader filtered queries can still fault.
+- `meetings` is the flakiest public section, so small ranges and narrow date windows work best.
+
 ## Importing From Python
 
-The file can also be imported from other Python code:
+`query_basis.py` can also be imported from other Python code:
 
 ```python
 import query_basis
@@ -82,3 +59,11 @@ result = query_basis.fetch_basis(
 print(result["status"])
 print(result["body"].decode("utf-8", errors="replace"))
 ```
+
+## LLM Chat Wrapper
+
+`chat_basis.py` adds a very small terminal chat layer on top of `query_basis.py`.
+
+Requirements:
+- `OPENAI_API_KEY` must be set
+- Python standard library only
