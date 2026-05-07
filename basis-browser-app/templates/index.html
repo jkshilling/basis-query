@@ -35,6 +35,16 @@
     <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
 
     <script>
+    function locationLabel(b, chamberPrefix) {
+        if (b.committee_code) return chamberPrefix + ' ' + esc(b.committee_code);
+        var s = (b.status || '').toUpperCase();
+        if (s.indexOf('TRANSMITTED') === 0) return chamberPrefix + ' Awaiting Referral';
+        if (s.indexOf('FLD CONCUR') >= 0) return chamberPrefix + ' Concurrence';
+        if (s.indexOf('FAILED') >= 0) return chamberPrefix + ' Failed';
+        if (s.indexOf('CAL') >= 0 || s.indexOf('RDG') >= 0) return chamberPrefix + ' Floor';
+        return chamberPrefix;
+    }
+
     function buildTable(bills, chamberPrefix) {
         if (!bills.length) return '<p class="empty">None found.</p>';
         let html = '<table class="compact"><thead><tr><th>Bill</th><th>Title</th><th>Cmte</th><th class="center">Next</th><th class="center">Hearing</th></tr></thead><tbody>';
@@ -42,7 +52,7 @@
             html += '<tr>';
             html += '<td class="bill-number">' + esc(b.billnumber) + '</td>';
             html += '<td>' + esc(b.short_title) + '</td>';
-            html += '<td>' + chamberPrefix + ' ' + esc(b.committee_code) + '</td>';
+            html += '<td>' + locationLabel(b, chamberPrefix) + '</td>';
             html += '<td class="center">' + (esc(b.next_referral) || '\u2014') + '</td>';
             html += '<td class="center">' + (esc(b.next_hearing) || '\u2014') + '</td>';
             html += '</tr>';
