@@ -1,0 +1,110 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+    color: #222;
+    background: #fafafa;
+    font-size: 13px;
+}
+
+header { margin-bottom: 16px; }
+header h1 { font-size: 17px; margin-bottom: 2px; }
+header p { color: #666; font-size: 12px; }
+
+table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #ddd; }
+th, td { padding: 5px 8px; text-align: left; border-bottom: 1px solid #eee; }
+th { background: #f4f4f4; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; }
+tr:hover { background: #f9f9f9; }
+.bill-number { font-weight: 600; white-space: nowrap; }
+.code-num { font-weight: 600; font-family: "SF Mono", "Consolas", monospace; text-align: center; }
+.cat { white-space: nowrap; color: #555; }
+.count-col { text-align: right; font-family: "SF Mono", "Consolas", monospace; color: #444; }
+
+.count { margin-top: 8px; color: #666; font-size: 11px; }
+.empty { color: #666; padding: 30px 0; text-align: center; }
+.loading { color: #555; padding: 40px 0; text-align: center; font-size: 14px; }
+.error { background: #fdecea; color: #c0392b; padding: 10px; border-radius: 3px; margin-bottom: 12px; font-size: 12px; }
+
+section { margin-bottom: 20px; }
+section h2 { font-size: 13px; margin-bottom: 6px; }
+
+body.wide { max-width: 1200px; }
+.crossover-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+table.compact th, table.compact td { padding: 3px 6px; font-size: 12px; }
+table.compact th { font-size: 10px; }
+.center { text-align: center; }
+
+nav { margin-bottom: 16px; font-size: 13px; }
+nav a { color: #2980b9; text-decoration: none; }
+nav a:hover { text-decoration: underline; }
+
+/* Dashboard */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 24px;
+}
+.stat-card {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 14px;
+    text-align: center;
+}
+.stat-number { font-size: 28px; font-weight: 700; color: #1a5276; }
+.stat-label { font-size: 12px; font-weight: 600; color: #444; margin-top: 2px; }
+.stat-detail { font-size: 11px; color: #888; margin-top: 4px; }
+
+.charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.chart-container {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 14px;
+}
+.chart-container h2, .chart-container h3 { font-size: 13px; margin-bottom: 10px; }
+.chart-container canvas { height: 300px !important; }
+.chart-wide { grid-column: 1 / -1; }
+.chart-wide canvas { height: 450px !important; }
+.chart-note { font-size: 11px; color: #888; margin-bottom: 8px; }
+.nonconcur { background: #fdecea; }
+.velocity-total { font-weight: 600; }
+.steps-cell { white-space: nowrap; font-size: 11px; }
+.step-label { background: #f0f0f0; padding: 1px 4px; border-radius: 2px; font-size: 11px; }
+.step-days { color: #888; font-size: 10px; }
+.step-arrow { color: #aaa; font-size: 10px; }
+
+/* Activity feed */
+.feed-controls { margin-bottom: 16px; display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.btn-days {
+    padding: 4px 10px; border: 1px solid #ddd; border-radius: 3px;
+    background: #fff; cursor: pointer; font-size: 12px;
+}
+.btn-days.active { background: #1a5276; color: #fff; border-color: #1a5276; }
+.btn-days:hover { background: #eee; }
+.btn-days.active:hover { background: #2980b9; }
+.feed-date { margin-top: 16px; margin-bottom: 6px; }
+.feed-date h3 { font-size: 14px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+.feed-item { padding: 5px 0; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+.feed-label {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    color: #fff; font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.feed-bill { font-weight: 600; }
+.feed-title { color: #555; }
+.feed-detail { font-size: 12px; color: #888; margin-top: 2px; margin-left: 4px; }
+.feed-date-tag { font-size: 11px; color: #555; font-weight: 600; min-width: 45px; display: inline-block; }
+.legend { margin-bottom: 12px; line-height: 2; }
+.legend-item { font-size: 11px; white-space: nowrap; margin-right: 8px; }
+.legend-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: middle; }
+
+footer { margin-top: 24px; color: #999; font-size: 11px; text-align: center; }

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activity — BASIS Browser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <nav>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <strong>Activity</strong> | <a href="/committee-activity">Committees</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/action-codes">Action Codes</a>
+    </nav>
+    <header>
+        <h1>Recent Activity</h1>
+        <p>Session 34 &mdash; Alaska Legislature</p>
+    </header>
+
+    <div class="feed-controls">
+        <span>Show last:</span>
+        <button class="btn-days" data-days="3">3 days</button>
+        <button class="btn-days active" data-days="7">7 days</button>
+    </div>
+
+    <div class="legend" id="legend"></div>
+
+    <div id="loading" class="loading">
+        <div id="load-step">Connecting to BASIS API&hellip;</div>
+    </div>
+    <div id="content" style="display:none">
+        <p id="feed-summary"></p>
+        <div id="feed"></div>
+    </div>
+
+    <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
+
+    <script>
+    function esc(s) {
+        if (!s) return '';
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    var labelColors = {
+        'Committee Report': '#2980b9',
+        'Referred to Committee': '#7f8c8d',
+        'Second Reading': '#8e44ad',
+        'CS Adopted (UC)': '#16a085',
+        'CS Adopted (Roll Call)': '#16a085',
+        'Advanced to Third Reading': '#8e44ad',
+        'Third Reading': '#8e44ad',
+        'Floor Vote': '#2c3e50',
+        'Transmitted to Other Chamber': '#e67e22',
+        'Transmitted as Amended': '#e67e22',
+        'Concur Amendment': '#27ae60',
+        'Failed to Concur': '#c0392b',
+        'Conference Committee Appointed': '#d35400',
+        'Conference Report Adopted': '#27ae60',
+        'Transmitted to Governor': '#f39c12',
+        'Signed into Law': '#27ae60',
+        'Law Without Signature': '#27ae60',
+        'Vetoed by Governor': '#c0392b',
+        'Veto Sustained': '#c0392b',
+        'Veto Overridden': '#27ae60',
+        'Failed Passage': '#c0392b',
+        'Withdrawn': '#95a5a6',
+        'Returned to Committee': '#7f8c8d',
+        'Failed to Adopt CS': '#c0392b',
+    };
+
+    function loadFeed(days) {
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('content').style.display = 'none';
+        var stepEl = document.getElementById('load-step');
+        stepEl.textContent = 'Connecting to BASIS API\u2026';
+
+        var timers = [
+            setTimeout(function() { stepEl.textContent = 'Scanning bill actions\u2026'; }, 2000),
+            setTimeout(function() { stepEl.textContent = 'Building activity feed\u2026'; }, 6000),
+        ];
+
+        fetch('/api/activity?days=' + days)
+            .then(r => r.json())
+            .then(resp => {
+                timers.forEach(clearTimeout);
+                if (resp.error) {
+                    document.getElementById('loading').innerHTML = 'Failed: ' + esc(resp.error);
+                    document.getElementById('loading').className = 'error';
+                    return;
+                }
+                var d = resp.data;
+
+                document.getElementById('feed-summary').innerHTML =
+                    '<strong>' + d.total + '</strong> significant actions in the last ' + d.days + ' days';
+
+                var html = '';
+                d.events.forEach(function(e) {
+                    var color = labelColors[e.label] || '#555';
+                    html += '<div class="feed-item">';
+                    html += '<span class="feed-date-tag">' + esc(e.date_display) + '</span> ';
+                    html += '<span class="feed-label" style="background:' + color + '">' + esc(e.label) + '</span> ';
+                    html += '<span class="feed-bill">' + esc(e.billnumber) + '</span> ';
+                    html += '<span class="feed-title">' + esc(e.title) + '</span>';
+                    html += '<div class="feed-detail">(' + esc(e.action_chamber) + ') ' + esc(e.text) + '</div>';
+                    html += '</div>';
+                });
+
+                if (!d.total) {
+                    html = '<p class="empty">No significant actions in this period.</p>';
+                }
+
+                document.getElementById('feed').innerHTML = html;
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+            })
+            .catch(err => {
+                timers.forEach(clearTimeout);
+                document.getElementById('loading').innerHTML = 'Failed to load: ' + err;
+                document.getElementById('loading').className = 'error';
+            });
+    }
+
+    // Render legend
+    var legendHtml = '';
+    Object.keys(labelColors).forEach(function(label) {
+        legendHtml += '<span class="legend-item"><span class="legend-swatch" style="background:' + labelColors[label] + '"></span>' + label + '</span> ';
+    });
+    document.getElementById('legend').innerHTML = legendHtml;
+
+    // Button handlers
+    document.querySelectorAll('.btn-days').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.btn-days').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadFeed(parseInt(btn.dataset.days));
+        });
+    });
+
+    // Initial load
+    loadFeed(7);
+    </script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Governor's Bills — BASIS Browser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <nav>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/committee-activity">Committees</a> | <a href="/bill-progress">Bill Progress</a> | <strong>Governor</strong> | <a href="/action-codes">Action Codes</a>
+    </nav>
+    <header>
+        <h1>Governor's Bills</h1>
+        <p>Session 34 &mdash; Alaska Legislature</p>
+    </header>
+
+    <div id="loading" class="loading">
+        <div id="load-step">Connecting to BASIS API&hellip;</div>
+    </div>
+    <div id="content" style="display:none">
+
+        <div class="stats-grid" id="stats-grid"></div>
+
+        <section>
+            <h2>Bills by Current Location</h2>
+            <div class="charts-grid">
+                <div class="chart-container">
+                    <canvas id="statusChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <canvas id="committeeChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>All Governor Bills</h2>
+            <table id="bills-table" class="compact"></table>
+        </section>
+
+    </div>
+
+    <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
+
+    <script>
+    function esc(s) {
+        if (!s) return '';
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    var steps = [
+        [0,    'Connecting to BASIS API\u2026'],
+        [2000, 'Scanning bill actions\u2026'],
+        [8000, 'Identifying Governor bills\u2026'],
+    ];
+    var stepEl = document.getElementById('load-step');
+    var timers = steps.map(function(s) {
+        return setTimeout(function() { stepEl.textContent = s[1]; }, s[0]);
+    });
+
+    fetch('/api/governor')
+        .then(r => r.json())
+        .then(resp => {
+            timers.forEach(clearTimeout);
+            if (resp.error) {
+                document.getElementById('loading').innerHTML = 'Failed: ' + esc(resp.error);
+                document.getElementById('loading').className = 'error';
+                return;
+            }
+            var d = resp.data;
+            var sc = d.status_counts;
+
+            // Stats cards
+            var inCommittee = sc['In Committee'] || 0;
+            var crossedS = sc['Crossed to Senate'] || 0;
+            var crossedH = sc['Crossed to House'] || 0;
+            var chaptered = sc['Chaptered'] || 0;
+            var atGov = sc['At Governor'] || 0;
+            var vetoed = sc['Vetoed'] || 0;
+            var failed = sc['Failed'] || 0;
+
+            function statCard(number, label, detail) {
+                var html = '<div class="stat-card"><div class="stat-number">' + number + '</div>';
+                html += '<div class="stat-label">' + label + '</div>';
+                if (detail) html += '<div class="stat-detail">' + detail + '</div>';
+                html += '</div>';
+                return html;
+            }
+
+            var grid = '';
+            grid += statCard(d.total, "Governor's Bills");
+            grid += statCard(d.total_hearings, 'Total Hearings', d.bills_with_hearings + ' of ' + d.total + ' bills heard');
+            grid += statCard(d.total_moveouts, 'Committee Moveouts', d.bills_with_moveouts + ' of ' + d.total + ' bills moved');
+            grid += statCard(inCommittee, 'In Committee');
+            grid += statCard(crossedS + crossedH, 'Crossed Over', crossedS + ' to S / ' + crossedH + ' to H');
+            grid += statCard(chaptered, 'Chaptered');
+            grid += statCard(atGov, 'At Governor');
+            grid += statCard(vetoed, 'Vetoed');
+            grid += statCard(failed, 'Failed');
+            document.getElementById('stats-grid').innerHTML = grid;
+
+            // Status pie chart
+            var statusLabels = Object.keys(sc);
+            var statusData = Object.values(sc);
+            var statusColors = statusLabels.map(function(l) {
+                if (l === 'In Committee') return '#2980b9';
+                if (l === 'Crossed to Senate' || l === 'Crossed to House') return '#e67e22';
+                if (l === 'Chaptered') return '#27ae60';
+                if (l === 'At Governor') return '#f39c12';
+                if (l === 'Vetoed' || l === 'Veto Sustained') return '#c0392b';
+                if (l === 'Failed') return '#e74c3c';
+                if (l === 'Withdrawn') return '#95a5a6';
+                return '#7f8c8d';
+            });
+
+            new Chart(document.getElementById('statusChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: statusLabels,
+                    datasets: [{ data: statusData, backgroundColor: statusColors }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } }
+                }
+            });
+
+            // Committee bar chart
+            if (d.committee_counts.length) {
+                new Chart(document.getElementById('committeeChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: d.committee_counts.map(x => x[0]),
+                        datasets: [{ data: d.committee_counts.map(x => x[1]), backgroundColor: '#1a5276' }]
+                    },
+                    options: {
+                        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: { x: { beginAtZero: true, ticks: { precision: 0 } }, y: { ticks: { font: { size: 11 } } } }
+                    }
+                });
+            }
+
+            // Bills table
+            if (d.bills.length) {
+                var html = '<thead><tr><th>Bill</th><th>Title</th><th>Referrals</th><th class="center">Hearings</th><th class="center">Moveouts</th><th>Status</th><th class="center">Category</th><th>Last Action</th></tr></thead><tbody>';
+                d.bills.forEach(b => {
+                    html += '<tr>';
+                    html += '<td class="bill-number">' + esc(b.billnumber) + '</td>';
+                    html += '<td>' + esc(b.title) + '</td>';
+                    html += '<td>' + esc(b.referrals) + '</td>';
+                    html += '<td class="center">' + (b.hearings || '\u2014') + '</td>';
+                    html += '<td class="center">' + (b.cmte_reports || '\u2014') + '</td>';
+                    html += '<td>' + esc(b.status) + '</td>';
+                    html += '<td class="center">' + esc(b.category) + '</td>';
+                    html += '<td>' + esc(b.last_action) + ' ' + esc(b.last_action_text) + '</td>';
+                    html += '</tr>';
+                });
+                html += '</tbody>';
+                document.getElementById('bills-table').innerHTML = html;
+            }
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+        })
+        .catch(err => {
+            timers.forEach(clearTimeout);
+            document.getElementById('loading').innerHTML = 'Failed to load data: ' + err;
+            document.getElementById('loading').className = 'error';
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Action Codes — BASIS Browser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <nav>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/committee-activity">Committees</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <strong>Action Codes</strong>
+    </nav>
+    <header>
+        <h1>BASIS Action Codes</h1>
+        <p>Legislative action codes used in bill histories</p>
+    </header>
+
+    <p id="count-status" class="loading" style="margin-bottom:12px">
+        <span id="load-step">Fetching action counts from BASIS API&hellip;</span>
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Meaning</th>
+                <th>Category</th>
+                <th class="count-col">2023</th>
+                <th class="count-col">2024</th>
+                <th class="count-col">2025</th>
+                <th class="count-col">2026</th>
+                <th>Example</th>
+            </tr>
+        </thead>
+        <tbody id="codes-body">
+        </tbody>
+    </table>
+
+    <p class="count">Codes not found in sessions 18–34: 049, 054, 071, 072, 073, 075, 096, 099, 102, 104, 111–114, 116–119, 134, 137</p>
+
+    <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
+
+    <script>
+    var CODES = [
+        ['001', 'First reading / introduction', 'Introduction', 'READ THE FIRST TIME - REFERRALS'],
+        ['002', 'Committee report', 'Committee', 'FIN RPT 3DP 2NR'],
+        ['003', 'Referred to committee', 'Committee', 'REFERRED TO FINANCE'],
+        ['004', 'Referral added, waived, or removed', 'Committee', 'CRA REFERRAL WAIVED'],
+        ['005', 'Committee report received, awaiting transmittal', 'Committee', 'JUD RPT RECD AWAIT TRANSMITTAL NXT'],
+        ['006', 'Committee referral replaced', 'Committee', 'FIN REPLACES HSS REFERRAL'],
+        ['007', 'Letter of intent adopted', 'Committee', 'LEGISLATIVE LETTER OF INTENT ADOPTED UC'],
+        ['008', 'Read the second time', 'Floor', 'READ THE SECOND TIME'],
+        ['009', 'Committee substitute adopted (unanimous)', 'Committee', 'FIN CS ADOPTED UC'],
+        ['010', 'Passed (older format)', 'Floor', 'PASSED Y13 N7'],
+        ['011', 'Amendment adopted (unanimous)', 'Amendment', 'AM NO 1 ADOPTED UC'],
+        ['012', 'Amendment adopted (roll call)', 'Amendment', 'AM NO 1 ADOPTED Y36 N1 E1 A2'],
+        ['013', 'Amendment failed', 'Amendment', 'AM NO 1 FAILED Y17 N21 E2'],
+        ['014', 'Held in second reading', 'Floor', 'HELD IN SECOND READING TO 4/10 CALENDAR'],
+        ['015', 'Advanced to third reading', 'Floor', 'ADVANCED TO THIRD READING UC'],
+        ['016', 'Read the third time', 'Floor', 'READ THE THIRD TIME CSHB 117(RES)'],
+        ['017', 'Returned to second reading for amendment', 'Floor', 'RETURN TO SECOND FOR AM 1 UC'],
+        ['018', 'Held in third reading', 'Floor', 'HELD IN THIRD READING TO 3/27 CAL'],
+        ['019', 'Letter of intent adopted (RBE)', 'Committee', 'ADOPTED RBE LETTER OF INTENT'],
+        ['020', 'Floor vote (passed or failed)', 'Floor', 'PASSED Y12 N7 A1'],
+        ['021', 'Effective date same as passage', 'Final', 'EFFECTIVE DATE(S) SAME AS PASSAGE'],
+        ['022', 'Transmitted to other chamber', 'Crossover', 'TRANSMITTED TO (S)'],
+        ['023', 'Notice of reconsideration', 'Reconsideration', 'COSTELLO NOTICE OF RECONSIDERATION'],
+        ['024', 'Passed on reconsideration', 'Reconsideration', 'PASSED ON RECONSIDERATION Y21 N19'],
+        ['025', 'Reconsideration taken up', 'Reconsideration', 'RECON TAKEN UP - IN THIRD READING'],
+        ['026', 'Concur amendment from other chamber', 'Crossover', 'CONCUR AM OF (H) Y19 N1'],
+        ['027', 'Failed to concur amendment', 'Crossover', 'FAILED CONCUR (S) AM Y17 N23'],
+        ['028', 'Failed to recede from amendment', 'Crossover', 'FAILED RECEDE (S) AM Y- N18 E2'],
+        ['029', 'Conference committee appointed', 'Conference', 'CONFERENCE COMMITTEE APPOINTED'],
+        ['030', 'Conference committee members', 'Conference', 'HOFFMAN (CHAIR), STEDMAN, CRONK'],
+        ['031', 'Limited powers free conference granted', 'Conference', 'LIMITED POWERS FREE CONFERENCE GRANTED'],
+        ['032', 'Conference committee report adopted', 'Conference', 'CC RPT ADPTD Y19 N1 CCS HB 289'],
+        ['033', 'Transmitted to governor', 'Governor', '10:30 A.M. 5/5/25 TRANSMITTED TO GOVERNOR'],
+        ['034', 'Signed into law', 'Governor', 'SIGNED INTO LAW 6/11 CHAPTER 8 SLA 25'],
+        ['035', 'Line-item vetoes and reductions', 'Governor', 'LINE-ITEM VETOES AND REDUCTIONS'],
+        ['036', 'Law without governor signature', 'Governor', 'LAW W/O GOV SIGNATURE 7/10 CHAPTER 18 SLA 25'],
+        ['037', 'Permanently filed (legislative resolve)', 'Final', 'PERMANENTLY FILED 4/6 LEGIS RESOLVE 24'],
+        ['038', 'Vetoed by governor', 'Governor', 'VETOED BY GOVERNOR 6/24/25'],
+        ['039', 'Veto sustained', 'Governor', 'GOVERNOR VETO SUSTAINED Y35 N25'],
+        ['040', 'Veto overridden', 'Governor', 'GOVERNOR VETO OVERRIDDEN Y43 N16 E1'],
+        ['041', 'Effective date of law', 'Final', 'EFFECTIVE DATE(S) OF LAW 10/22/25'],
+        ['042', 'Rule waived (engrossment, uniform rule)', 'Procedural', 'ENGROSSMENT WAIVED, RULE 43(B)'],
+        ['043', 'Manifest error', 'Procedural', 'MANIFEST ERROR(S)'],
+        ['044', 'Referral added after another committee', 'Committee', 'JUD REFERRAL ADDED AFTER TRA'],
+        ['045', 'Manifest error (alternate)', 'Procedural', 'MANIFEST ERROR'],
+        ['046', 'Return to second to rescind', 'Floor', 'RETURN TO SECOND TO RESCIND CS L&C'],
+        ['047', 'Return to second failed', 'Floor', 'RETURN TO SECOND FAILED Y8 N11 A1'],
+        ['048', 'Title change', 'Procedural', 'TECHNICAL TITLE CHANGE'],
+        ['050', "Governor's transmittal letter", 'Governor', "GOVERNOR'S TRANSMITTAL LETTER"],
+        ['051', 'Returned/referred to committee from floor', 'Committee', 'RETURNED TO RLS COMMITTEE UC'],
+        ['052', 'Sponsor substitute introduced', 'Introduction', 'SPONSOR SUBSTITUTE INTRODUCED'],
+        ['053', 'Withdrawn by sponsor', 'Final', 'WITHDRAWN BY SPONSOR'],
+        ['055', 'Held on reconsideration to date', 'Reconsideration', 'HELD ON RECONSIDERATION TO 4/20/2014'],
+        ['056', 'Failed to adopt committee substitute', 'Committee', 'FAILED TO ADOPT FIN HCS Y19 N21'],
+        ['057', 'Amendment to amendment', 'Amendment', 'AM 1 TO AM 1 ADOPTED UC'],
+        ['058', 'Conference committee report adopted (other chamber)', 'Conference', 'CC RPT ADOPTED Y22 N18 CCS HB 268'],
+        ['059', 'Conference committee report taken up', 'Conference', 'CC REPORT READ AND TAKEN UP'],
+        ['060', 'Failed passage', 'Floor', 'FAILED PASSAGE Y21 N19'],
+        ['061', 'Effective date failed', 'Floor', 'EFFECTIVE DATE(S) FAILED Y13 N6 A1'],
+        ['062', 'Effective date adopted', 'Floor', 'EFFECTIVE DATE(S) ADOPTED Y31 N9'],
+        ['063', 'Amendment author', 'Amendment', 'AM: BJORKMAN'],
+        ['064', 'Reconsideration same day', 'Reconsideration', 'RECON SAME DAY UC - IN THIRD READING'],
+        ['065', 'Reconsideration failed', 'Reconsideration', 'RECONSIDERATION FAILED Y20 N17 E2 A1'],
+        ['066', 'Recede from amendment', 'Crossover', 'RECEDE FROM (S) AM Y19 N- A1'],
+        ['067', 'Conference committee discharged', 'Conference', 'CONFERENCE COMMITTEE DISCHARGED'],
+        ['068', 'Permanently filed (resolve)', 'Final', 'PERMANENTLY FILED 11/17 HOUSE RESOLVE 8'],
+        ['069', 'Free conference committee appointed', 'Conference', 'FREE CONFERENCE COMMITTEE APPOINTED'],
+        ['070', 'Free conference committee report adopted', 'Conference', 'FCC RPT ADPT Y17 N- E2 A1 FCCS SB 123'],
+        ['074', 'Conference committee report failed', 'Conference', 'CC REPORT FAILED Y20 N19 E1'],
+        ['076', 'Held to calendar date', 'Floor', 'HELD TO 4/14 CALENDAR'],
+        ['077', 'Procedural (adjournment, explanation)', 'Procedural', 'ADJOURNED TO 4/13 CALENDAR Y21 N14 P5'],
+        ['078', 'Return to second for amendment failed', 'Floor', 'RETURN TO SECOND FOR AMS FAILED Y19 N21'],
+        ['079', 'Conference/concur report held', 'Conference', 'CC REPORT READ AND HELD'],
+        ['080', 'Rules to calendar', 'Procedural', 'RULES TO CALENDAR 1/21/2025'],
+        ['081', 'Before chamber on final passage', 'Floor', 'BEFORE SENATE ON FINAL PASSAGE'],
+        ['082', 'Rules to calendar pending committee report', 'Procedural', 'RULES TO CALENDAR PENDING FIN RPT'],
+        ['083', 'Transmitted as amended', 'Crossover', 'TRANSMITTED TO (S) AS AMENDED'],
+        ['084', 'Automatically to third reading', 'Floor', 'AUTOMATICALLY IN THIRD READING'],
+        ['085', 'Special order of business', 'Procedural', 'SPECIAL ORDER OF BUSINESS'],
+        ['086', 'Rules to supplemental calendar', 'Procedural', 'RULES TO 1ST SUP CALENDAR 3/20/2024'],
+        ['087', 'Reconsideration not taken up', 'Reconsideration', 'RECONSIDERATION NOT TAKEN UP'],
+        ['088', 'Free conference granted', 'Conference', 'FREE CONFERENCE GRANTED'],
+        ['089', 'Permanently filed', 'Final', 'PERMANENTLY FILED IN THE (H)'],
+        ['090', 'Return to chamber / transmit to governor', 'Crossover', 'RETURN TO (S), TRANSMIT TO GOV NEXT'],
+        ['091', 'Committee referral list', 'Committee', 'L&C, FIN'],
+        ['092', 'Cosponsor added or removed', 'Sponsor', 'COSPONSOR(S): STORY'],
+        ['093', 'Reconsider concur', 'Reconsideration', 'MULDER RECONSIDER CONCUR'],
+        ['094', 'Technical title change', 'Procedural', '...CHANGES TITLE OF LEGISLATION'],
+        ['095', 'Waived public hearing notice', 'Committee', 'FIN WAIVED PUBLIC HEARING NOTICE, RULE 23'],
+        ['097', 'Advanced to third reading (with date)', 'Floor', 'ADVANCED TO THIRD READING 2/27 CALENDAR'],
+        ['098', 'Court rule vote', 'Floor', 'COURT RULE(S) ADOPTED Y32 N6 E2'],
+        ['100', 'Cross sponsors', 'Sponsor', 'CROSS SPONSOR(S): BYNUM'],
+        ['101', 'Not introduced', 'Introduction', 'NOT INTRODUCED'],
+        ['103', 'Version designation', 'Procedural', 'VERSION: CSHB 117(RES)'],
+        ['105', 'Fiscal note', 'Fiscal', 'FN1: ZERO(CED)'],
+        ['106', 'Fiscal note (numbered, older format)', 'Fiscal', 'FN10: (AJS)'],
+        ['107', 'Legislative finance appropriation message', 'Fiscal', 'LEG FINANCE APPROPRIATION MESSAGE 4/3/20'],
+        ['108', 'Fiscal note attached to appropriation bill', 'Fiscal', 'FN(S) ATTACHED TO APPROP. BILL HB 205'],
+        ['109', 'Conference committee report received', 'Conference', 'CC REPORT: CCS HB 289 RECEIVED 3/24'],
+        ['110', "Held on Secretary's desk", 'Procedural', "HELD ON SECRETARY'S DESK"],
+        ['115', 'Moved to bottom of calendar', 'Floor', 'MOVED TO BOTTOM OF CALENDAR'],
+        ['120', 'Passed (older format)', 'Floor', 'PASSED Y17 N2 E1'],
+        ['121', 'Prefile released', 'Introduction', 'PREFILE RELEASED 1/10/25'],
+        ['122', 'Committee substitute adopted (roll call)', 'Committee', 'FIN CS ADOPTED Y21 N19'],
+        ['123', 'Advanced to third reading failed', 'Floor', 'ADVANCED TO THIRD READING SAME DAY FAILED'],
+        ['124', 'Rescind action on amendment', 'Floor', 'RESCIND ACTION AM 1 UC'],
+        ['125', 'Rescind action (adopted)', 'Floor', 'RESCIND ACTION (ADOPTED) AM 1 TO AM 3 UC'],
+        ['126', 'CBRF section vote', 'Floor', 'CBRF SECTION(S) ADP VOTE Y20 N-'],
+        ['127', 'Technical session \u2014 reconsideration held', 'Reconsideration', 'TECHNICAL SESSION - RECON HELD TO 5/10'],
+        ['128', 'Rescind action (concur/passed)', 'Floor', 'RESCIND ACTION (CONCUR) PASSED Y21 N19'],
+        ['129', 'Assigned chapter number', 'Final', 'CHAPTER 1 SLA 02'],
+        ['130', 'Amendment offered', 'Amendment', 'AM NO 1 OFFERED AND PENDING'],
+        ['131', 'Amendment not offered', 'Amendment', 'AM NO 1 NOT OFFERED'],
+        ['132', 'Amendment tabled', 'Amendment', 'AM NO 53 TABLED UC'],
+        ['133', 'Amendment not tabled', 'Amendment', 'AM NO 1 NOT TABLED Y20 N20'],
+        ['135', 'Reconsideration same day failed', 'Reconsideration', 'RECON TAKEN UP SAME DAY FAILED Y20 N20'],
+        ['136', 'Concur message taken up', 'Crossover', 'CONCUR MESSAGE READ AND TAKEN UP'],
+        ['138', 'Before chamber on final passage', 'Floor', 'BEFORE HOUSE ON FINAL PASSAGE'],
+        ['900', 'Special session bill', 'Introduction', 'FIRST SPECIAL SESSION BILL'],
+    ];
+
+    function esc(s) {
+        if (!s) return '';
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    // Render table immediately with empty count columns
+    function renderTable(c23, c24, c25, c26) {
+        var html = '';
+        CODES.forEach(function(row) {
+            var code = row[0], meaning = row[1], cat = row[2], example = row[3];
+            html += '<tr>';
+            html += '<td class="code-num">' + code + '</td>';
+            html += '<td>' + esc(meaning) + '</td>';
+            html += '<td class="cat">' + esc(cat) + '</td>';
+            html += '<td class="count-col">' + ((c23 && c23[code]) ? c23[code] : '\u2014') + '</td>';
+            html += '<td class="count-col">' + ((c24 && c24[code]) ? c24[code] : '\u2014') + '</td>';
+            html += '<td class="count-col">' + ((c25 && c25[code]) ? c25[code] : '\u2014') + '</td>';
+            html += '<td class="count-col">' + ((c26 && c26[code]) ? c26[code] : '\u2014') + '</td>';
+            html += '<td>' + esc(example) + '</td>';
+            html += '</tr>';
+        });
+        document.getElementById('codes-body').innerHTML = html;
+    }
+
+    // Show table immediately with dashes
+    renderTable(null, null, null, null);
+
+    var steps = [
+        [0,    'Fetching action counts from BASIS API\u2026'],
+        [3000, 'Scanning House bill actions\u2026'],
+        [8000, 'Scanning Senate bill actions\u2026'],
+        [13000, 'Almost done\u2026'],
+    ];
+    var stepEl = document.getElementById('load-step');
+    var timers = steps.map(function(s) {
+        return setTimeout(function() { stepEl.textContent = s[1]; }, s[0]);
+    });
+
+    fetch('/api/action-codes')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            timers.forEach(clearTimeout);
+            renderTable(data['2023'], data['2024'], data['2025'], data['2026']);
+            document.getElementById('count-status').style.display = 'none';
+        })
+        .catch(function(err) {
+            document.getElementById('count-status').innerHTML = 'Failed to load counts: ' + err;
+            document.getElementById('count-status').className = 'error';
+        });
+    </script>
+</body>
+</html>

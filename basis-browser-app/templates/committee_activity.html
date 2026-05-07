@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Committee Activity — BASIS Browser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <nav>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <strong>Committees</strong> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/action-codes">Action Codes</a>
+    </nav>
+    <header>
+        <h1>Committee Activity</h1>
+        <p>Session 34 &mdash; Alaska Legislature</p>
+    </header>
+
+    <div id="loading" class="loading">
+        <div id="load-step">Connecting to BASIS API&hellip;</div>
+    </div>
+    <div id="content" style="display:none">
+
+        <section>
+            <h2>Committee Report Unanimity</h2>
+            <p id="unanimity-summary"></p>
+            <table id="divided-table" class="compact"></table>
+        </section>
+
+        <section>
+            <h2>Bills Reported Out of Committee</h2>
+            <table id="moved-out-table" class="compact"></table>
+        </section>
+
+        <section>
+            <h2>Committee Substitutes Adopted</h2>
+            <table id="cs-table" class="compact"></table>
+        </section>
+
+    </div>
+
+    <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
+
+    <script>
+    function esc(s) {
+        if (!s) return '';
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    var steps = [
+        [0,    'Connecting to BASIS API\u2026'],
+        [2000, 'Scanning House bill actions\u2026'],
+        [8000, 'Scanning Senate bill actions\u2026'],
+        [14000, 'Processing committee reports\u2026'],
+    ];
+    var stepEl = document.getElementById('load-step');
+    var timers = steps.map(function(s) {
+        return setTimeout(function() { stepEl.textContent = s[1]; }, s[0]);
+    });
+
+    fetch('/api/committee-activity')
+        .then(r => r.json())
+        .then(resp => {
+            timers.forEach(clearTimeout);
+            if (resp.error) {
+                document.getElementById('loading').innerHTML = 'Failed: ' + esc(resp.error);
+                document.getElementById('loading').className = 'error';
+                return;
+            }
+            var d = resp.data;
+
+            // Unanimity summary
+            var u = d.report_unanimity;
+            var total = u.unanimous + u.divided;
+            var pct = total ? Math.round(u.unanimous / total * 100) : 0;
+            document.getElementById('unanimity-summary').innerHTML =
+                '<strong>' + u.unanimous + '</strong> unanimous / <strong>' + u.divided + '</strong> divided out of <strong>' + total + '</strong> committee reports (' + pct + '% unanimous)';
+
+            // Divided reports table
+            var divided = u.reports.filter(r => !r.unanimous);
+            if (divided.length) {
+                var html = '<thead><tr><th>Bill</th><th>Committee</th><th>Vote</th><th>Date</th></tr></thead><tbody>';
+                divided.forEach(r => {
+                    html += '<tr><td class="bill-number">' + esc(r.billnumber) + '</td>';
+                    html += '<td>' + esc(r.committee) + '</td>';
+                    html += '<td>' + esc(r.vote_str) + '</td>';
+                    html += '<td>' + esc(r.date) + '</td></tr>';
+                });
+                html += '</tbody>';
+                document.getElementById('divided-table').innerHTML = html;
+            }
+
+            // Moved out table
+            if (d.moved_out.length) {
+                var html = '<thead><tr><th>Bill</th><th>Title</th><th>Committee</th><th>Vote</th><th>CS?</th><th>Date</th></tr></thead><tbody>';
+                d.moved_out.forEach(r => {
+                    html += '<tr><td class="bill-number">' + esc(r.billnumber) + '</td>';
+                    html += '<td>' + esc(r.title) + '</td>';
+                    html += '<td>(' + esc(r.chamber) + ') ' + esc(r.committee) + '</td>';
+                    html += '<td>' + esc(r.vote_str) + '</td>';
+                    html += '<td class="center">' + (r.has_cs ? 'CS' : '') + '</td>';
+                    html += '<td>' + esc(r.date) + '</td></tr>';
+                });
+                html += '</tbody>';
+                document.getElementById('moved-out-table').innerHTML = html;
+            }
+
+            // CS adopted table
+            if (d.cs_adopted.length) {
+                var html = '<thead><tr><th>Bill</th><th>Title</th><th>Committee</th><th>Method</th><th>Date</th></tr></thead><tbody>';
+                d.cs_adopted.forEach(r => {
+                    html += '<tr><td class="bill-number">' + esc(r.billnumber) + '</td>';
+                    html += '<td>' + esc(r.title) + '</td>';
+                    html += '<td>(' + esc(r.chamber) + ') ' + esc(r.committee) + '</td>';
+                    html += '<td class="center">' + esc(r.method) + '</td>';
+                    html += '<td>' + esc(r.date) + '</td></tr>';
+                });
+                html += '</tbody>';
+                document.getElementById('cs-table').innerHTML = html;
+            }
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+        })
+        .catch(err => {
+            timers.forEach(clearTimeout);
+            document.getElementById('loading').innerHTML = 'Failed to load data: ' + err;
+            document.getElementById('loading').className = 'error';
+        });
+    </script>
+</body>
+</html>

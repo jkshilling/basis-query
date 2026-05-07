@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crossover Bills — BASIS Browser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="wide">
+    <nav>
+        <a href="/dashboard">Dashboard</a> | <strong>Crossover</strong> | <a href="/activity">Activity</a> | <a href="/committee-activity">Committees</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/action-codes">Action Codes</a>
+    </nav>
+    <header>
+        <h1>Crossover Bills</h1>
+        <p>Session 34 &mdash; Alaska Legislature</p>
+    </header>
+
+    <div id="loading" class="loading">
+        <div id="load-step">Connecting to BASIS API&hellip;</div>
+    </div>
+    <div id="content" class="crossover-grid" style="display:none">
+
+        <section>
+            <h2>House Bills in the Senate</h2>
+            <div id="hb-section"></div>
+        </section>
+
+        <section>
+            <h2>Senate Bills in the House</h2>
+            <div id="sb-section"></div>
+        </section>
+
+    </div>
+
+    <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
+
+    <script>
+    function buildTable(bills, chamberPrefix) {
+        if (!bills.length) return '<p class="empty">None found.</p>';
+        let html = '<table class="compact"><thead><tr><th>Bill</th><th>Title</th><th>Cmte</th><th class="center">Next</th><th class="center">Hearing</th></tr></thead><tbody>';
+        bills.forEach(b => {
+            html += '<tr>';
+            html += '<td class="bill-number">' + esc(b.billnumber) + '</td>';
+            html += '<td>' + esc(b.short_title) + '</td>';
+            html += '<td>' + chamberPrefix + ' ' + esc(b.committee_code) + '</td>';
+            html += '<td class="center">' + (esc(b.next_referral) || '\u2014') + '</td>';
+            html += '<td class="center">' + (esc(b.next_hearing) || '\u2014') + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        html += '<p class="count">' + bills.length + ' bill' + (bills.length !== 1 ? 's' : '') + '</p>';
+        return html;
+    }
+
+    function esc(s) {
+        if (!s) return '';
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    var steps = [
+        [0,    'Connecting to BASIS API\u2026'],
+        [2000, 'Fetching House bills\u2026'],
+        [6000, 'Fetching Senate bills\u2026'],
+        [10000, 'Fetching hearing schedules\u2026'],
+        [14000, 'Almost done\u2026'],
+    ];
+    var stepEl = document.getElementById('load-step');
+    var timers = steps.map(function(s) {
+        return setTimeout(function() { stepEl.textContent = s[1]; }, s[0]);
+    });
+
+    fetch('/api/crossover')
+        .then(r => r.json())
+        .then(data => {
+            timers.forEach(clearTimeout);
+            document.getElementById('hb-section').innerHTML = buildTable(data.hb_in_senate, '(S)');
+            document.getElementById('sb-section').innerHTML = buildTable(data.sb_in_house, '(H)');
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'grid';
+        })
+        .catch(err => {
+            document.getElementById('loading').innerHTML = 'Failed to load data: ' + err;
+            document.getElementById('loading').className = 'error';
+        });
+    </script>
+</body>
+</html>

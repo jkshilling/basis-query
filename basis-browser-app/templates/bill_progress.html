@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bill Progress — BASIS Browser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="wide">
+    <nav>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/committee-activity">Committees</a> | <strong>Bill Progress</strong> | <a href="/governor">Governor</a> | <a href="/action-codes">Action Codes</a>
+    </nav>
+    <header>
+        <h1>Bill Progress</h1>
+        <p>Session 34 &mdash; Alaska Legislature</p>
+    </header>
+
+    <div id="loading" class="loading">
+        <div id="load-step">Connecting to BASIS API&hellip;</div>
+    </div>
+    <div id="content" style="display:none">
+
+        <section>
+            <h2>Velocity: Bills Through the Process</h2>
+            <p class="chart-note">Incremental days between each milestone in the origin chamber. Shows each committee report individually. Top 50 bills by progress.</p>
+            <div id="velocity-section"></div>
+        </section>
+
+        <section>
+            <h2>Momentum: Bills Moving in the Last 30 Days</h2>
+            <p class="chart-note">Bills with the most milestone activity in the last 30 days. Sorted by number of recent milestones.</p>
+            <div id="momentum-section"></div>
+        </section>
+
+        <section>
+            <h2>Weighted Momentum: Committee Movement Only</h2>
+            <p class="chart-note">Collapses 2nd reading through transmitted into a single "Floor Passage" event. Committee reports are the real signal. Sorted by recent meaningful activity.</p>
+            <div id="weighted-section"></div>
+        </section>
+
+        <section>
+            <h2>Concur / Nonconcur Actions</h2>
+            <p class="chart-note">Actions where one chamber voted to concur (or not) with the other chamber's amendments.</p>
+            <table id="concur-table" class="compact"></table>
+        </section>
+
+    </div>
+
+    <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
+
+    <script>
+    function esc(s) {
+        if (!s) return '';
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    var steps = [
+        [0,    'Connecting to BASIS API\u2026'],
+        [2000, 'Scanning House bill actions\u2026'],
+        [8000, 'Scanning Senate bill actions\u2026'],
+        [14000, 'Computing velocity scores\u2026'],
+    ];
+    var stepEl = document.getElementById('load-step');
+    var timers = steps.map(function(s) {
+        return setTimeout(function() { stepEl.textContent = s[1]; }, s[0]);
+    });
+
+    fetch('/api/bill-progress')
+        .then(r => r.json())
+        .then(resp => {
+            timers.forEach(clearTimeout);
+            if (resp.error) {
+                document.getElementById('loading').innerHTML = 'Failed: ' + esc(resp.error);
+                document.getElementById('loading').className = 'error';
+                return;
+            }
+            var d = resp.data;
+
+            // Velocity — each bill has a variable number of steps
+            if (d.velocity.length) {
+                var html = '<table class="compact"><thead><tr>';
+                html += '<th>Bill</th><th>Title</th><th>Referrals</th><th>Steps</th><th class="center">Total</th>';
+                html += '</tr></thead><tbody>';
+
+                d.velocity.forEach(b => {
+                    html += '<tr>';
+                    html += '<td class="bill-number">' + esc(b.billnumber) + '</td>';
+                    html += '<td>' + esc(b.title) + '</td>';
+                    html += '<td>' + esc(b.referrals) + '</td>';
+                    html += '<td class="steps-cell">';
+                    b.steps.forEach(function(s, i) {
+                        var dayStr = '';
+                        if (s.inc_days !== null && s.inc_days !== undefined) {
+                            dayStr = ' <span class="step-days">+' + s.inc_days + 'd</span>';
+                        }
+                        if (i > 0) html += ' <span class="step-arrow">\u2192</span> ';
+                        html += '<span class="step-label">' + esc(s.label) + '</span>';
+                        html += dayStr;
+                    });
+                    html += '</td>';
+                    html += '<td class="center velocity-total">' + (b.total_days !== null ? b.total_days + 'd' : '\u2014') + '</td>';
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                document.getElementById('velocity-section').innerHTML = html;
+            } else {
+                document.getElementById('velocity-section').innerHTML = '<p class="empty">No bill velocity data.</p>';
+            }
+
+            // Momentum table
+            if (d.momentum.length) {
+                var html = '<table class="compact"><thead><tr>';
+                html += '<th>Bill</th><th>Title</th><th>Referrals</th><th class="center">Recent Milestones</th><th>Recent Activity</th><th class="center">Most Recent</th><th class="center">Total Steps</th>';
+                html += '</tr></thead><tbody>';
+
+                d.momentum.forEach(b => {
+                    html += '<tr>';
+                    html += '<td class="bill-number">' + esc(b.billnumber) + '</td>';
+                    html += '<td>' + esc(b.title) + '</td>';
+                    html += '<td>' + esc(b.referrals) + '</td>';
+                    html += '<td class="center velocity-total">' + b.recent_count + '</td>';
+                    html += '<td class="steps-cell">';
+                    b.recent_steps.forEach(function(s, i) {
+                        if (i > 0) html += ' <span class="step-arrow">\u2192</span> ';
+                        html += '<span class="step-label">' + esc(s.label) + '</span>';
+                        html += ' <span class="step-days">' + esc(s.date) + '</span>';
+                    });
+                    html += '</td>';
+                    html += '<td class="center">' + esc(b.most_recent) + '</td>';
+                    html += '<td class="center">' + b.total_steps + '</td>';
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                document.getElementById('momentum-section').innerHTML = html;
+            } else {
+                document.getElementById('momentum-section').innerHTML = '<p class="empty">No recent milestone activity.</p>';
+            }
+
+            // Weighted momentum table
+            if (d.weighted.length) {
+                var html = '<table class="compact"><thead><tr>';
+                html += '<th>Bill</th><th>Title</th><th>Referrals</th><th>Steps</th><th class="center">Recent</th><th class="center">Total</th>';
+                html += '</tr></thead><tbody>';
+
+                d.weighted.forEach(b => {
+                    html += '<tr>';
+                    html += '<td class="bill-number">' + esc(b.billnumber) + '</td>';
+                    html += '<td>' + esc(b.title) + '</td>';
+                    html += '<td>' + esc(b.referrals) + '</td>';
+                    html += '<td class="steps-cell">';
+                    b.events.forEach(function(s, i) {
+                        var dayStr = '';
+                        if (s.inc_days !== null && s.inc_days !== undefined) {
+                            dayStr = ' <span class="step-days">+' + s.inc_days + 'd</span>';
+                        }
+                        if (i > 0) html += ' <span class="step-arrow">\u2192</span> ';
+                        html += '<span class="step-label">' + esc(s.label) + '</span>';
+                        html += dayStr;
+                    });
+                    html += '</td>';
+                    html += '<td class="center velocity-total">' + b.recent_count + '</td>';
+                    html += '<td class="center">' + (b.total_days !== null ? b.total_days + 'd' : '\u2014') + '</td>';
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                document.getElementById('weighted-section').innerHTML = html;
+            } else {
+                document.getElementById('weighted-section').innerHTML = '<p class="empty">No weighted momentum data.</p>';
+            }
+
+            // Concur table
+            if (d.concur.length) {
+                var html = '<thead><tr><th>Bill</th><th>Title</th><th>Chamber</th><th class="center">Action</th><th>Detail</th><th>Date</th></tr></thead><tbody>';
+                d.concur.forEach(r => {
+                    var cls = r.action === 'nonconcur' ? ' class="nonconcur"' : '';
+                    html += '<tr' + cls + '>';
+                    html += '<td class="bill-number">' + esc(r.billnumber) + '</td>';
+                    html += '<td>' + esc(r.title) + '</td>';
+                    html += '<td class="center">(' + esc(r.chamber) + ')</td>';
+                    html += '<td class="center">' + esc(r.action) + '</td>';
+                    html += '<td>' + esc(r.text) + '</td>';
+                    html += '<td>' + esc(r.date) + '</td></tr>';
+                });
+                html += '</tbody>';
+                document.getElementById('concur-table').innerHTML = html;
+            } else {
+                document.getElementById('concur-table').outerHTML = '<p class="empty">No concur/nonconcur actions found.</p>';
+            }
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+        })
+        .catch(err => {
+            timers.forEach(clearTimeout);
+            document.getElementById('loading').innerHTML = 'Failed to load data: ' + err;
+            document.getElementById('loading').className = 'error';
+        });
+    </script>
+</body>
+</html>

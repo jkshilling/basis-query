@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard — BASIS Browser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <nav>
+        <strong>Dashboard</strong> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/committee-activity">Committees</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/action-codes">Action Codes</a>
+    </nav>
+    <header>
+        <h1>Session 34 Dashboard</h1>
+        <p>Alaska Legislature</p>
+    </header>
+
+    <div id="loading" class="loading">
+        <div id="load-step">Connecting to BASIS API&hellip;</div>
+    </div>
+    <div id="content" style="display:none">
+
+        <div class="stats-grid" id="stats-grid"></div>
+
+        <section>
+            <h2>Floor Calendar</h2>
+            <div class="charts-grid">
+                <div>
+                    <h3>House Floor</h3>
+                    <div id="house-floor"></div>
+                </div>
+                <div>
+                    <h3>Senate Floor</h3>
+                    <div id="senate-floor"></div>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>Committee Throughput</h2>
+            <p class="chart-note">Sitting = bills currently in committee. Reported = bills reported out (action code 002).</p>
+            <div class="charts-grid">
+                <div class="chart-container">
+                    <h3>House Committees</h3>
+                    <canvas id="houseThroughput"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>Senate Committees</h3>
+                    <canvas id="senateThroughput"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>Hearings Held</h2>
+            <div class="charts-grid">
+                <div class="chart-container">
+                    <h3>House Committees</h3>
+                    <canvas id="houseHearings"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>Senate Committees</h3>
+                    <canvas id="senateHearings"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>Top Prime Sponsors</h2>
+            <div class="chart-container chart-wide">
+                <canvas id="sponsorChart"></canvas>
+            </div>
+        </section>
+
+
+    </div>
+
+    <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
+
+    <script>
+    function esc(s) {
+        if (!s) return '';
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    function statCard(number, label, detail) {
+        let html = '<div class="stat-card"><div class="stat-number">' + number + '</div>';
+        html += '<div class="stat-label">' + label + '</div>';
+        if (detail) html += '<div class="stat-detail">' + detail + '</div>';
+        html += '</div>';
+        return html;
+    }
+
+    var stackedOptions = {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+        scales: { x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }, y: { stacked: true, ticks: { font: { size: 11 } } } }
+    };
+
+    var barOptions = {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+        scales: { x: { beginAtZero: true, ticks: { precision: 0 } }, y: { ticks: { font: { size: 11 }, autoSkip: false } } }
+    };
+
+    var steps = [
+        [0,    'Connecting to BASIS API\u2026'],
+        [2000, 'Fetching House bills\u2026'],
+        [8000, 'Fetching Senate bills\u2026'],
+        [14000, 'Fetching committee reports\u2026'],
+        [22000, 'Fetching hearing data\u2026'],
+        [35000, 'Almost done\u2026'],
+    ];
+    var stepEl = document.getElementById('load-step');
+    var timers = steps.map(function(s) {
+        return setTimeout(function() { stepEl.textContent = s[1]; }, s[0]);
+    });
+
+    fetch('/api/dashboard')
+        .then(r => r.json())
+        .then(data => {
+            timers.forEach(clearTimeout);
+            if (data.error) {
+                document.getElementById('loading').innerHTML = 'Failed to load data: ' + esc(data.error);
+                document.getElementById('loading').className = 'error';
+                return;
+            }
+            var s = data.stats;
+
+            // Stats cards
+            var grid = '';
+            grid += statCard(s.total, 'Total Introduced', s.bills_only + ' bills / ' + s.resolutions + ' resolutions');
+            grid += statCard(s.crossover_to_senate + s.crossover_to_house, 'Crossed Over', s.crossover_to_senate + ' to S / ' + s.crossover_to_house + ' to H');
+            grid += statCard(s.chaptered, 'Chaptered (Law)');
+            grid += statCard(s.at_governor, 'At Governor');
+            grid += statCard(s.vetoed, 'Vetoed');
+            grid += statCard(s.veto_sustained, 'Veto Sustained');
+            grid += statCard(s.veto_overridden, 'Veto Overridden');
+            grid += statCard(s.failed, 'Failed');
+            grid += statCard(s.withdrawn, 'Withdrawn');
+            document.getElementById('stats-grid').innerHTML = grid;
+
+            // Floor calendar
+            function floorTable(bills, containerId) {
+                if (!bills.length) {
+                    document.getElementById(containerId).innerHTML = '<p class="empty">Nothing calendared.</p>';
+                    return;
+                }
+                var html = '<table class="compact"><thead><tr><th>Bill</th><th>Title</th><th>Reading</th><th>Status</th></tr></thead><tbody>';
+                bills.forEach(b => {
+                    html += '<tr><td class="bill-number">' + esc(b.billnumber) + '</td>';
+                    html += '<td>' + esc(b.title) + '</td>';
+                    html += '<td class="center">' + esc(b.reading) + '</td>';
+                    html += '<td>' + esc(b.status) + '</td></tr>';
+                });
+                html += '</tbody></table>';
+                document.getElementById(containerId).innerHTML = html;
+            }
+            floorTable(s.house_floor, 'house-floor');
+            floorTable(s.senate_floor, 'senate-floor');
+
+            // Throughput charts
+            new Chart(document.getElementById('houseThroughput'), {
+                type: 'bar',
+                data: {
+                    labels: s.house_throughput.map(x => x[0]),
+                    datasets: [
+                        { label: 'Sitting', data: s.house_throughput.map(x => x[1]), backgroundColor: '#2980b9' },
+                        { label: 'Reported Out', data: s.house_throughput.map(x => x[2]), backgroundColor: '#27ae60' }
+                    ]
+                },
+                options: stackedOptions
+            });
+
+            new Chart(document.getElementById('senateThroughput'), {
+                type: 'bar',
+                data: {
+                    labels: s.senate_throughput.map(x => x[0]),
+                    datasets: [
+                        { label: 'Sitting', data: s.senate_throughput.map(x => x[1]), backgroundColor: '#c0392b' },
+                        { label: 'Reported Out', data: s.senate_throughput.map(x => x[2]), backgroundColor: '#27ae60' }
+                    ]
+                },
+                options: stackedOptions
+            });
+
+            // Hearing charts
+            new Chart(document.getElementById('houseHearings'), {
+                type: 'bar',
+                data: {
+                    labels: s.house_hearings.map(x => x[0]),
+                    datasets: [{ data: s.house_hearings.map(x => x[1]), backgroundColor: '#2980b9' }]
+                },
+                options: barOptions
+            });
+
+            new Chart(document.getElementById('senateHearings'), {
+                type: 'bar',
+                data: {
+                    labels: s.senate_hearings.map(x => x[0]),
+                    datasets: [{ data: s.senate_hearings.map(x => x[1]), backgroundColor: '#c0392b' }]
+                },
+                options: barOptions
+            });
+
+            // Sponsor chart
+            new Chart(document.getElementById('sponsorChart'), {
+                type: 'bar',
+                data: {
+                    labels: s.top_sponsors.map(x => x[0]),
+                    datasets: [{ data: s.top_sponsors.map(x => x[1]), backgroundColor: '#8e44ad' }]
+                },
+                options: barOptions
+            });
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+        })
+        .catch(err => {
+            document.getElementById('loading').innerHTML = 'Failed to load data: ' + err;
+            document.getElementById('loading').className = 'error';
+        });
+    </script>
+</body>
+</html>
