@@ -9,7 +9,7 @@
 </head>
 <body>
     <nav>
-        <strong>Dashboard</strong> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/committee-activity">Committees</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/action-codes">Action Codes</a>
+        <strong>Dashboard</strong> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/action-codes">Action Codes</a>
     </nav>
     <header>
         <h1>34th Legislature Dashboard</h1>
@@ -139,7 +139,6 @@
             grid += statCard(s.vetoed, 'Vetoed');
             grid += statCard(s.veto_sustained, 'Veto Sustained');
             grid += statCard(s.veto_overridden, 'Veto Overridden');
-            grid += statCard(s.failed, 'Failed');
             grid += statCard(s.withdrawn, 'Withdrawn');
             document.getElementById('stats-grid').innerHTML = grid;
 

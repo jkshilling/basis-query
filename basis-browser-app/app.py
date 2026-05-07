@@ -7,7 +7,7 @@ import cache
 from flask import Flask, render_template, jsonify, request
 from adapter import (
     house_bills_in_senate, senate_bills_in_house, dashboard_stats,
-    action_code_counts, committee_activity, bill_progress, activity_feed,
+    action_code_counts, bill_progress, activity_feed,
     governor_bills,
 )
 
@@ -22,7 +22,6 @@ def _refresh_all():
         ("crossover", lambda: (house_bills_in_senate(), senate_bills_in_house())),
         ("dashboard", dashboard_stats),
         ("action_codes", action_code_counts),
-        ("committee_activity", committee_activity),
         ("bill_progress", bill_progress),
         ("activity_feed", activity_feed),
         ("governor", governor_bills),
@@ -39,7 +38,7 @@ def _invalidate_top_level_caches():
     Underlying caches (bills, hearing windows) keep their own freshness rules."""
     keys_to_clear = [
         "hb_in_senate", "sb_in_house", "dashboard_stats", "action_code_counts",
-        "committee_activity", "bill_progress", "all_actions", "governor_bills",
+        "bill_progress", "all_actions", "governor_bills",
     ]
     # Also clear any activity_feed_X entries
     for k in list(cache._cache.keys()):
@@ -77,20 +76,6 @@ def api_crossover():
     except Exception:
         sb = []
     return jsonify({"hb_in_senate": hb, "sb_in_house": sb})
-
-
-@app.route("/committee-activity")
-def committee_activity_page():
-    return render_template("committee_activity.html")
-
-
-@app.route("/api/committee-activity")
-def api_committee_activity():
-    try:
-        data = committee_activity()
-        return jsonify({"data": data, "error": None})
-    except Exception as exc:
-        return jsonify({"data": None, "error": str(exc)})
 
 
 @app.route("/bill-progress")
