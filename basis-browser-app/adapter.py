@@ -499,10 +499,17 @@ def dashboard_stats(session="34"):
 
     all_bills = house_bills + senate_bills
 
+    # Build a map of bill -> set of historical action codes from cached action data
+    action_history = {}  # billnumber -> set of codes ever taken
+    for bn, _, _, _, actions in _scan_all_actions(session):
+        codes = set(c[0] for c in actions)
+        action_history[_compact_billnumber(bn)] = codes
+
     for b in all_bills:
         status = b["status"]
         status_upper = status.upper()
         origin = b["chamber"]
+        history = action_history.get(b["billnumber"], set())
 
         # Bill type
         prefix = b["billnumber"].split()[0] if b["billnumber"] else "?"
@@ -514,17 +521,21 @@ def dashboard_stats(session="34"):
         if origin == "S" and "(H)" in status:
             crossover_to_house += 1
 
-        # Terminal / near-terminal statuses
+        # Veto outcomes — count from action history, since current status may
+        # be "CHAPTER X SLA YY" once an overridden bill becomes law.
+        if "038" in history:  # vetoed by governor
+            if "040" in history:  # ...and override succeeded
+                veto_overridden += 1
+            elif "039" in history:  # ...and override failed
+                veto_sustained += 1
+            else:  # vetoed but no override action yet
+                vetoed += 1
+
+        # Other terminal statuses (current state)
         if "CHAPTER" in status_upper:
             chaptered += 1
         elif status_upper == "TRANSM TO GOVERNOR":
             at_governor += 1
-        elif status_upper == "VETOED BY GOVERNOR":
-            vetoed += 1
-        elif status_upper == "VETO SUSTAINED":
-            veto_sustained += 1
-        elif "VETO OVERRIDDEN" in status_upper:
-            veto_overridden += 1
         elif "FAILED" in status_upper:
             failed += 1
         elif status_upper == "WITHDRAWN":

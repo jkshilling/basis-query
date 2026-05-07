@@ -12,8 +12,8 @@
         <strong>Dashboard</strong> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/committee-activity">Committees</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/action-codes">Action Codes</a>
     </nav>
     <header>
-        <h1>Session 34 Dashboard</h1>
-        <p>Alaska Legislature</p>
+        <h1>34th Legislature Dashboard</h1>
+        <p>Alaska &mdash; 2025-2026</p>
     </header>
 
     <div id="loading" class="loading">
@@ -134,7 +134,7 @@
             var grid = '';
             grid += statCard(s.total, 'Total Introduced', s.bills_only + ' bills / ' + s.resolutions + ' resolutions');
             grid += statCard(s.crossover_to_senate + s.crossover_to_house, 'Crossed Over', s.crossover_to_senate + ' to S / ' + s.crossover_to_house + ' to H');
-            grid += statCard(s.chaptered, 'Chaptered (Law)');
+            grid += statCard(s.chaptered, 'Signed Into Law');
             grid += statCard(s.at_governor, 'At Governor');
             grid += statCard(s.vetoed, 'Vetoed');
             grid += statCard(s.veto_sustained, 'Veto Sustained');
