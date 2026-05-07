@@ -48,7 +48,7 @@ def _compact_billnumber(raw):
     return " ".join(raw.split())
 
 
-def _truncate(text, length=30):
+def _truncate(text, length=60):
     if len(text) <= length:
         return text
     return text[:length - 1].rstrip() + "\u2026"

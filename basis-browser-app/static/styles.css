@@ -33,7 +33,25 @@ section h2 { font-size: 13px; margin-bottom: 6px; }
 
 body.wide { max-width: 1200px; }
 .crossover-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-table.compact th, table.compact td { padding: 3px 6px; font-size: 12px; }
+table.compact { table-layout: fixed; }
+table.compact th, table.compact td {
+    padding: 4px 6px; font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+/* Crossover table column widths (5 columns) */
+.crossover-grid table.compact th:nth-child(1),
+.crossover-grid table.compact td:nth-child(1) { width: 14%; }
+.crossover-grid table.compact th:nth-child(2),
+.crossover-grid table.compact td:nth-child(2) { width: 36%; }
+.crossover-grid table.compact th:nth-child(3),
+.crossover-grid table.compact td:nth-child(3) { width: 14%; }
+.crossover-grid table.compact th:nth-child(4),
+.crossover-grid table.compact td:nth-child(4) { width: 8%; }
+.crossover-grid table.compact th:nth-child(5),
+.crossover-grid table.compact td:nth-child(5) { width: 28%; }
 table.compact th { font-size: 10px; }
 .center { text-align: center; }
 
