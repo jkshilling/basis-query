@@ -48,6 +48,65 @@ def _compact_billnumber(raw):
     return " ".join(raw.split())
 
 
+def _current_chamber(status, origin):
+    """Determine where a bill currently lives based on its StatusText.
+
+    Returns:
+        'H' or 'S' — bill is currently in that chamber
+        'GOV'      — at the governor / signed / vetoed
+        'DONE'     — terminal state (failed, withdrawn, perm filed, etc.)
+        None       — unknown / unparseable
+
+    Avoids the trap where '(S)AM' or '(H) AM' inside compound statuses like
+    'FLD CONCUR(S)AM' or 'CONCURRED(H) AM' is mistaken for a current location.
+    """
+    if not status:
+        return None
+    su = status.upper()
+
+    # Terminal-ish states first
+    if "CHAPTER" in su or "SIGNED INTO LAW" in su or "LAW W/O" in su:
+        return "GOV"
+    if "VETOED" in su or "VETO SUSTAINED" in su or "VETO OVERRIDDEN" in su:
+        return "GOV"
+    if "TRANSM TO GOVERNOR" in su or "TRANSMITTED TO GOVERNOR" in su:
+        return "GOV"
+    if "WITHDRAWN" in su or "PERMANENTLY FILED" in su or "LEGIS RESOLVE" in su:
+        return "DONE"
+    if "FAILED" in su:
+        # Failed (H), Failed (S), etc — bill is dead in whichever chamber.
+        return "DONE"
+
+    # Concurrence outcomes return the bill to its origin chamber.
+    if "FLD CONCUR" in su or "CONCURRED" in su:
+        return origin
+
+    # Explicit chamber prefix at the start: "(H) STA", "(H)HELD IN ...",
+    # "(S) RLS", "(H) FLD CONCUR(S)AM" already handled above.
+    if su.startswith("(H)"):
+        return "H"
+    if su.startswith("(S)"):
+        return "S"
+
+    # Statuses that don't start with a chamber prefix but include one early:
+    # "3RD RDG,5/11 CAL(S)" — chamber is at the end.
+    # "TRANSMITTED TO (S)" / "TRANSMITTED TO (H)"
+    if "TRANSMITTED TO (S)" in su:
+        return "S"
+    if "TRANSMITTED TO (H)" in su:
+        return "H"
+    if "READ FIRST TIME (S)" in su:
+        return "S"
+    if "READ FIRST TIME (H)" in su:
+        return "H"
+    if "CAL(S)" in su or "(S) CALENDAR" in su:
+        return "S"
+    if "CAL(H)" in su or "(H) CALENDAR" in su:
+        return "H"
+
+    return None
+
+
 def _truncate(text, length=60):
     if len(text) <= length:
         return text
@@ -542,10 +601,13 @@ def dashboard_stats(session="34"):
         prefix = b["billnumber"].split()[0] if b["billnumber"] else "?"
         type_counts[prefix] += 1
 
-        # Crossover
-        if origin == "H" and "(S)" in status:
+        # Crossover — only count bills currently in the other chamber.
+        # (Avoid false positives from FLD CONCUR / CONCURRED statuses where
+        # the (S)/(H) marker is part of an amendment reference.)
+        loc = _current_chamber(status, origin)
+        if origin == "H" and loc == "S":
             crossover_to_senate += 1
-        if origin == "S" and "(H)" in status:
+        if origin == "S" and loc == "H":
             crossover_to_house += 1
 
         # Veto outcomes — count from action history, since current status may
@@ -1076,35 +1138,45 @@ def governor_bills(session="34"):
             if code == "002":
                 cmte_reports += 1
 
-        # Categorize status
+        # Categorize status (use the smarter chamber detector to avoid
+        # FLD CONCUR / CONCURRED false positives for crossover).
         status_upper = status.upper()
+        loc = _current_chamber(status, origin)
         if "CHAPTER" in status_upper:
             category = "Chaptered"
-        elif "TRANSM TO GOV" in status_upper:
+        elif status_upper == "TRANSM TO GOVERNOR":
             category = "At Governor"
-        elif "VETOED" in status_upper:
-            category = "Vetoed"
         elif "VETO SUSTAINED" in status_upper:
             category = "Veto Sustained"
+        elif "VETO OVERRIDDEN" in status_upper:
+            category = "Veto Overridden"
+        elif "VETOED" in status_upper:
+            category = "Vetoed"
         elif "FAILED" in status_upper:
             category = "Failed"
         elif "WITHDRAWN" in status_upper:
             category = "Withdrawn"
-        elif "(S)" in status and origin == "H":
+        elif "FLD CONCUR" in status_upper or "CONCURRED" in status_upper:
+            category = "Concurrence"
+        elif origin == "H" and loc == "S":
             category = "Crossed to Senate"
-        elif "(H)" in status and origin == "S":
+        elif origin == "S" and loc == "H":
             category = "Crossed to House"
         else:
             category = "In Committee"
 
         status_counts[category] += 1
 
-        # Current committee
-        # Extract from status like "(H) FIN" -> "FIN"
-        import re as _re
-        cmte_match = _re.search(r'\([HS]\)\s*(\S+)', status)
-        if cmte_match:
-            committee_counts[f"({status[status.index('(')+1]}) {cmte_match.group(1)}"] += 1
+        # Current committee — only when bill is actually sitting in committee.
+        if category == "In Committee" or category.startswith("Crossed"):
+            import re as _re
+            # Find the chamber prefix at the start of the status text.
+            m = _re.match(r'\(([HS])\)\s*(\S+)', status)
+            if m:
+                ch, cmte = m.group(1), m.group(2)
+                # Only treat as a committee code if it's an alpha code.
+                if cmte.replace("&", "").isalpha() and len(cmte) <= 4:
+                    committee_counts[f"({ch}) {cmte}"] += 1
 
         bills.append({
             "billnumber": _compact_billnumber(bn),
@@ -1148,9 +1220,34 @@ def governor_bills(session="34"):
                 req = urllib.request.Request(url, headers={"User-Agent": "basis-browser/0.1"})
                 with urllib.request.urlopen(req, timeout=15) as resp:
                     html = resp.read().decode("utf-8", errors="replace")
-                for m in re.finditer(r'Bill/Detail/\?Root=([^"]+)"[^>]*>([^<]+)</a>', html):
-                    bn = " ".join(m.group(2).strip().split())
-                    cached_bills.append(bn)
+                # Walk the schedule line-by-line tracking the current
+                # (committee, datetime) context. Dedup per agenda so a
+                # bill listed twice in one meeting (e.g. once in the bill
+                # list and once under documents) only counts as one hearing.
+                current_cmte = ""
+                current_dt = ""
+                seen_in_agenda = set()
+                for line in html.split("\n"):
+                    cm = re.search(r'<td colspan="2">\(([HS])\)([^<]+)</td>', line)
+                    if cm:
+                        current_cmte = f"({cm.group(1)}){cm.group(2).strip()}"
+                        seen_in_agenda = set()
+                        continue
+                    dm = re.search(
+                        r'<td colspan="2">((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d+\s+\w+\s+\d+:\d+\s+[AP]M)</td>',
+                        line,
+                    )
+                    if dm:
+                        current_dt = dm.group(1)
+                        seen_in_agenda = set()
+                        continue
+                    bm = re.search(r'Bill/Detail/\?Root=([^"]+)"[^>]*>([^<]+)</a>', line)
+                    if bm and current_cmte and current_dt:
+                        bn = " ".join(bm.group(2).strip().split())
+                        agenda_key = f"{current_cmte}|{current_dt}|{bn}"
+                        if agenda_key not in seen_in_agenda:
+                            seen_in_agenda.add(agenda_key)
+                            cached_bills.append(bn)
             except Exception:
                 pass
             cache.put(cache_key, cached_bills)

@@ -79,6 +79,7 @@
             var inCommittee = sc['In Committee'] || 0;
             var crossedS = sc['Crossed to Senate'] || 0;
             var crossedH = sc['Crossed to House'] || 0;
+            var concurrence = sc['Concurrence'] || 0;
             var chaptered = sc['Chaptered'] || 0;
             var atGov = sc['At Governor'] || 0;
             var vetoed = sc['Vetoed'] || 0;
@@ -98,6 +99,7 @@
             grid += statCard(d.total_moveouts, 'Committee Moveouts', d.bills_with_moveouts + ' of ' + d.total + ' bills moved');
             grid += statCard(inCommittee, 'In Committee');
             grid += statCard(crossedS + crossedH, 'Crossed Over', crossedS + ' to S / ' + crossedH + ' to H');
+            grid += statCard(concurrence, 'In Concurrence');
             grid += statCard(chaptered, 'Chaptered');
             grid += statCard(atGov, 'At Governor');
             grid += statCard(vetoed, 'Vetoed');
