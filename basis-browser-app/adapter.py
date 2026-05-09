@@ -238,12 +238,28 @@ def _crossover_bills(origin_chamber, session="34"):
 
     seen = set()
     crossed = []
+    origin_marker = f"({origin_chamber})"
     for b in all_bills:
         key = b["billnumber"]
         if key in seen:
             continue
         seen.add(key)
-        if status_marker in b["status"]:
+        status = b["status"]
+        # Smarter detection: a bill is "in the other chamber" if its status
+        # places it there as the current location. Reject statuses that
+        # explicitly show the bill back in its origin chamber, or where
+        # `(H)` / `(S)` only appears as part of an amendment reference like
+        # `FLD CONCUR(S)AM` or `CONCURRED(H) AM`.
+        status_upper = status.upper()
+        if origin_marker in status:
+            # Bill currently shows origin chamber → it's back home.
+            continue
+        if "FLD CONCUR" in status_upper or "CONCURRED" in status_upper:
+            # Concurrence outcomes mean the bill returned to its origin chamber.
+            continue
+        if status_marker in status or status_upper.startswith(f"TRANSMITTED TO ({other})"):
+            crossed.append(b)
+        elif status_upper == f"READ FIRST TIME ({other})":
             crossed.append(b)
 
     hearings = _fetch_hearing_schedule(chamber=other)
