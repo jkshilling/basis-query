@@ -153,6 +153,35 @@ a.bill-link:hover, .bill-number a:hover { text-decoration: underline; }
 .cmte-link { color: inherit; text-decoration: none; }
 .cmte-link:hover { text-decoration: underline; }
 
+/* Search form */
+.search-form { margin-bottom: 16px; display: flex; gap: 8px; }
+.search-form input[type="text"] {
+    flex: 1; padding: 8px 12px; font-size: 14px;
+    border: 1px solid #ccc; border-radius: 4px;
+}
+.search-form button {
+    padding: 8px 16px; font-size: 14px; background: #1a5276;
+    color: #fff; border: 1px solid #1a5276; border-radius: 4px; cursor: pointer;
+}
+.search-form button:hover { background: #2980b9; }
+
+/* Nav search shortcut */
+nav .nav-search {
+    margin-left: auto; padding: 3px 8px; font-size: 12px;
+    border: 1px solid #bbb; border-radius: 3px; width: 220px;
+}
+nav { display: flex; align-items: center; }
+
+/* Back link on detail pages */
+.back-link {
+    display: inline-block; font-size: 12px; color: #1a5276;
+    text-decoration: none; margin-bottom: 8px;
+}
+.back-link:hover { text-decoration: underline; }
+
+/* Footer freshness */
+.freshness { color: #aaa; margin-top: 4px; font-size: 10px; }
+
 /* Sortable table headers */
 table.sortable th { cursor: pointer; user-select: none; }
 table.sortable th:hover { background: #e8e8e8; }

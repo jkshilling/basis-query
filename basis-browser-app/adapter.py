@@ -1642,3 +1642,69 @@ def top_subjects(session="34", limit=10):
     result = counts.most_common(limit)
     _cache.put("top_subjects", result)
     return result
+
+
+def search_bills(query, session="34", limit=50):
+    """Search bills by number, title, sponsor name, or subject.
+
+    Reuses cached _fetch_all_bills with Sponsors+Versions+Subjects so it's
+    fast after the cache is warm.
+    """
+    q = (query or "").strip().lower()
+    if not q:
+        return []
+
+    matches = []
+    for chamber in ["H", "S"]:
+        bills = _fetch_all_bills(
+            chamber, session,
+            queries=["Sponsors", "Versions", "Subjects"],
+        )
+        for b in bills:
+            score = 0
+            bn = b["billnumber"].lower()
+            title = (b.get("short_title") or "").lower()
+            sponsor = (b.get("prime_sponsor") or "").lower()
+            subjects = [s.lower() for s in b.get("subjects", [])]
+
+            # Bill number is highest priority — exact or prefix match
+            if bn == q:
+                score = 100
+            elif bn.startswith(q):
+                score = 80
+            elif q in bn:
+                score = 60
+            elif q in sponsor:
+                score = 40
+            elif q in title:
+                score = 30
+            elif any(q in s for s in subjects):
+                score = 20
+
+            if score > 0:
+                matches.append({
+                    "billnumber": b["billnumber"],
+                    "title": b["short_title"],
+                    "status": b["status"],
+                    "committee_code": b["committee_code"],
+                    "prime_sponsor": b.get("prime_sponsor", ""),
+                    "subjects": b.get("subjects", []),
+                    "score": score,
+                })
+
+    matches.sort(key=lambda m: (-m["score"], m["billnumber"]))
+    return matches[:limit]
+
+
+def cache_freshness():
+    """Report when various caches were last populated.
+
+    Returns dict of key -> seconds since cache write.
+    """
+    import cache as _cache
+    import time
+    out = {}
+    now = time.monotonic()
+    for k, entry in _cache._cache.items():
+        out[k] = int(now - entry["time"])
+    return out

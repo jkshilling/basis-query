@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search — BASIS Browser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='sort.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body class="wide">
+    <nav>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
+    </nav>
+
+    <header>
+        <h1>Search Bills</h1>
+        <p>Search by bill number, title, sponsor name, or subject.</p>
+    </header>
+
+    <form method="get" action="/search" class="search-form">
+        <input type="text" name="q" id="q" value="{{ q }}" placeholder="Try: HB 173, Bjorkman, fisheries, education" autofocus>
+        <button type="submit">Search</button>
+    </form>
+
+    <div id="results"></div>
+
+    <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
+
+    <script>
+    var Q = {{ q|tojson }};
+    function esc(s) {
+        if (s === undefined || s === null) return '';
+        var d = document.createElement('div');
+        d.textContent = String(s);
+        return d.innerHTML;
+    }
+    function chamberSpan(c) {
+        var cls = c === 'S' ? 'chamber-s' : 'chamber-h';
+        return '<span class="' + cls + '">(' + c + ')</span>';
+    }
+
+    if (Q.trim()) {
+        document.getElementById('results').innerHTML = '<p class="loading">Searching&hellip;</p>';
+        fetch('/api/search?q=' + encodeURIComponent(Q))
+            .then(r => r.json())
+            .then(resp => {
+                if (resp.error) {
+                    document.getElementById('results').innerHTML = '<div class="error">' + esc(resp.error) + '</div>';
+                    return;
+                }
+                if (!resp.results.length) {
+                    document.getElementById('results').innerHTML = '<p class="empty">No matches for "' + esc(Q) + '".</p>';
+                    return;
+                }
+                var html = '<p class="count">' + resp.results.length + ' match' + (resp.results.length !== 1 ? 'es' : '') + ' for "<strong>' + esc(Q) + '</strong>"</p>';
+                html += '<table class="compact sortable"><thead><tr><th>Bill</th><th>Title</th><th>Sponsor</th><th>Status</th><th>Subjects</th></tr></thead><tbody>';
+                resp.results.forEach(function(r) {
+                    var subjects = (r.subjects || []).slice(0, 3).join(', ');
+                    if (r.subjects && r.subjects.length > 3) subjects += ', …';
+                    html += '<tr>';
+                    html += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(r.billnumber) + '">' + esc(r.billnumber) + '</a></td>';
+                    html += '<td title="' + esc(r.title) + '">' + esc(r.title) + '</td>';
+                    html += '<td>' + esc(r.prime_sponsor) + '</td>';
+                    html += '<td>' + esc(r.status) + '</td>';
+                    html += '<td title="' + esc((r.subjects || []).join(', ')) + '">' + esc(subjects) + '</td>';
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                document.getElementById('results').innerHTML = html;
+                attachSorting();
+            })
+            .catch(function(err) {
+                document.getElementById('results').innerHTML = '<div class="error">' + esc(err) + '</div>';
+            });
+    }
+    </script>
+</body>
+</html>

@@ -9,6 +9,7 @@ from adapter import (
     house_bills_in_senate, senate_bills_in_house, dashboard_stats,
     action_code_counts, bill_progress, activity_feed,
     governor_bills, _fetch_bill_detail, committee_detail, top_subjects,
+    search_bills, cache_freshness,
 )
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -147,6 +148,29 @@ def api_dashboard():
         return jsonify({"stats": stats, "error": None})
     except Exception as exc:
         return jsonify({"stats": None, "error": str(exc)})
+
+
+@app.route("/search")
+def search_page():
+    return render_template("search.html", q=request.args.get("q", ""))
+
+
+@app.route("/api/search")
+def api_search():
+    q = request.args.get("q", "")
+    try:
+        results = search_bills(q)
+        return jsonify({"results": results, "error": None})
+    except Exception as exc:
+        return jsonify({"results": [], "error": str(exc)})
+
+
+@app.route("/api/freshness")
+def api_freshness():
+    try:
+        return jsonify(cache_freshness())
+    except Exception:
+        return jsonify({})
 
 
 @app.route("/api/top-subjects")

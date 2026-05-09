@@ -5,11 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ billnumber }} — BASIS Browser</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
     <nav>
-        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/action-codes">Action Codes</a>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
     </nav>
+
+    <a href="javascript:history.back()" class="back-link">← Back</a>
 
     <header>
         <h1 id="bill-header">{{ billnumber }}</h1>
@@ -19,34 +22,34 @@
     <div id="loading" class="loading">Loading bill detail&hellip;</div>
     <div id="content" style="display:none">
 
-        <section>
+        <section id="sec-status">
             <h2>Status</h2>
             <table class="detail-table">
                 <tbody id="status-body"></tbody>
             </table>
         </section>
 
-        <section>
+        <section id="sec-sponsors">
             <h2>Sponsors</h2>
             <div id="sponsors-section"></div>
         </section>
 
-        <section>
+        <section id="sec-subjects">
             <h2>Subjects</h2>
             <div id="subjects-section"></div>
         </section>
 
-        <section>
+        <section id="sec-versions">
             <h2>Versions</h2>
             <table class="compact" id="versions-table"></table>
         </section>
 
-        <section>
+        <section id="sec-fiscal">
             <h2>Fiscal Notes</h2>
             <div id="fiscal-section"></div>
         </section>
 
-        <section>
+        <section id="sec-actions">
             <h2>Action Timeline</h2>
             <table class="compact" id="actions-table"></table>
         </section>
@@ -96,31 +99,35 @@
             document.getElementById('status-body').innerHTML = status_html;
 
             // Sponsors
-            var sp_html = '';
-            if (b.sponsors.length) {
-                sp_html += '<p><strong>Prime Sponsor' + (b.sponsors.length > 1 ? 's' : '') + ':</strong> ';
-                sp_html += b.sponsors.map(function(s) {
-                    return esc(s.name) + ' <span class="sp-meta">(' + esc(s.party) + ' D' + esc(s.district) + ')</span>';
-                }).join(', ');
-                sp_html += '</p>';
+            var hasSponsors = b.sponsors.length || b.cosponsors.length || b.committee_sponsor;
+            if (hasSponsors) {
+                var sp_html = '';
+                if (b.sponsors.length) {
+                    sp_html += '<p><strong>Prime Sponsor' + (b.sponsors.length > 1 ? 's' : '') + ':</strong> ';
+                    sp_html += b.sponsors.map(function(s) {
+                        return esc(s.name) + ' <span class="sp-meta">(' + esc(s.party) + ' D' + esc(s.district) + ')</span>';
+                    }).join(', ');
+                    sp_html += '</p>';
+                }
+                if (b.committee_sponsor) {
+                    sp_html += '<p><strong>Committee Sponsor:</strong> ' + esc(b.committee_sponsor) + '</p>';
+                }
+                if (b.cosponsors.length) {
+                    sp_html += '<p><strong>Cosponsors (' + b.cosponsors.length + '):</strong> ';
+                    sp_html += b.cosponsors.map(function(s) { return esc(s.name); }).join(', ');
+                    sp_html += '</p>';
+                }
+                document.getElementById('sponsors-section').innerHTML = sp_html;
+            } else {
+                document.getElementById('sec-sponsors').style.display = 'none';
             }
-            if (b.committee_sponsor) {
-                sp_html += '<p><strong>Committee Sponsor:</strong> ' + esc(b.committee_sponsor) + '</p>';
-            }
-            if (b.cosponsors.length) {
-                sp_html += '<p><strong>Cosponsors (' + b.cosponsors.length + '):</strong> ';
-                sp_html += b.cosponsors.map(function(s) { return esc(s.name); }).join(', ');
-                sp_html += '</p>';
-            }
-            if (!sp_html) sp_html = '<p class="empty">No sponsor data.</p>';
-            document.getElementById('sponsors-section').innerHTML = sp_html;
 
             // Subjects
             if (b.subjects.length) {
                 document.getElementById('subjects-section').innerHTML =
                     b.subjects.map(function(s) { return '<span class="tag">' + esc(s) + '</span>'; }).join(' ');
             } else {
-                document.getElementById('subjects-section').innerHTML = '<p class="empty">No subjects assigned.</p>';
+                document.getElementById('sec-subjects').style.display = 'none';
             }
 
             // Versions
@@ -132,7 +139,7 @@
                 v_html += '</tbody>';
                 document.getElementById('versions-table').innerHTML = v_html;
             } else {
-                document.getElementById('versions-table').outerHTML = '<p class="empty">No versions found.</p>';
+                document.getElementById('sec-versions').style.display = 'none';
             }
 
             // Fiscal notes
@@ -144,7 +151,7 @@
                 f_html += '</ul>';
                 document.getElementById('fiscal-section').innerHTML = f_html;
             } else {
-                document.getElementById('fiscal-section').innerHTML = '<p class="empty">No fiscal notes.</p>';
+                document.getElementById('sec-fiscal').style.display = 'none';
             }
 
             // Action timeline
@@ -162,7 +169,7 @@
                 a_html += '</tbody>';
                 document.getElementById('actions-table').innerHTML = a_html;
             } else {
-                document.getElementById('actions-table').outerHTML = '<p class="empty">No action history.</p>';
+                document.getElementById('sec-actions').style.display = 'none';
             }
 
             document.getElementById('loading').style.display = 'none';

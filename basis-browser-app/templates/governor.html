@@ -7,10 +7,11 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script src="{{ url_for('static', filename='sort.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
     <nav>
-        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/bill-progress">Bill Progress</a> | <strong>Governor</strong> | <a href="/action-codes">Action Codes</a>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/bill-progress">Bill Progress</a> | <strong>Governor</strong> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
     </nav>
     <header>
         <h1>Governor's Bills</h1>
@@ -53,15 +54,9 @@
         return d.innerHTML;
     }
 
-    var steps = [
-        [0,    'Connecting to BASIS API\u2026'],
-        [2000, 'Scanning bill actions\u2026'],
-        [8000, 'Identifying Governor bills\u2026'],
-    ];
+    // Honest loading: cold loads are slow, cached are instant.
     var stepEl = document.getElementById('load-step');
-    var timers = steps.map(function(s) {
-        return setTimeout(function() { stepEl.textContent = s[1]; }, s[0]);
-    });
+    var timers = [];
 
     fetch('/api/governor')
         .then(r => r.json())
