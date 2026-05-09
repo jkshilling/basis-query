@@ -138,7 +138,14 @@
             // Floor calendar
             function floorTable(bills, containerId) {
                 if (!bills.length) {
-                    document.getElementById(containerId).innerHTML = '<p class="empty">Nothing calendared.</p>';
+                    // Bills get added to a chamber's CAL status only when a
+                    // floor session is scheduled. On weekends/recesses both
+                    // sides are typically empty.
+                    var dow = new Date().getDay();
+                    var msg = (dow === 0 || dow === 6)
+                        ? 'No floor session scheduled (weekend).'
+                        : 'No bills currently calendared. Either no session scheduled or the calendar hasn\'t been posted yet.';
+                    document.getElementById(containerId).innerHTML = '<p class="empty">' + msg + '</p>';
                     return;
                 }
                 var html = '<table class="compact"><thead><tr><th>Bill</th><th>Title</th><th>Reading</th><th>Status</th></tr></thead><tbody>';

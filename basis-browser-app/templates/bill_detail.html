@@ -88,8 +88,16 @@
                           : l.score >= 50 ? '#2980b9'
                           : l.score >= 30 ? '#f39c12'
                           : '#95a5a6';
+                var formula = "Legs Score formula:\n" +
+                    "+30  Committee substitute (CS) adopted\n" +
+                    "+25  First committee report within 30 days of intro\n" +
+                    "+15  Multiple committee reports\n" +
+                    "+15  Action in last 14 days\n" +
+                    "+15  Crossed to other chamber\n" +
+                    "100  Chaptered (signed into law)\n\n" +
+                    "Calibrated against actual session 34 outcomes — the strongest single signal of \"has legs\" was whether a committee adopted a CS.";
                 var html = '<div class="legs-card">';
-                html += '<div class="legs-score" style="color:' + color + '">' + l.score + '</div>';
+                html += '<div class="legs-score" style="color:' + color + '" title="' + esc(formula) + '">' + l.score + '</div>';
                 html += '<div class="legs-meta">';
                 html += '<div class="legs-stage">Stage ' + l.stage + ': <strong>' + esc(l.stage_label) + '</strong></div>';
                 if (l.reasons && l.reasons.length) {

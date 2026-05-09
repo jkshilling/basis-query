@@ -59,9 +59,11 @@
         'Failed to Adopt CS': '#c0392b',
     };
 
-    function loadFeed(days) {
-        document.getElementById('loading').style.display = 'block';
-        document.getElementById('content').style.display = 'none';
+    function loadFeed(days, quiet) {
+        if (!quiet) {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('content').style.display = 'none';
+        }
         var stepEl = document.getElementById('load-step');
         stepEl.textContent = 'Connecting to BASIS API\u2026';
 
@@ -129,6 +131,13 @@
 
     // Initial load
     loadFeed(3);
+
+    // Auto-refresh every 5 minutes when the tab is visible. Quiet refresh:
+    // no loading overlay; rebuild the feed in place.
+    setInterval(function() {
+        if (document.hidden) return;
+        loadFeed(3, true);
+    }, 5 * 60 * 1000);
     </script>
 </body>
 </html>

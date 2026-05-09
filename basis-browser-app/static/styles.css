@@ -127,6 +127,44 @@ nav a:hover { text-decoration: underline; }
 
 footer { margin-top: 24px; color: #999; font-size: 11px; text-align: center; }
 
+/* ---------- Mobile layout ---------- */
+@media (max-width: 768px) {
+    body { padding: 12px; font-size: 13px; }
+    body.wide { max-width: none; }
+    header h1 { font-size: 16px; }
+
+    /* Nav: wrap to multiple lines, comfortable spacing */
+    nav { font-size: 12px; line-height: 2; flex-wrap: wrap; }
+
+    /* Stack side-by-side grids */
+    .crossover-grid,
+    .charts-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Stat cards: 2 per row instead of 4 */
+    .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .stat-number { font-size: 22px; }
+    .stat-card { padding: 10px; }
+
+    /* Wide tables: horizontal scroll inside their section */
+    section { overflow-x: auto; }
+    table.compact { table-layout: auto; }
+    table.compact td:nth-child(2) { white-space: normal; }
+
+    /* Chart heights: shrink so the page doesn't feel infinite */
+    .chart-container canvas { height: 240px !important; }
+    .chart-wide canvas { height: 320px !important; }
+
+    /* Search form: stack input+button on tight screens if needed */
+    .search-form { flex-wrap: wrap; }
+
+    /* Legs card: stack score above details */
+    .legs-card { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .legs-score { font-size: 30px; }
+}
+
+
 /* Chamber color coding */
 .chamber-h { color: #1a5276; font-weight: 600; }
 .chamber-s { color: #922b21; font-weight: 600; }
