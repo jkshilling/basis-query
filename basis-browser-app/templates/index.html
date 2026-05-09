@@ -52,13 +52,23 @@
         return prefix;
     }
 
+    function referralChain(b) {
+        var chain = b.referral_chain || [];
+        if (!chain.length) return '\u2014';
+        var current = b.committee_code || '';
+        return chain.map(function(c) {
+            if (c === current) return '<strong>' + esc(c) + '</strong>';
+            return esc(c);
+        }).join(' \u2192 ');
+    }
+
     function buildTable(bills, chamber) {
         if (!bills.length) return '<p class="empty">None found.</p>';
         let html = '<table class="compact sortable"><thead><tr>';
         html += '<th class="sortable-col" data-col="billnumber">Bill</th>';
         html += '<th class="sortable-col" data-col="short_title">Title</th>';
         html += '<th>Cmte</th>';
-        html += '<th class="center">Next</th>';
+        html += '<th>Path</th>';
         html += '<th class="center">Hearing</th>';
         html += '</tr></thead><tbody>';
         bills.forEach(b => {
@@ -66,7 +76,7 @@
             html += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
             html += '<td title="' + esc(b.short_title) + '">' + esc(b.short_title) + '</td>';
             html += '<td>' + locationLabel(b, chamber) + '</td>';
-            html += '<td class="center">' + (esc(b.next_referral) || '\u2014') + '</td>';
+            html += '<td>' + referralChain(b) + '</td>';
             html += '<td class="center">' + (esc(b.next_hearing) || '\u2014') + '</td>';
             html += '</tr>';
         });

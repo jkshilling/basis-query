@@ -43,15 +43,15 @@ table.compact th, table.compact td {
 }
 /* Crossover table column widths (5 columns) */
 .crossover-grid table.compact th:nth-child(1),
-.crossover-grid table.compact td:nth-child(1) { width: 14%; }
+.crossover-grid table.compact td:nth-child(1) { width: 12%; }
 .crossover-grid table.compact th:nth-child(2),
-.crossover-grid table.compact td:nth-child(2) { width: 36%; }
+.crossover-grid table.compact td:nth-child(2) { width: 32%; }
 .crossover-grid table.compact th:nth-child(3),
-.crossover-grid table.compact td:nth-child(3) { width: 14%; }
+.crossover-grid table.compact td:nth-child(3) { width: 12%; }
 .crossover-grid table.compact th:nth-child(4),
-.crossover-grid table.compact td:nth-child(4) { width: 8%; }
+.crossover-grid table.compact td:nth-child(4) { width: 18%; }
 .crossover-grid table.compact th:nth-child(5),
-.crossover-grid table.compact td:nth-child(5) { width: 28%; }
+.crossover-grid table.compact td:nth-child(5) { width: 26%; }
 table.compact th { font-size: 10px; }
 .center { text-align: center; }
 

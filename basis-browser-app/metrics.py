@@ -48,14 +48,35 @@ def _crossover_bills(origin_chamber, session="34"):
         elif status_upper == f"READ FIRST TIME ({other})":
             crossed.append(b)
 
-    # Note: fetch_all_bills with queries=["Actions"] uses parse_bills_extended
-    # which sets next_referral=""; populate it now from the cached actions.
-    from parse import next_referral, strip_ns
-    import xml.etree.ElementTree as ET
-    # Not strictly needed for the page — leave as-is.
+    # For each crossed bill, look up the destination chamber's referral
+    # list (code 091 in the other chamber) and surface both the next
+    # committee AND the full chain so callers can render whichever is
+    # most useful.
+    actions_by_bill = {}
+    for bn, _, _, _, actions in scan_all_actions(session):
+        actions_by_bill[compact_billnumber(bn)] = actions
 
-    hearings = fetch_hearing_schedule(chamber=other)
+    for b in crossed:
+        bn = b["billnumber"]
+        current_code = b.get("committee_code") or ""
+        actions = actions_by_bill.get(bn, [])
+        next_ref = ""
+        chain = []
+        for code, achamber, _jdate, text in actions:
+            if code == "091" and achamber == other:
+                chain = [c.strip() for c in text.split(",") if c.strip()]
+                try:
+                    idx = chain.index(current_code)
+                    if idx + 1 < len(chain):
+                        next_ref = chain[idx + 1]
+                except ValueError:
+                    pass
+                break
+        b["next_referral"] = next_ref
+        b["referral_chain"] = chain
+
     from parse import compact_hearing
+    hearings = fetch_hearing_schedule(chamber=other)
     for b in crossed:
         b["next_hearing"] = compact_hearing(hearings.get(b["billnumber"], ""))
 
