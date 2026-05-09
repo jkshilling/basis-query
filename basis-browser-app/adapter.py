@@ -539,15 +539,17 @@ def _fetch_hearing_counts(session="34"):
         windows.append((cursor, window_end))
         cursor = window_end + dt.timedelta(days=1)
 
-    # Past windows (ending more than 14 days ago) cache for ~30 days; recent ones for 1 hour
-    for ws, we in windows:
+    # Fetch all windows in parallel. Past windows (>14 days old) cache for
+    # 30 days so they're usually a fast cache hit; recent ones refetch hourly.
+    from concurrent.futures import ThreadPoolExecutor
+    def _one(ws, we):
         days_old = (today - we).days
-        if days_old > 14:
-            cache_seconds = 30 * 24 * 3600  # 30 days
-        else:
-            cache_seconds = 3600  # 1 hour
-        window_counts = _fetch_hearing_window(session, ws, we, cache_seconds)
-        hearings.update(window_counts)
+        cache_seconds = 30 * 24 * 3600 if days_old > 14 else 3600
+        return _fetch_hearing_window(session, ws, we, cache_seconds)
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        for window_counts in ex.map(lambda w: _one(*w), windows):
+            hearings.update(window_counts)
 
     return hearings
 
@@ -1193,70 +1195,80 @@ def governor_bills(session="34"):
 
     # Scan hearing schedule for Governor bill appearances
     import datetime as dt
+    from concurrent.futures import ThreadPoolExecutor
     bill_hearing_counts = Counter()
     gov_billnumbers = set(b["billnumber"] for b in bills)
 
     today = dt.date.today()
     start = dt.date(2025, 1, 1)
     end_date = today
-    while start < end_date:
-        window_end = min(start + dt.timedelta(days=13), end_date)
-        s = start.strftime("%m/%d/%y")
-        e = window_end.strftime("%m/%d/%y")
 
-        # Cache each window's bill list separately; past windows cache for 30 days
-        days_old = (today - window_end).days
+    # Build all 2-week windows up front so we can fetch them in parallel.
+    windows = []
+    cursor = start
+    while cursor < end_date:
+        window_end = min(cursor + dt.timedelta(days=13), end_date)
+        windows.append((cursor, window_end))
+        cursor = window_end + dt.timedelta(days=1)
+
+    def _fetch_window_bills(args):
+        ws, we = args
+        s = ws.strftime("%m/%d/%y")
+        e = we.strftime("%m/%d/%y")
+        days_old = (today - we).days
         cache_key = f"sched_bills_{s}_{e}"
         cache_max_age = 30 * 24 * 3600 if days_old > 14 else 3600
         cached_bills = cache.get(cache_key, max_age=cache_max_age)
+        if cached_bills is not None:
+            return cached_bills
 
-        if cached_bills is None:
-            cached_bills = []
-            try:
-                url = (
-                    f"{SCHEDULE_URL}?mode=results&type=&com=&"
-                    f"startDate={s}&endDate={e}&chamber="
+        cached_bills = []
+        try:
+            url = (
+                f"{SCHEDULE_URL}?mode=results&type=&com=&"
+                f"startDate={s}&endDate={e}&chamber="
+            )
+            req = urllib.request.Request(url, headers={"User-Agent": "basis-browser/0.1"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                html = resp.read().decode("utf-8", errors="replace")
+            # Walk the schedule line-by-line tracking (committee, datetime).
+            # Dedupe per (cmte, dt, bill) so a bill linked twice in one
+            # agenda (e.g. once in bill list, once under documents) counts
+            # as one hearing.
+            current_cmte = ""
+            current_dt = ""
+            seen_in_agenda = set()
+            for line in html.split("\n"):
+                cm = re.search(r'<td colspan="2">\(([HS])\)([^<]+)</td>', line)
+                if cm:
+                    current_cmte = f"({cm.group(1)}){cm.group(2).strip()}"
+                    seen_in_agenda = set()
+                    continue
+                dm = re.search(
+                    r'<td colspan="2">((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d+\s+\w+\s+\d+:\d+\s+[AP]M)</td>',
+                    line,
                 )
-                req = urllib.request.Request(url, headers={"User-Agent": "basis-browser/0.1"})
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    html = resp.read().decode("utf-8", errors="replace")
-                # Walk the schedule line-by-line tracking the current
-                # (committee, datetime) context. Dedup per agenda so a
-                # bill listed twice in one meeting (e.g. once in the bill
-                # list and once under documents) only counts as one hearing.
-                current_cmte = ""
-                current_dt = ""
-                seen_in_agenda = set()
-                for line in html.split("\n"):
-                    cm = re.search(r'<td colspan="2">\(([HS])\)([^<]+)</td>', line)
-                    if cm:
-                        current_cmte = f"({cm.group(1)}){cm.group(2).strip()}"
-                        seen_in_agenda = set()
-                        continue
-                    dm = re.search(
-                        r'<td colspan="2">((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d+\s+\w+\s+\d+:\d+\s+[AP]M)</td>',
-                        line,
-                    )
-                    if dm:
-                        current_dt = dm.group(1)
-                        seen_in_agenda = set()
-                        continue
-                    bm = re.search(r'Bill/Detail/\?Root=([^"]+)"[^>]*>([^<]+)</a>', line)
-                    if bm and current_cmte and current_dt:
-                        bn = " ".join(bm.group(2).strip().split())
-                        agenda_key = f"{current_cmte}|{current_dt}|{bn}"
-                        if agenda_key not in seen_in_agenda:
-                            seen_in_agenda.add(agenda_key)
-                            cached_bills.append(bn)
-            except Exception:
-                pass
-            cache.put(cache_key, cached_bills)
+                if dm:
+                    current_dt = dm.group(1)
+                    seen_in_agenda = set()
+                    continue
+                bm = re.search(r'Bill/Detail/\?Root=([^"]+)"[^>]*>([^<]+)</a>', line)
+                if bm and current_cmte and current_dt:
+                    bn = " ".join(bm.group(2).strip().split())
+                    agenda_key = f"{current_cmte}|{current_dt}|{bn}"
+                    if agenda_key not in seen_in_agenda:
+                        seen_in_agenda.add(agenda_key)
+                        cached_bills.append(bn)
+        except Exception:
+            pass
+        cache.put(cache_key, cached_bills)
+        return cached_bills
 
-        for bn in cached_bills:
-            if bn in gov_billnumbers:
-                bill_hearing_counts[bn] += 1
-
-        start = window_end + dt.timedelta(days=1)
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        for window_bills in ex.map(_fetch_window_bills, windows):
+            for bn in window_bills:
+                if bn in gov_billnumbers:
+                    bill_hearing_counts[bn] += 1
 
     # Add hearing count to each bill
     for b in bills:

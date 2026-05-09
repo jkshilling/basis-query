@@ -2,9 +2,19 @@
 
 import os
 import time
+import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import cache
 from flask import Flask, render_template, jsonify, request
+
+# Structured-ish logging: timestamp logger=name level message key=value pairs.
+logging.basicConfig(
+    level=os.environ.get("BASIS_LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S%z",
+)
+log = logging.getLogger("basis_browser.app")
 from adapter import (
     house_bills_in_senate, senate_bills_in_house, dashboard_stats,
     action_code_counts, bill_progress, activity_feed,
@@ -18,20 +28,49 @@ REFRESH_INTERVAL = 3600  # 1 hour
 
 
 def _refresh_all():
-    """Re-fetch all major data sources, populating caches."""
-    refreshers = [
-        ("crossover", lambda: (house_bills_in_senate(), senate_bills_in_house())),
+    """Re-fetch all major data sources, populating caches.
+
+    Many of these share underlying caches (e.g. _scan_all_actions). We run
+    crossover and dashboard first sequentially so the heavy underlying
+    caches get populated, then fan out the rest in parallel.
+    """
+    t0 = time.monotonic()
+
+    # Stage 1: warm the shared underlying caches (sequential).
+    for name, fn in [
+        ("crossover_h", house_bills_in_senate),
+        ("crossover_s", senate_bills_in_house),
         ("dashboard", dashboard_stats),
+    ]:
+        s = time.monotonic()
+        try:
+            fn()
+            log.info("refresh.step name=%s elapsed=%.1fs status=ok",
+                     name, time.monotonic() - s)
+        except Exception as exc:
+            log.warning("refresh.step name=%s elapsed=%.1fs status=fail err=%r",
+                        name, time.monotonic() - s, exc)
+
+    # Stage 2: independent fetches, parallel.
+    parallel = [
         ("action_codes", action_code_counts),
         ("bill_progress", bill_progress),
         ("activity_feed", activity_feed),
         ("governor", governor_bills),
     ]
-    for name, fn in refreshers:
-        try:
-            fn()
-        except Exception as exc:
-            print(f"[refresh] {name} failed: {exc}", flush=True)
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futures = {ex.submit(fn): name for name, fn in parallel}
+        for fut in futures:
+            name = futures[fut]
+            s = time.monotonic()
+            try:
+                fut.result()
+                log.info("refresh.step name=%s elapsed=%.1fs status=ok",
+                         name, time.monotonic() - s)
+            except Exception as exc:
+                log.warning("refresh.step name=%s status=fail err=%r", name, exc)
+
+    log.info("refresh.complete total_elapsed=%.1fs", time.monotonic() - t0)
 
 
 def _invalidate_top_level_caches():
@@ -49,16 +88,16 @@ def _invalidate_top_level_caches():
 
 def prefetch():
     """Warm the cache once on startup, then refresh hourly."""
-    print("[refresh] startup prefetch", flush=True)
+    log.info("refresh.startup_begin")
     _refresh_all()
-    print("[refresh] startup prefetch complete", flush=True)
+    log.info("refresh.startup_done")
 
     while True:
         time.sleep(REFRESH_INTERVAL)
-        print("[refresh] hourly refresh starting", flush=True)
+        log.info("refresh.hourly_begin")
         _invalidate_top_level_caches()
         _refresh_all()
-        print("[refresh] hourly refresh complete", flush=True)
+        log.info("refresh.hourly_done")
 
 
 @app.route("/")
