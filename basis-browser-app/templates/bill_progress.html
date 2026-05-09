@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bill Progress — BASIS Browser</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='util.js') }}"></script>
     <script src="{{ url_for('static', filename='sort.js') }}"></script>
     <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
@@ -51,12 +52,6 @@
     <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
 
     <script>
-    function esc(s) {
-        if (!s) return '';
-        var d = document.createElement('div');
-        d.textContent = s;
-        return d.innerHTML;
-    }
 
     // Honest loading: cold loads are slow, cached are instant.
     var stepEl = document.getElementById('load-step');

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Crossover Bills — BASIS Browser</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='util.js') }}"></script>
     <script src="{{ url_for('static', filename='sort.js') }}"></script>
     <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
@@ -37,10 +38,6 @@
     <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
 
     <script>
-    function chamberSpan(c) {
-        var cls = c === 'S' ? 'chamber-s' : 'chamber-h';
-        return '<span class="' + cls + '">(' + c + ')</span>';
-    }
 
     function locationLabel(b, chamber) {
         var prefix = chamberSpan(chamber);
@@ -76,13 +73,6 @@
         html += '</tbody></table>';
         html += '<p class="count">' + bills.length + ' bill' + (bills.length !== 1 ? 's' : '') + '</p>';
         return html;
-    }
-
-    function esc(s) {
-        if (!s) return '';
-        var d = document.createElement('div');
-        d.textContent = s;
-        return d.innerHTML;
     }
 
     // Honest loading: cold loads are slow, cached are instant.

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Activity — BASIS Browser</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='util.js') }}"></script>
     <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
@@ -30,12 +31,6 @@
     <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
 
     <script>
-    function esc(s) {
-        if (!s) return '';
-        var d = document.createElement('div');
-        d.textContent = s;
-        return d.innerHTML;
-    }
 
     var labelColors = {
         'Committee Report': '#2980b9',

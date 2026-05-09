@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>({{ chamber }}) {{ code }} — BASIS Browser</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='util.js') }}"></script>
     <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
@@ -33,13 +34,6 @@
     <script>
     var CHAMBER = {{ chamber|tojson }};
     var CODE = {{ code|tojson }};
-
-    function esc(s) {
-        if (s === undefined || s === null) return '';
-        var d = document.createElement('div');
-        d.textContent = String(s);
-        return d.innerHTML;
-    }
 
     fetch('/api/committee/' + encodeURIComponent(CHAMBER) + '/' + encodeURIComponent(CODE))
         .then(r => r.json())

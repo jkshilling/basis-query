@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Action Codes — BASIS Browser</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='util.js') }}"></script>
     <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
@@ -163,13 +164,6 @@
         ['138', 'Before chamber on final passage', 'Floor', 'BEFORE HOUSE ON FINAL PASSAGE'],
         ['900', 'Special session bill', 'Introduction', 'FIRST SPECIAL SESSION BILL'],
     ];
-
-    function esc(s) {
-        if (!s) return '';
-        var d = document.createElement('div');
-        d.textContent = s;
-        return d.innerHTML;
-    }
 
     // Render table immediately with empty count columns
     function renderTable(c23, c24, c25, c26) {

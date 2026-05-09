@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ billnumber }} — BASIS Browser</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='util.js') }}"></script>
     <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
@@ -61,18 +62,6 @@
     <script>
     var BILLNUMBER = {{ billnumber|tojson }};
 
-    function esc(s) {
-        if (s === undefined || s === null) return '';
-        var d = document.createElement('div');
-        d.textContent = String(s);
-        return d.innerHTML;
-    }
-    function chamberPrefix(c) {
-        if (c === 'H') return '<span class="chamber-h">(H)</span>';
-        if (c === 'S') return '<span class="chamber-s">(S)</span>';
-        return '';
-    }
-
     fetch('/api/bill/' + encodeURIComponent(BILLNUMBER))
         .then(r => r.json())
         .then(resp => {
@@ -92,10 +81,10 @@
             status_html += '<tr><th>Current Status</th><td>' + esc(b.status) + '</td></tr>';
             status_html += '<tr><th>Status Date</th><td>' + esc(b.status_date) + '</td></tr>';
             if (b.committee_code) {
-                var cmteLink = '<a href="/committee/' + esc(b.chamber) + '/' + esc(b.committee_code) + '">' + chamberPrefix(b.chamber) + ' ' + esc(b.committee_code) + ' — ' + esc(b.committee) + '</a>';
+                var cmteLink = '<a href="/committee/' + esc(b.chamber) + '/' + esc(b.committee_code) + '">' + chamberSpan(b.chamber) + ' ' + esc(b.committee_code) + ' — ' + esc(b.committee) + '</a>';
                 status_html += '<tr><th>Current Committee</th><td>' + cmteLink + '</td></tr>';
             }
-            status_html += '<tr><th>Origin Chamber</th><td>' + chamberPrefix(b.chamber) + '</td></tr>';
+            status_html += '<tr><th>Origin Chamber</th><td>' + chamberSpan(b.chamber) + '</td></tr>';
             document.getElementById('status-body').innerHTML = status_html;
 
             // Sponsors
@@ -160,7 +149,7 @@
                 b.actions.forEach(function(a) {
                     a_html += '<tr>';
                     a_html += '<td>' + esc(a.date) + '</td>';
-                    a_html += '<td>' + chamberPrefix(a.chamber) + '</td>';
+                    a_html += '<td>' + chamberSpan(a.chamber) + '</td>';
                     a_html += '<td><code>' + esc(a.code) + '</code></td>';
                     a_html += '<td>' + esc(a.label) + '</td>';
                     a_html += '<td>' + esc(a.text) + '</td>';

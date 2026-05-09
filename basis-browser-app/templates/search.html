@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Search — BASIS Browser</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='util.js') }}"></script>
     <script src="{{ url_for('static', filename='sort.js') }}"></script>
     <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
@@ -29,16 +30,6 @@
 
     <script>
     var Q = {{ q|tojson }};
-    function esc(s) {
-        if (s === undefined || s === null) return '';
-        var d = document.createElement('div');
-        d.textContent = String(s);
-        return d.innerHTML;
-    }
-    function chamberSpan(c) {
-        var cls = c === 'S' ? 'chamber-s' : 'chamber-h';
-        return '<span class="' + cls + '">(' + c + ')</span>';
-    }
 
     if (Q.trim()) {
         document.getElementById('results').innerHTML = '<p class="loading">Searching&hellip;</p>';
