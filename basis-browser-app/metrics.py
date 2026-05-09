@@ -480,11 +480,11 @@ def bill_progress(session="34"):
 
     # Sort velocity by Legs Score descending so the most-moving bills
     # show at the top by default. (Users can re-sort by clicking headers.)
-    velocity_full = sorted(velocity, key=lambda x: -x.get("legs_score", 0))
+    velocity_top = sorted(velocity, key=lambda x: -x.get("legs_score", 0))[:100]
 
     result = {
-        # All HB/SB bills, sorted by Legs Score. Sortable in the UI.
-        "velocity": velocity_full,
+        # Top 100 HB/SB bills by Legs Score. Sortable in the UI.
+        "velocity": velocity_top,
         # Momentum and weighted tables are inherently "top N" — keep them
         # capped so they remain focused on what's actually moving.
         "momentum": momentum[:50],
