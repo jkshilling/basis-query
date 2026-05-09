@@ -351,10 +351,13 @@ def bill_progress(session="34"):
             except ValueError:
                 pass
 
+        legs = legs_score(actions, origin)
         velocity.append({
             "billnumber": bn, "title": title, "origin": origin, "status": status,
             "referrals": referrals, "steps": step_days, "raw_steps": steps,
             "total_days": total_days, "step_count": len(steps),
+            "legs_score": legs["score"], "legs_stage": legs["stage"],
+            "legs_stage_label": legs["stage_label"],
         })
 
     velocity.sort(key=lambda x: (-x["step_count"], x["total_days"] or 9999))
@@ -606,6 +609,132 @@ def governor_bills(session="34"):
 
 
 # --- Activity feed ---
+
+STAGE_LABELS = [
+    "Introduced",      # 0 — bill exists but no committee referral acted on
+    "In Committee",    # 1 — referred (003) but no committee report yet
+    "Reported Out",    # 2 — at least one committee report (002)
+    "Engaged",         # 3 — committee substitute adopted (009 / 122)
+    "Crossed Over",    # 4 — transmitted to other chamber (022)
+    "Chaptered",       # 5 — became law (034 / 036)
+]
+
+
+def legs_score(actions, origin, today=None):
+    """Compute a 0-100 'has legs' score and a stage 0-5 from a bill's
+    full action history. Returns dict with score, stage, and reasons.
+
+    Components were calibrated against session 34 outcomes:
+      - 0% of stalled bills had a CS adopted; 64% of crossed bills did,
+        and 75% of chaptered bills did. (CS = strongest single signal.)
+      - 11% of stalled bills got a committee report within 30 days of
+        intro; 33% of crossed; 100% of chaptered.
+    """
+    if today is None:
+        today = datetime.now().date()
+    elif isinstance(today, datetime):
+        today = today.date()
+
+    intro_date = None
+    first_report_date = None
+    report_count = 0
+    has_cs = False
+    crossed = False
+    chaptered = False
+    last_meaningful = None
+
+    meaningful_codes = {
+        "002", "003", "008", "009", "011", "012", "015", "016", "020",
+        "022", "026", "029", "032", "033", "034", "036", "122",
+    }
+
+    for code, achamber, jdate, text in actions:
+        if code == "001" and not intro_date:
+            intro_date = jdate
+        if code == "002" and achamber == origin:
+            report_count += 1
+            if not first_report_date:
+                first_report_date = jdate
+        if code in ("009", "122"):
+            has_cs = True
+        if code == "022" and achamber == origin:
+            crossed = True
+        if code in ("034", "036") and "CHAPTER" in text.upper():
+            chaptered = True
+        if code in meaningful_codes:
+            if last_meaningful is None or jdate > last_meaningful:
+                last_meaningful = jdate
+
+    # Stage (highest reached). Stages are cumulative milestones.
+    if chaptered:
+        stage = 5
+    elif crossed:
+        stage = 4
+    elif has_cs:
+        stage = 3
+    elif report_count >= 1:
+        stage = 2
+    elif any(c == "003" for c, _, _, _ in actions):
+        stage = 1
+    else:
+        stage = 0
+
+    # Score components.
+    reasons = []
+    if chaptered:
+        return {
+            "score": 100,
+            "stage": 5,
+            "stage_label": STAGE_LABELS[5],
+            "reasons": ["Signed into law"],
+        }
+
+    score = 0
+    # CS adopted (+30)
+    if has_cs:
+        score += 30
+        reasons.append("CS adopted (+30)")
+
+    # Committee report within 30 days of intro (+25)
+    if intro_date and first_report_date:
+        try:
+            d1 = datetime.strptime(intro_date, "%Y-%m-%d").date()
+            d2 = datetime.strptime(first_report_date, "%Y-%m-%d").date()
+            days_to_report = (d2 - d1).days
+            if days_to_report <= 30:
+                score += 25
+                reasons.append(f"Reported in {days_to_report}d (+25)")
+        except ValueError:
+            pass
+
+    # Multiple committee reports (+15)
+    if report_count >= 2:
+        score += 15
+        reasons.append(f"{report_count} committee reports (+15)")
+
+    # Recent action in last 14 days (+15)
+    if last_meaningful:
+        try:
+            d = datetime.strptime(last_meaningful, "%Y-%m-%d").date()
+            days_since = (today - d).days
+            if 0 <= days_since <= 14:
+                score += 15
+                reasons.append(f"Active in last {days_since}d (+15)")
+        except ValueError:
+            pass
+
+    # Crossed over (+15)
+    if crossed:
+        score += 15
+        reasons.append("Crossed over (+15)")
+
+    return {
+        "score": min(score, 99),  # cap below 100; only chaptered hits 100
+        "stage": stage,
+        "stage_label": STAGE_LABELS[stage],
+        "reasons": reasons,
+    }
+
 
 NOTABLE_CODES = {
     "002": "Committee Report",

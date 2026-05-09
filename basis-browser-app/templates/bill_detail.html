@@ -23,6 +23,11 @@
     <div id="loading" class="loading">Loading bill detail&hellip;</div>
     <div id="content" style="display:none">
 
+        <section id="sec-legs">
+            <h2>Legs Score</h2>
+            <div id="legs-section"></div>
+        </section>
+
         <section id="sec-status">
             <h2>Status</h2>
             <table class="detail-table">
@@ -75,6 +80,30 @@
             // Header
             document.getElementById('bill-header').textContent = b.billnumber;
             document.getElementById('bill-title').textContent = b.short_title;
+
+            // Legs
+            if (b.legs) {
+                var l = b.legs;
+                var color = l.score >= 80 ? '#27ae60'
+                          : l.score >= 50 ? '#2980b9'
+                          : l.score >= 30 ? '#f39c12'
+                          : '#95a5a6';
+                var html = '<div class="legs-card">';
+                html += '<div class="legs-score" style="color:' + color + '">' + l.score + '</div>';
+                html += '<div class="legs-meta">';
+                html += '<div class="legs-stage">Stage ' + l.stage + ': <strong>' + esc(l.stage_label) + '</strong></div>';
+                if (l.reasons && l.reasons.length) {
+                    html += '<ul class="legs-reasons">';
+                    l.reasons.forEach(function(r) { html += '<li>' + esc(r) + '</li>'; });
+                    html += '</ul>';
+                } else {
+                    html += '<div class="legs-reasons-empty">No momentum signals yet.</div>';
+                }
+                html += '</div></div>';
+                document.getElementById('legs-section').innerHTML = html;
+            } else {
+                document.getElementById('sec-legs').style.display = 'none';
+            }
 
             // Status table
             var status_html = '';

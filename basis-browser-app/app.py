@@ -21,6 +21,7 @@ from adapter import (
     governor_bills, _fetch_bill_detail, committee_detail, top_subjects,
     search_bills, cache_freshness,
 )
+from metrics import legs_score
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -232,6 +233,14 @@ def api_bill_detail(billnumber):
         data = _fetch_bill_detail(billnumber)
         if data is None:
             return jsonify({"data": None, "error": "Bill not found"})
+
+        # Decorate with legs_score. Convert detail.actions back into the
+        # tuple shape that legs_score expects.
+        action_tuples = [
+            (a["code"], a["chamber"], a["raw_date"], a["text"])
+            for a in data.get("actions", [])
+        ]
+        data["legs"] = legs_score(action_tuples, data.get("chamber", ""))
         return jsonify({"data": data, "error": None})
     except Exception as exc:
         return jsonify({"data": None, "error": str(exc)})

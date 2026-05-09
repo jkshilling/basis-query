@@ -71,13 +71,19 @@
             // Velocity — each bill has a variable number of steps
             if (d.velocity.length) {
                 var html = '<table class="compact sortable"><thead><tr>';
-                html += '<th>Bill</th><th>Title</th><th>Referrals</th><th>Steps</th><th class="center">Total</th>';
+                html += '<th>Bill</th><th>Title</th><th class="center">Legs</th><th class="center">Stage</th><th>Referrals</th><th>Steps</th><th class="center">Total</th>';
                 html += '</tr></thead><tbody>';
 
                 d.velocity.forEach(b => {
+                    var legsColor = b.legs_score >= 80 ? '#27ae60'
+                                  : b.legs_score >= 50 ? '#2980b9'
+                                  : b.legs_score >= 30 ? '#f39c12'
+                                  : '#95a5a6';
                     html += '<tr>';
                     html += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
                     html += '<td title="' + esc(b.title) + '">' + esc(b.title) + '</td>';
+                    html += '<td class="center legs-cell" style="color:' + legsColor + '"><strong>' + b.legs_score + '</strong></td>';
+                    html += '<td class="center">' + esc(b.legs_stage_label) + '</td>';
                     html += '<td>' + esc(b.referrals) + '</td>';
                     html += '<td class="steps-cell">';
                     b.steps.forEach(function(s, i) {
