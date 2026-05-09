@@ -73,6 +73,12 @@
             </div>
         </section>
 
+        <section>
+            <h2>Top Subject Areas</h2>
+            <p class="chart-note">Most-tagged subjects across all bills introduced this legislature.</p>
+            <table class="compact" id="subjects-table"></table>
+        </section>
+
 
     </div>
 
@@ -217,6 +223,17 @@
 
             document.getElementById('loading').style.display = 'none';
             document.getElementById('content').style.display = 'block';
+
+            // Top subjects (separate fetch — slower)
+            fetch('/api/top-subjects').then(r => r.json()).then(resp => {
+                if (resp.error || !resp.data) return;
+                var html = '<thead><tr><th>Subject</th><th class="center">Bill Count</th></tr></thead><tbody>';
+                resp.data.forEach(function(row) {
+                    html += '<tr><td>' + esc(row[0]) + '</td><td class="center">' + row[1] + '</td></tr>';
+                });
+                html += '</tbody>';
+                document.getElementById('subjects-table').innerHTML = html;
+            }).catch(function() {});
         })
         .catch(err => {
             document.getElementById('loading').innerHTML = 'Failed to load data: ' + err;

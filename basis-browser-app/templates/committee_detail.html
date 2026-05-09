@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>({{ chamber }}) {{ code }} — BASIS Browser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <nav>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/action-codes">Action Codes</a>
+    </nav>
+
+    <header>
+        <h1>
+            {% if chamber == 'H' %}<span class="chamber-h">(H)</span>{% else %}<span class="chamber-s">(S)</span>{% endif %}
+            {{ code }} Committee
+        </h1>
+        <p>Bills currently in committee &mdash; Session 34</p>
+    </header>
+
+    <div id="loading" class="loading">Loading committee data&hellip;</div>
+    <div id="content" style="display:none">
+        <p id="cmte-summary"></p>
+        <table class="compact" id="cmte-table"></table>
+    </div>
+
+    <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
+
+    <script>
+    var CHAMBER = {{ chamber|tojson }};
+    var CODE = {{ code|tojson }};
+
+    function esc(s) {
+        if (s === undefined || s === null) return '';
+        var d = document.createElement('div');
+        d.textContent = String(s);
+        return d.innerHTML;
+    }
+
+    fetch('/api/committee/' + encodeURIComponent(CHAMBER) + '/' + encodeURIComponent(CODE))
+        .then(r => r.json())
+        .then(resp => {
+            if (resp.error || !resp.data) {
+                document.getElementById('loading').innerHTML = 'Failed: ' + esc(resp.error || 'Not found');
+                document.getElementById('loading').className = 'error';
+                return;
+            }
+            var d = resp.data;
+            document.getElementById('cmte-summary').innerHTML =
+                '<strong>' + d.bills.length + '</strong> bill' + (d.bills.length !== 1 ? 's' : '') + ' currently in this committee.';
+
+            if (d.bills.length) {
+                var html = '<thead><tr><th>Bill</th><th>Title</th><th>Referrals</th><th>Status</th></tr></thead><tbody>';
+                d.bills.forEach(b => {
+                    html += '<tr>';
+                    html += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
+                    html += '<td title="' + esc(b.title) + '">' + esc(b.title) + '</td>';
+                    html += '<td>' + esc(b.referrals) + '</td>';
+                    html += '<td>' + esc(b.status) + '</td>';
+                    html += '</tr>';
+                });
+                html += '</tbody>';
+                document.getElementById('cmte-table').innerHTML = html;
+            }
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+        })
+        .catch(function(err) {
+            document.getElementById('loading').innerHTML = 'Failed: ' + err;
+            document.getElementById('loading').className = 'error';
+        });
+    </script>
+</body>
+</html>

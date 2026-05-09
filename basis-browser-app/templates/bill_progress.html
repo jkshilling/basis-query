@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bill Progress — BASIS Browser</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='sort.js') }}"></script>
 </head>
 <body class="wide">
     <nav>
@@ -41,7 +42,7 @@
         <section>
             <h2>Concur / Nonconcur Actions</h2>
             <p class="chart-note">Actions where one chamber voted to concur (or not) with the other chamber's amendments.</p>
-            <table id="concur-table" class="compact"></table>
+            <table id="concur-table" class="compact sortable"></table>
         </section>
 
     </div>
@@ -80,14 +81,14 @@
 
             // Velocity — each bill has a variable number of steps
             if (d.velocity.length) {
-                var html = '<table class="compact"><thead><tr>';
+                var html = '<table class="compact sortable"><thead><tr>';
                 html += '<th>Bill</th><th>Title</th><th>Referrals</th><th>Steps</th><th class="center">Total</th>';
                 html += '</tr></thead><tbody>';
 
                 d.velocity.forEach(b => {
                     html += '<tr>';
-                    html += '<td class="bill-number">' + esc(b.billnumber) + '</td>';
-                    html += '<td>' + esc(b.title) + '</td>';
+                    html += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
+                    html += '<td title="' + esc(b.title) + '">' + esc(b.title) + '</td>';
                     html += '<td>' + esc(b.referrals) + '</td>';
                     html += '<td class="steps-cell">';
                     b.steps.forEach(function(s, i) {
@@ -111,14 +112,14 @@
 
             // Momentum table
             if (d.momentum.length) {
-                var html = '<table class="compact"><thead><tr>';
+                var html = '<table class="compact sortable"><thead><tr>';
                 html += '<th>Bill</th><th>Title</th><th>Referrals</th><th class="center">Recent Milestones</th><th>Recent Activity</th><th class="center">Most Recent</th><th class="center">Total Steps</th>';
                 html += '</tr></thead><tbody>';
 
                 d.momentum.forEach(b => {
                     html += '<tr>';
-                    html += '<td class="bill-number">' + esc(b.billnumber) + '</td>';
-                    html += '<td>' + esc(b.title) + '</td>';
+                    html += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
+                    html += '<td title="' + esc(b.title) + '">' + esc(b.title) + '</td>';
                     html += '<td>' + esc(b.referrals) + '</td>';
                     html += '<td class="center velocity-total">' + b.recent_count + '</td>';
                     html += '<td class="steps-cell">';
@@ -140,14 +141,14 @@
 
             // Weighted momentum table
             if (d.weighted.length) {
-                var html = '<table class="compact"><thead><tr>';
+                var html = '<table class="compact sortable"><thead><tr>';
                 html += '<th>Bill</th><th>Title</th><th>Referrals</th><th>Steps</th><th class="center">Recent</th><th class="center">Total</th>';
                 html += '</tr></thead><tbody>';
 
                 d.weighted.forEach(b => {
                     html += '<tr>';
-                    html += '<td class="bill-number">' + esc(b.billnumber) + '</td>';
-                    html += '<td>' + esc(b.title) + '</td>';
+                    html += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
+                    html += '<td title="' + esc(b.title) + '">' + esc(b.title) + '</td>';
                     html += '<td>' + esc(b.referrals) + '</td>';
                     html += '<td class="steps-cell">';
                     b.events.forEach(function(s, i) {
@@ -189,6 +190,7 @@
                 document.getElementById('concur-table').outerHTML = '<p class="empty">No concur/nonconcur actions found.</p>';
             }
 
+            attachSorting();
             document.getElementById('loading').style.display = 'none';
             document.getElementById('content').style.display = 'block';
         })

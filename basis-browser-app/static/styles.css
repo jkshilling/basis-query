@@ -126,3 +126,38 @@ nav a:hover { text-decoration: underline; }
 .legend-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: middle; }
 
 footer { margin-top: 24px; color: #999; font-size: 11px; text-align: center; }
+
+/* Chamber color coding */
+.chamber-h { color: #1a5276; font-weight: 600; }
+.chamber-s { color: #922b21; font-weight: 600; }
+
+/* Bill detail page */
+.detail-table th { width: 180px; vertical-align: top; }
+.detail-table td { vertical-align: top; }
+.tag {
+    display: inline-block;
+    background: #eef2f5;
+    color: #444;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    margin: 2px;
+}
+.fiscal-list { padding-left: 20px; font-size: 12px; }
+.fiscal-list li { padding: 3px 0; }
+.sp-meta { color: #888; font-size: 11px; }
+
+/* Bill number link styling */
+a.bill-link, .bill-number a { color: #1a5276; text-decoration: none; font-weight: 600; }
+a.bill-link:hover, .bill-number a:hover { text-decoration: underline; }
+.cmte-link { color: inherit; text-decoration: none; }
+.cmte-link:hover { text-decoration: underline; }
+
+/* Sortable table headers */
+table.sortable th { cursor: pointer; user-select: none; }
+table.sortable th:hover { background: #e8e8e8; }
+table.sortable th.sort-asc::after { content: ' ▲'; font-size: 9px; color: #2980b9; }
+table.sortable th.sort-desc::after { content: ' ▼'; font-size: 9px; color: #2980b9; }
+table.sortable th.sortable-col::after { content: ' ⇅'; font-size: 9px; color: #ccc; }
+table.sortable th.sortable-col.sort-asc::after { content: ' ▲'; color: #2980b9; }
+table.sortable th.sortable-col.sort-desc::after { content: ' ▼'; color: #2980b9; }

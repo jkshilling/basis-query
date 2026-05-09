@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ billnumber }} — BASIS Browser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <nav>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/action-codes">Action Codes</a>
+    </nav>
+
+    <header>
+        <h1 id="bill-header">{{ billnumber }}</h1>
+        <p id="bill-title"></p>
+    </header>
+
+    <div id="loading" class="loading">Loading bill detail&hellip;</div>
+    <div id="content" style="display:none">
+
+        <section>
+            <h2>Status</h2>
+            <table class="detail-table">
+                <tbody id="status-body"></tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2>Sponsors</h2>
+            <div id="sponsors-section"></div>
+        </section>
+
+        <section>
+            <h2>Subjects</h2>
+            <div id="subjects-section"></div>
+        </section>
+
+        <section>
+            <h2>Versions</h2>
+            <table class="compact" id="versions-table"></table>
+        </section>
+
+        <section>
+            <h2>Fiscal Notes</h2>
+            <div id="fiscal-section"></div>
+        </section>
+
+        <section>
+            <h2>Action Timeline</h2>
+            <table class="compact" id="actions-table"></table>
+        </section>
+
+    </div>
+
+    <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
+
+    <script>
+    var BILLNUMBER = {{ billnumber|tojson }};
+
+    function esc(s) {
+        if (s === undefined || s === null) return '';
+        var d = document.createElement('div');
+        d.textContent = String(s);
+        return d.innerHTML;
+    }
+    function chamberPrefix(c) {
+        if (c === 'H') return '<span class="chamber-h">(H)</span>';
+        if (c === 'S') return '<span class="chamber-s">(S)</span>';
+        return '';
+    }
+
+    fetch('/api/bill/' + encodeURIComponent(BILLNUMBER))
+        .then(r => r.json())
+        .then(resp => {
+            if (resp.error || !resp.data) {
+                document.getElementById('loading').innerHTML = 'Failed: ' + esc(resp.error || 'Bill not found');
+                document.getElementById('loading').className = 'error';
+                return;
+            }
+            var b = resp.data;
+
+            // Header
+            document.getElementById('bill-header').textContent = b.billnumber;
+            document.getElementById('bill-title').textContent = b.short_title;
+
+            // Status table
+            var status_html = '';
+            status_html += '<tr><th>Current Status</th><td>' + esc(b.status) + '</td></tr>';
+            status_html += '<tr><th>Status Date</th><td>' + esc(b.status_date) + '</td></tr>';
+            if (b.committee_code) {
+                var cmteLink = '<a href="/committee/' + esc(b.chamber) + '/' + esc(b.committee_code) + '">' + chamberPrefix(b.chamber) + ' ' + esc(b.committee_code) + ' — ' + esc(b.committee) + '</a>';
+                status_html += '<tr><th>Current Committee</th><td>' + cmteLink + '</td></tr>';
+            }
+            status_html += '<tr><th>Origin Chamber</th><td>' + chamberPrefix(b.chamber) + '</td></tr>';
+            document.getElementById('status-body').innerHTML = status_html;
+
+            // Sponsors
+            var sp_html = '';
+            if (b.sponsors.length) {
+                sp_html += '<p><strong>Prime Sponsor' + (b.sponsors.length > 1 ? 's' : '') + ':</strong> ';
+                sp_html += b.sponsors.map(function(s) {
+                    return esc(s.name) + ' <span class="sp-meta">(' + esc(s.party) + ' D' + esc(s.district) + ')</span>';
+                }).join(', ');
+                sp_html += '</p>';
+            }
+            if (b.committee_sponsor) {
+                sp_html += '<p><strong>Committee Sponsor:</strong> ' + esc(b.committee_sponsor) + '</p>';
+            }
+            if (b.cosponsors.length) {
+                sp_html += '<p><strong>Cosponsors (' + b.cosponsors.length + '):</strong> ';
+                sp_html += b.cosponsors.map(function(s) { return esc(s.name); }).join(', ');
+                sp_html += '</p>';
+            }
+            if (!sp_html) sp_html = '<p class="empty">No sponsor data.</p>';
+            document.getElementById('sponsors-section').innerHTML = sp_html;
+
+            // Subjects
+            if (b.subjects.length) {
+                document.getElementById('subjects-section').innerHTML =
+                    b.subjects.map(function(s) { return '<span class="tag">' + esc(s) + '</span>'; }).join(' ');
+            } else {
+                document.getElementById('subjects-section').innerHTML = '<p class="empty">No subjects assigned.</p>';
+            }
+
+            // Versions
+            if (b.versions.length) {
+                var v_html = '<thead><tr><th>Version</th><th>Name</th><th>Intro Date</th><th>Title</th></tr></thead><tbody>';
+                b.versions.forEach(function(v) {
+                    v_html += '<tr><td>' + esc(v.letter) + '</td><td>' + esc(v.name) + '</td><td>' + esc(v.intro_date) + '</td><td>' + esc(v.title) + '</td></tr>';
+                });
+                v_html += '</tbody>';
+                document.getElementById('versions-table').innerHTML = v_html;
+            } else {
+                document.getElementById('versions-table').outerHTML = '<p class="empty">No versions found.</p>';
+            }
+
+            // Fiscal notes
+            if (b.fiscal_notes.length) {
+                var f_html = '<ul class="fiscal-list">';
+                b.fiscal_notes.forEach(function(f) {
+                    f_html += '<li><strong>' + esc(f.date) + '</strong> — ' + esc(f.text) + '</li>';
+                });
+                f_html += '</ul>';
+                document.getElementById('fiscal-section').innerHTML = f_html;
+            } else {
+                document.getElementById('fiscal-section').innerHTML = '<p class="empty">No fiscal notes.</p>';
+            }
+
+            // Action timeline
+            if (b.actions.length) {
+                var a_html = '<thead><tr><th>Date</th><th>Chamber</th><th>Code</th><th>Action</th><th>Detail</th></tr></thead><tbody>';
+                b.actions.forEach(function(a) {
+                    a_html += '<tr>';
+                    a_html += '<td>' + esc(a.date) + '</td>';
+                    a_html += '<td>' + chamberPrefix(a.chamber) + '</td>';
+                    a_html += '<td><code>' + esc(a.code) + '</code></td>';
+                    a_html += '<td>' + esc(a.label) + '</td>';
+                    a_html += '<td>' + esc(a.text) + '</td>';
+                    a_html += '</tr>';
+                });
+                a_html += '</tbody>';
+                document.getElementById('actions-table').innerHTML = a_html;
+            } else {
+                document.getElementById('actions-table').outerHTML = '<p class="empty">No action history.</p>';
+            }
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+        })
+        .catch(function(err) {
+            document.getElementById('loading').innerHTML = 'Failed: ' + err;
+            document.getElementById('loading').className = 'error';
+        });
+    </script>
+</body>
+</html>

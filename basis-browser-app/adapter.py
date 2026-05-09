@@ -340,7 +340,18 @@ def _parse_bills_extended(result):
             "prime_sponsor": "",
             "sponsor_count": 0,
             "version_count": 0,
+            "subjects": [],
         }
+
+        # Subjects
+        for subs in elem:
+            if _strip_ns(subs.tag) != "Subjects":
+                continue
+            for sub in subs:
+                if _strip_ns(sub.tag) == "Subject":
+                    txt = (sub.text or "").strip()
+                    if txt:
+                        bill["subjects"].append(txt)
 
         # Sponsors
         for sponsors in elem:
@@ -1237,4 +1248,284 @@ def activity_feed(session="34", days=7):
         "total": len(events),
     }
     cache.put(cache_key, result)
+    return result
+
+
+# Map of action codes to short labels for the bill detail timeline.
+_ACTION_LABELS = {
+    "001": "First Reading",
+    "002": "Committee Report",
+    "003": "Referred",
+    "004": "Referral Changed",
+    "005": "Cmte Report Received",
+    "006": "Referral Replaced",
+    "008": "Second Reading",
+    "009": "CS Adopted (UC)",
+    "011": "Amendment Adopted (UC)",
+    "012": "Amendment Adopted",
+    "013": "Amendment Failed",
+    "014": "Held in 2nd Reading",
+    "015": "Advanced to 3rd",
+    "016": "Third Reading",
+    "017": "Returned to 2nd",
+    "018": "Held in 3rd Reading",
+    "020": "Floor Vote",
+    "021": "Effective Date",
+    "022": "Transmitted to Other Chamber",
+    "026": "Concur Amendment",
+    "027": "Failed to Concur",
+    "029": "Conference Cmte Appointed",
+    "030": "Conference Cmte Members",
+    "032": "Conference Report Adopted",
+    "033": "Transmitted to Governor",
+    "034": "Signed Into Law",
+    "036": "Law Without Signature",
+    "037": "Permanently Filed",
+    "038": "Vetoed",
+    "039": "Veto Sustained",
+    "040": "Veto Overridden",
+    "041": "Effective Date of Law",
+    "043": "Manifest Error",
+    "048": "Title Change",
+    "050": "Governor's Letter",
+    "052": "Sponsor Substitute",
+    "053": "Withdrawn",
+    "057": "Amendment to Amendment",
+    "060": "Failed Passage",
+    "062": "Effective Date Adopted",
+    "076": "Held to Calendar",
+    "080": "Rules to Calendar",
+    "083": "Transmitted as Amended",
+    "091": "Referral List",
+    "092": "Cosponsor Change",
+    "094": "Title Change",
+    "095": "Hearing Notice Waived",
+    "100": "Cross Sponsor",
+    "103": "Version",
+    "105": "Fiscal Note",
+    "121": "Prefile Released",
+    "122": "CS Adopted",
+    "129": "Chapter Number",
+    "130": "Amendment Offered",
+    "131": "Amendment Not Offered",
+    "132": "Amendment Tabled",
+}
+
+
+def _fetch_bill_detail(billnumber, session="34"):
+    """Fetch one bill with all expansions for the detail page."""
+    import cache as _cache
+    key = f"bill_detail_{session}_{billnumber}"
+    cached = _cache.get(key, max_age=600)
+    if cached is not None:
+        return cached
+
+    # Determine chamber from prefix
+    prefix = billnumber.strip().split()[0] if billnumber else ""
+    chamber = "H" if prefix.startswith("H") else "S"
+
+    # Build Bills query filter — fetch only this bill
+    queries = [
+        f"Bills;billnumber={billnumber}",
+        "Actions",
+        "Sponsors",
+        "Versions",
+        "Subjects",
+    ]
+    result = _fetch(
+        section="bills", session=session, chamber=chamber,
+        queries=queries, result_range="..1",
+    )
+    body = result["body"].decode("utf-8", errors="replace")
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError:
+        return None
+
+    bill_elem = None
+    for elem in root.iter():
+        if _strip_ns(elem.tag) == "Bill":
+            if elem.attrib.get("billnumber", "").strip() == billnumber.strip() or \
+               _compact_billnumber(elem.attrib.get("billnumber", "")) == billnumber.strip():
+                bill_elem = elem
+                break
+    if bill_elem is None:
+        # Filter sometimes returns wrong bill; scan all bills in this chamber instead.
+        for rng in ["..100", "101..200", "201..300", "301..400", "401..500"]:
+            rr = _fetch(
+                section="bills", session=session, chamber=chamber,
+                queries=["Actions", "Sponsors", "Versions", "Subjects"],
+                result_range=rng,
+            )
+            b = rr["body"].decode("utf-8", errors="replace")
+            if len(b) < 300 or "FaultException" in b:
+                break
+            r2 = ET.fromstring(b)
+            for elem in r2.iter():
+                if _strip_ns(elem.tag) != "Bill":
+                    continue
+                if _compact_billnumber(elem.attrib.get("billnumber", "")) == billnumber.strip():
+                    bill_elem = elem
+                    break
+            if bill_elem is not None:
+                break
+
+    if bill_elem is None:
+        return None
+
+    # Collect everything
+    bn = _compact_billnumber(bill_elem.attrib.get("billnumber", ""))
+    detail = {
+        "billnumber": bn,
+        "chamber": bill_elem.attrib.get("chamber", "").strip(),
+        "short_title": _child_text(bill_elem, "ShortTitle"),
+        "status": _child_text(bill_elem, "StatusText"),
+        "status_date": _format_status_date(_child_text(bill_elem, "StatusDate")),
+        "committee": _child_text(bill_elem, "CurrentCommittee"),
+        "committee_code": _child_attr(bill_elem, "CurrentCommittee", "committeecode"),
+        "sponsors": [],
+        "cosponsors": [],
+        "committee_sponsor": "",
+        "subjects": [],
+        "versions": [],
+        "actions": [],
+        "fiscal_notes": [],
+    }
+
+    # Sponsors
+    for sponsors in bill_elem:
+        if _strip_ns(sponsors.tag) != "Sponsors":
+            continue
+        for member in sponsors:
+            if _strip_ns(member.tag) == "MemberDetails":
+                first = _child_text(member, "FirstName")
+                last = _child_text(member, "LastName")
+                party = _child_text(member, "Party")
+                district = _child_text(member, "District")
+                rec = {
+                    "name": f"{first} {last}".strip(),
+                    "party": party,
+                    "district": district,
+                }
+                if member.attrib.get("primesponsor") == "true":
+                    detail["sponsors"].append(rec)
+                else:
+                    detail["cosponsors"].append(rec)
+            elif _strip_ns(member.tag) == "Committee":
+                detail["committee_sponsor"] = member.attrib.get("code", "")
+
+    # Subjects
+    for subs in bill_elem:
+        if _strip_ns(subs.tag) != "Subjects":
+            continue
+        for sub in subs:
+            if _strip_ns(sub.tag) == "Subject":
+                txt = (sub.text or "").strip()
+                if txt:
+                    detail["subjects"].append(txt)
+
+    # Versions
+    for vers in bill_elem:
+        if _strip_ns(vers.tag) != "Versions":
+            continue
+        for v in vers:
+            if _strip_ns(v.tag) != "Version":
+                continue
+            detail["versions"].append({
+                "letter": v.attrib.get("versionletter", ""),
+                "name": v.attrib.get("name", ""),
+                "intro_date": _format_status_date(v.attrib.get("introdate", "")),
+                "title": _child_text(v, "Title"),
+            })
+
+    # Actions (full timeline)
+    for acts in bill_elem:
+        if _strip_ns(acts.tag) != "Actions":
+            continue
+        for action in acts:
+            if _strip_ns(action.tag) != "Action":
+                continue
+            code = action.attrib.get("code", "")
+            text = _child_text(action, "ActionText")
+            jdate = action.attrib.get("journaldate", "")
+            achamber = action.attrib.get("chamber", "")
+            label = _ACTION_LABELS.get(code, "Action")
+            detail["actions"].append({
+                "code": code,
+                "label": label,
+                "chamber": achamber,
+                "date": _format_status_date(jdate),
+                "raw_date": jdate,
+                "text": text,
+            })
+            # Fiscal notes (codes 105-108)
+            if code in ("105", "106", "107", "108"):
+                detail["fiscal_notes"].append({
+                    "date": _format_status_date(jdate),
+                    "text": text,
+                })
+
+    # Sort actions chronologically (newest first)
+    detail["actions"].sort(key=lambda a: a["raw_date"], reverse=True)
+
+    _cache.put(key, detail)
+    return detail
+
+
+def committee_detail(chamber, code, session="34"):
+    """Build committee detail data: bills currently in committee, recent meetings."""
+    import cache as _cache
+    key = f"cmte_detail_{chamber}_{code}"
+    cached = _cache.get(key, max_age=600)
+    if cached is not None:
+        return cached
+
+    all_bills = _scan_all_actions(session)
+    bills_here = []
+    for bn, origin, title, status, actions in all_bills:
+        # Bill currently in this committee?
+        marker = f"({chamber}) {code}"
+        if marker in status:
+            # Get its referral list (origin chamber)
+            referrals = ""
+            for c, a, d, t in actions:
+                if c == "091" and a == origin and not referrals:
+                    referrals = t
+            bills_here.append({
+                "billnumber": _compact_billnumber(bn),
+                "title": _truncate(title, 50),
+                "status": status,
+                "referrals": referrals,
+            })
+
+    # Sort by bill number
+    bills_here.sort(key=lambda b: b["billnumber"])
+
+    result = {
+        "chamber": chamber,
+        "code": code,
+        "bills": bills_here,
+    }
+    _cache.put(key, result)
+    return result
+
+
+def top_subjects(session="34", limit=10):
+    """Aggregate subject counts across all bills (with Subjects expansion)."""
+    import cache as _cache
+    from collections import Counter
+
+    cached = _cache.get("top_subjects", max_age=3600)
+    if cached is not None:
+        return cached
+
+    counts = Counter()
+    for chamber in ["H", "S"]:
+        bills = _fetch_all_bills(chamber, session, queries=["Subjects"])
+        for b in bills:
+            for s in b.get("subjects", []):
+                counts[s] += 1
+
+    result = counts.most_common(limit)
+    _cache.put("top_subjects", result)
     return result

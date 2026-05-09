@@ -8,7 +8,7 @@ from flask import Flask, render_template, jsonify, request
 from adapter import (
     house_bills_in_senate, senate_bills_in_house, dashboard_stats,
     action_code_counts, bill_progress, activity_feed,
-    governor_bills,
+    governor_bills, _fetch_bill_detail, committee_detail, top_subjects,
 )
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -147,6 +147,45 @@ def api_dashboard():
         return jsonify({"stats": stats, "error": None})
     except Exception as exc:
         return jsonify({"stats": None, "error": str(exc)})
+
+
+@app.route("/api/top-subjects")
+def api_top_subjects():
+    try:
+        data = top_subjects()
+        return jsonify({"data": data, "error": None})
+    except Exception as exc:
+        return jsonify({"data": [], "error": str(exc)})
+
+
+@app.route("/bill/<path:billnumber>")
+def bill_detail_page(billnumber):
+    return render_template("bill_detail.html", billnumber=billnumber)
+
+
+@app.route("/api/bill/<path:billnumber>")
+def api_bill_detail(billnumber):
+    try:
+        data = _fetch_bill_detail(billnumber)
+        if data is None:
+            return jsonify({"data": None, "error": "Bill not found"})
+        return jsonify({"data": data, "error": None})
+    except Exception as exc:
+        return jsonify({"data": None, "error": str(exc)})
+
+
+@app.route("/committee/<chamber>/<code>")
+def committee_detail_page(chamber, code):
+    return render_template("committee_detail.html", chamber=chamber, code=code)
+
+
+@app.route("/api/committee/<chamber>/<code>")
+def api_committee_detail(chamber, code):
+    try:
+        data = committee_detail(chamber.upper(), code.upper())
+        return jsonify({"data": data, "error": None})
+    except Exception as exc:
+        return jsonify({"data": None, "error": str(exc)})
 
 
 # Start the background prefetch thread when the app module is imported

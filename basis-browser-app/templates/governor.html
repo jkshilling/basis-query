@@ -6,6 +6,7 @@
     <title>Governor's Bills — BASIS Browser</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='sort.js') }}"></script>
 </head>
 <body>
     <nav>
@@ -151,8 +152,8 @@
                 var html = '<thead><tr><th>Bill</th><th>Title</th><th>Referrals</th><th class="center">Hearings</th><th class="center">Moveouts</th><th>Status</th><th class="center">Category</th><th>Last Action</th></tr></thead><tbody>';
                 d.bills.forEach(b => {
                     html += '<tr>';
-                    html += '<td class="bill-number">' + esc(b.billnumber) + '</td>';
-                    html += '<td>' + esc(b.title) + '</td>';
+                    html += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
+                    html += '<td title="' + esc(b.title) + '">' + esc(b.title) + '</td>';
                     html += '<td>' + esc(b.referrals) + '</td>';
                     html += '<td class="center">' + (b.hearings || '\u2014') + '</td>';
                     html += '<td class="center">' + (b.cmte_reports || '\u2014') + '</td>';
@@ -163,6 +164,8 @@
                 });
                 html += '</tbody>';
                 document.getElementById('bills-table').innerHTML = html;
+                document.getElementById('bills-table').classList.add('sortable');
+                attachSorting();
             }
 
             document.getElementById('loading').style.display = 'none';

@@ -94,7 +94,7 @@
                     html += '<div class="feed-item">';
                     html += '<span class="feed-date-tag">' + esc(e.date_display) + '</span> ';
                     html += '<span class="feed-label" style="background:' + color + '">' + esc(e.label) + '</span> ';
-                    html += '<span class="feed-bill">' + esc(e.billnumber) + '</span> ';
+                    html += '<a class="feed-bill bill-link" href="/bill/' + encodeURIComponent(e.billnumber) + '">' + esc(e.billnumber) + '</a> ';
                     html += '<span class="feed-title">' + esc(e.title) + '</span>';
                     html += '<div class="feed-detail">(' + esc(e.action_chamber) + ') ' + esc(e.text) + '</div>';
                     html += '</div>';
