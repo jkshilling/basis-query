@@ -24,6 +24,12 @@
     <div id="content" style="display:none">
 
         <section>
+            <h2>Legs Score Distribution</h2>
+            <p class="chart-note">All <span id="legs-total">—</span> HB/SB bills introduced this legislature, bucketed by Legs Score.</p>
+            <table class="compact" id="legs-distribution-table"></table>
+        </section>
+
+        <section>
             <h2>Velocity: Bills Through the Process</h2>
             <p class="chart-note">Incremental days between each milestone in the origin chamber. Shows each committee report individually. Top 50 bills by progress.</p>
             <div id="velocity-section"></div>
@@ -67,6 +73,39 @@
                 return;
             }
             var d = resp.data;
+
+            // Legs distribution
+            if (d.legs_distribution) {
+                document.getElementById('legs-total').textContent = d.legs_total;
+                var bandColors = {
+                    '100 (Chaptered)': '#27ae60',
+                    '80-99': '#27ae60',
+                    '60-79': '#2980b9',
+                    '40-59': '#f39c12',
+                    '20-39': '#e67e22',
+                    '0-19': '#95a5a6',
+                };
+                var html = '<thead><tr><th>Score Range</th><th class="center">Bills</th><th class="center">% of Total</th><th>Read As</th></tr></thead><tbody>';
+                var readAs = {
+                    '100 (Chaptered)': 'Done, became law',
+                    '80-99': 'Right behind, likely to pass',
+                    '60-79': 'Strong momentum',
+                    '40-59': 'Some momentum',
+                    '20-39': 'Limited movement',
+                    '0-19': 'Effectively dormant',
+                };
+                d.legs_distribution.forEach(function(row) {
+                    var color = bandColors[row.band] || '#555';
+                    html += '<tr>';
+                    html += '<td><strong style="color:' + color + '">' + esc(row.band) + '</strong></td>';
+                    html += '<td class="center">' + row.count + '</td>';
+                    html += '<td class="center">' + row.pct + '%</td>';
+                    html += '<td>' + esc(readAs[row.band] || '') + '</td>';
+                    html += '</tr>';
+                });
+                html += '</tbody>';
+                document.getElementById('legs-distribution-table').innerHTML = html;
+            }
 
             // Velocity — each bill has a variable number of steps
             if (d.velocity.length) {

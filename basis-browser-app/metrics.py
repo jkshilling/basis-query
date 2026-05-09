@@ -427,11 +427,43 @@ def bill_progress(session="34"):
 
     concur_actions.sort(key=lambda x: x["date"], reverse=True)
 
+    # Legs Score distribution across ALL HB/SB bills (not just top 50).
+    legs_buckets = {
+        "100 (Chaptered)": 0,
+        "80-99": 0,
+        "60-79": 0,
+        "40-59": 0,
+        "20-39": 0,
+        "0-19": 0,
+    }
+    for v in velocity:
+        s = v["legs_score"]
+        if s == 100:
+            legs_buckets["100 (Chaptered)"] += 1
+        elif s >= 80:
+            legs_buckets["80-99"] += 1
+        elif s >= 60:
+            legs_buckets["60-79"] += 1
+        elif s >= 40:
+            legs_buckets["40-59"] += 1
+        elif s >= 20:
+            legs_buckets["20-39"] += 1
+        else:
+            legs_buckets["0-19"] += 1
+    legs_total = sum(legs_buckets.values())
+    legs_distribution = [
+        {"band": k, "count": v,
+         "pct": round(100 * v / legs_total, 1) if legs_total else 0}
+        for k, v in legs_buckets.items()
+    ]
+
     result = {
         "velocity": velocity[:50],
         "momentum": momentum[:50],
         "weighted": weighted[:50],
         "concur": concur_actions,
+        "legs_distribution": legs_distribution,
+        "legs_total": legs_total,
     }
     _cache.put("bill_progress", result)
     return result
