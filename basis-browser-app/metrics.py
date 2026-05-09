@@ -373,8 +373,12 @@ def bill_progress(session="34"):
                 pass
 
         legs = legs_score(actions, origin)
+        # Extract current committee code from status text like "(S) FIN".
+        cmte_match = re.match(r'\([HS]\)\s*(\S+)', status)
+        current_code = cmte_match.group(1) if cmte_match else ""
         velocity.append({
             "billnumber": bn, "title": title, "origin": origin, "status": status,
+            "committee_code": current_code,
             "referrals": referrals, "steps": step_days, "raw_steps": steps,
             "total_days": total_days, "step_count": len(steps),
             "legs_score": legs["score"], "legs_stage": legs["stage"],
@@ -393,6 +397,7 @@ def bill_progress(session="34"):
         momentum.append({
             "billnumber": v["billnumber"], "title": v["title"], "origin": v["origin"],
             "status": v["status"], "referrals": v["referrals"],
+            "committee_code": v["committee_code"],
             "recent_count": len(recent_steps),
             "most_recent": format_status_date(most_recent),
             "most_recent_raw": most_recent,
@@ -440,6 +445,7 @@ def bill_progress(session="34"):
         weighted.append({
             "billnumber": v["billnumber"], "title": v["title"], "origin": v["origin"],
             "referrals": v["referrals"], "events": event_days,
+            "committee_code": v["committee_code"],
             "event_count": len(events), "recent_count": len(recent_events),
             "most_recent": format_status_date(most_recent_raw),
             "most_recent_raw": most_recent_raw, "total_days": total_days,

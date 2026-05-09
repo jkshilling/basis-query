@@ -59,18 +59,24 @@
 
     <script>
 
-    // Render a comma-separated referral list with each committee
-    // prefixed by its origin chamber. e.g. "L&C, FIN" -> "(H) L&C, (H) FIN".
-    function renderReferrals(text, origin) {
+    // Render a comma-separated referral list with each committee prefixed
+    // by its origin chamber. The bill's current committee is bolded.
+    function renderReferrals(text, origin, currentCode) {
         var list = (text || '').split(',').map(function(c) { return c.trim(); }).filter(Boolean);
         if (!list.length) return '—';
-        return list.map(function(c) { return chamberSpan(origin) + ' ' + esc(c); }).join(', ');
+        return list.map(function(c) {
+            var cell = chamberSpan(origin) + ' ' + esc(c);
+            return c === currentCode ? '<strong>' + cell + '</strong>' : cell;
+        }).join(', ');
     }
 
-    // Prefix step labels like "Rpt: FIN" with chamber, leave others alone.
-    function renderStepLabel(label, origin) {
+    // Prefix step labels like "Rpt: FIN" with chamber. The bill's current
+    // committee report is bolded.
+    function renderStepLabel(label, origin, currentCode) {
         if (label && label.indexOf('Rpt: ') === 0) {
-            return 'Rpt: ' + chamberSpan(origin) + ' ' + esc(label.slice(5));
+            var cmte = label.slice(5);
+            var rendered = 'Rpt: ' + chamberSpan(origin) + ' ' + esc(cmte);
+            return cmte === currentCode ? '<strong>' + rendered + '</strong>' : rendered;
         }
         return esc(label);
     }
@@ -139,7 +145,7 @@
                     html += '<td title="' + esc(b.title) + '">' + esc(b.title) + '</td>';
                     html += '<td class="center legs-cell" style="color:' + legsColor + '"><strong>' + b.legs_score + '</strong></td>';
                     html += '<td class="center">' + esc(b.legs_stage_label) + '</td>';
-                    html += '<td>' + renderReferrals(b.referrals, b.origin) + '</td>';
+                    html += '<td>' + renderReferrals(b.referrals, b.origin, b.committee_code) + '</td>';
                     html += '<td class="steps-cell">';
                     b.steps.forEach(function(s, i) {
                         var dayStr = '';
@@ -147,7 +153,7 @@
                             dayStr = ' <span class="step-days">+' + s.inc_days + 'd</span>';
                         }
                         if (i > 0) html += ' <span class="step-arrow">\u2192</span> ';
-                        html += '<span class="step-label">' + renderStepLabel(s.label, b.origin) + '</span>';
+                        html += '<span class="step-label">' + renderStepLabel(s.label, b.origin, b.committee_code) + '</span>';
                         html += dayStr;
                     });
                     html += '</td>';
@@ -170,12 +176,12 @@
                     html += '<tr>';
                     html += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
                     html += '<td title="' + esc(b.title) + '">' + esc(b.title) + '</td>';
-                    html += '<td>' + renderReferrals(b.referrals, b.origin) + '</td>';
+                    html += '<td>' + renderReferrals(b.referrals, b.origin, b.committee_code) + '</td>';
                     html += '<td class="center velocity-total">' + b.recent_count + '</td>';
                     html += '<td class="steps-cell">';
                     b.recent_steps.forEach(function(s, i) {
                         if (i > 0) html += ' <span class="step-arrow">\u2192</span> ';
-                        html += '<span class="step-label">' + renderStepLabel(s.label, b.origin) + '</span>';
+                        html += '<span class="step-label">' + renderStepLabel(s.label, b.origin, b.committee_code) + '</span>';
                         html += ' <span class="step-days">' + esc(s.date) + '</span>';
                     });
                     html += '</td>';
@@ -199,7 +205,7 @@
                     html += '<tr>';
                     html += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
                     html += '<td title="' + esc(b.title) + '">' + esc(b.title) + '</td>';
-                    html += '<td>' + renderReferrals(b.referrals, b.origin) + '</td>';
+                    html += '<td>' + renderReferrals(b.referrals, b.origin, b.committee_code) + '</td>';
                     html += '<td class="steps-cell">';
                     b.events.forEach(function(s, i) {
                         var dayStr = '';
@@ -207,7 +213,7 @@
                             dayStr = ' <span class="step-days">+' + s.inc_days + 'd</span>';
                         }
                         if (i > 0) html += ' <span class="step-arrow">\u2192</span> ';
-                        html += '<span class="step-label">' + renderStepLabel(s.label, b.origin) + '</span>';
+                        html += '<span class="step-label">' + renderStepLabel(s.label, b.origin, b.committee_code) + '</span>';
                         html += dayStr;
                     });
                     html += '</td>';
