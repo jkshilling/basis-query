@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import sys
+import html as _html
 import urllib.request
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
@@ -310,6 +311,139 @@ def fetch_hearing_schedule(chamber="S", days=7):
                 bill_hearings[bill_num] = current_datetime
 
     return bill_hearings
+
+
+def fetch_committee_schedule(date_str=None):
+    """Scrape the akleg daily committee schedule for one date.
+
+    date_str: 'M/D/YYYY' string; defaults to today (AKDT).
+    Returns a list of meeting dicts:
+        {chamber, committee_code, committee_name, committee_type,
+         time, location, canceled, agenda}
+    Each agenda item is {flags, billnumber, title, teleconferenced}.
+    """
+    if date_str is None:
+        try:
+            from zoneinfo import ZoneInfo
+            now_ak = datetime.now(ZoneInfo("America/Anchorage"))
+        except ImportError:
+            now_ak = datetime.now()
+        date_str = now_ak.strftime("%-m/%-d/%Y")
+
+    cache_key = f"cmte_schedule_{date_str}"
+    # Today: 60s; past: 24h (committees that already met don't change)
+    try:
+        target = datetime.strptime(date_str, "%m/%d/%Y").date()
+    except ValueError:
+        target = None
+    today = datetime.now().date()
+    if target and target < today:
+        cache_age = 24 * 3600
+    else:
+        cache_age = 60
+    cached = _cache.get(cache_key, max_age=cache_age)
+    if cached is not None:
+        return cached
+
+    url = (
+        f"{SCHEDULE_URL}?mode=results&type=&com=&"
+        f"startDate={date_str}&endDate={date_str}&chamber="
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "basis-browser/0.1"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        log.warning("schedule.fetch_failed date=%s err=%r", date_str, exc)
+        return []
+
+    # Split into meeting blocks on the <hr> separator rows.
+    meeting_blocks = re.split(r'<tr><td\s+colspan="8"><hr></td></tr>', html)
+
+    meetings = []
+    for block in meeting_blocks:
+        # Header: (H)COMMUNITY & REGIONAL AFFAIRS  Standing Committee  <code link>
+        header = re.search(
+            r'<td\s+colspan="2">\(([HS])\)([^<]+)</td>\s*'
+            r'<td\s+colspan="2">([^<]+)<a\s+href="[^"]*code=([HS][A-Z0-9&]+)"',
+            block,
+        )
+        if not header:
+            continue
+        chamber = header.group(1)
+        committee_name = header.group(2).strip()
+        committee_type = header.group(3).strip()
+        committee_code_full = header.group(4)  # e.g. HCRA, SFIN
+        committee_code = committee_code_full[1:]  # strip the H/S prefix
+
+        # Date/time + location. Note: the legislature's HTML often omits
+        # the closing </td> on the location cell, so we accept any
+        # terminator (</td>, </tr>, or the next <tr>).
+        time_loc = re.search(
+            r'<td\s+colspan="2">((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d+\s+\w+\s+\d+:\d+\s+[AP]M)</td>\s*<td>([^<]*?)(?:</td>|</tr>|<)',
+            block,
+        )
+        if not time_loc:
+            continue
+        time_str = time_loc.group(1).strip()
+        location = time_loc.group(2).strip()
+
+        # Detect canceled / no meeting via agenda text
+        canceled = bool(re.search(r'No Meeting Scheduled', block))
+
+        # Agenda items — each <tr> with a teleconf cell.
+        agenda = []
+        # Use a tolerant regex over the row body.
+        item_pattern = re.compile(
+            r'<tr>\s*'
+            r'<td\s+width=2%[^>]*>\s*([^<]*?)\s*</td>\s*'
+            r'<td\s+nowrap>\s*(?:<a[^>]*\?Root=([^"]+)"[^>]*>([^<]+)</a>)?\s*</td>\s*'
+            r'<td>\s*<nobr>\s*([^<]+?)\s*</nobr>\s*</td>\s*'
+            r'<td\s+class="teleconf">\s*([^<]*?)\s*</td>',
+            re.DOTALL,
+        )
+        for m in item_pattern.finditer(block):
+            flags = m.group(1).strip()
+            bn = " ".join(m.group(3).strip().split()) if m.group(3) else ""
+            text = m.group(4).strip()
+            tele = bool(m.group(5).strip())
+            if not bn and not text:
+                continue
+            agenda.append({
+                "flags": flags,
+                "billnumber": bn,
+                "title": text,
+                "teleconferenced": tele,
+            })
+
+        # Decode HTML entities in human-readable strings.
+        for a in agenda:
+            a["title"] = _html.unescape(a["title"])
+        meetings.append({
+            "chamber": chamber,
+            "committee_code": committee_code,
+            "committee_name": _html.unescape(committee_name),
+            "committee_type": committee_type,
+            "time": time_str,
+            "location": location,
+            "canceled": canceled,
+            "agenda": agenda,
+        })
+
+    # Sort by start time within day. Times look like "May 12 Tuesday 8:00 AM"
+    def time_key(m):
+        try:
+            parts = m["time"].split()
+            # Parse "May 12 Tuesday 8:00 AM" -> just the time
+            t = datetime.strptime(f"{parts[3]} {parts[4]}", "%I:%M %p")
+            return t.hour * 60 + t.minute
+        except (ValueError, IndexError):
+            return 9999
+
+    meetings.sort(key=lambda m: (time_key(m), m["chamber"], m["committee_code"]))
+
+    _cache.put(cache_key, meetings)
+    return meetings
 
 
 def fetch_hearing_window(session, start_date, end_date, cache_for_seconds):

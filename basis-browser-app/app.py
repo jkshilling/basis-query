@@ -216,6 +216,22 @@ def api_freshness():
         return jsonify({})
 
 
+@app.route("/schedule")
+def schedule_page():
+    return render_template("schedule.html")
+
+
+@app.route("/api/schedule")
+def api_schedule():
+    from fetch import fetch_committee_schedule
+    date = request.args.get("date") or None
+    try:
+        meetings = fetch_committee_schedule(date)
+        return jsonify({"date": date, "meetings": meetings, "error": None})
+    except Exception as exc:
+        return jsonify({"date": date, "meetings": [], "error": str(exc)})
+
+
 @app.route("/api/floor")
 def api_floor():
     """Lightweight floor-calendar endpoint for dashboard auto-refresh."""

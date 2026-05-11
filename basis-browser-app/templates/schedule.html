@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Committee Schedule — BASIS Browser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='util.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body class="wide">
+    <nav>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <strong>Schedule</strong> | <a href="/bill-progress">Bill Progress</a> | <a href="/governor">Governor</a> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
+    </nav>
+
+    <header>
+        <h1>Daily Committee Schedule</h1>
+        <p id="schedule-date">Today</p>
+    </header>
+
+    <div class="sched-controls">
+        <button id="prev-day">← Previous Day</button>
+        <input type="date" id="date-picker">
+        <button id="next-day">Next Day →</button>
+        <button id="today-btn">Today</button>
+    </div>
+
+    <div id="loading" class="loading">Loading schedule&hellip;</div>
+    <div id="content" style="display:none"></div>
+
+    <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
+
+    <script>
+    function fmt(d) {
+        return (d.getMonth()+1) + '/' + d.getDate() + '/' + d.getFullYear();
+    }
+    function fmtISO(d) {
+        var m = String(d.getMonth()+1).padStart(2,'0');
+        var dd = String(d.getDate()).padStart(2,'0');
+        return d.getFullYear() + '-' + m + '-' + dd;
+    }
+    function parseISO(s) {
+        var p = s.split('-');
+        return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+    }
+
+    function load(dateStr) {
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('content').style.display = 'none';
+        document.getElementById('schedule-date').textContent = dateStr;
+
+        fetch('/api/schedule?date=' + encodeURIComponent(dateStr))
+            .then(r => r.json())
+            .then(resp => {
+                if (resp.error) {
+                    document.getElementById('loading').innerHTML = 'Failed: ' + esc(resp.error);
+                    document.getElementById('loading').className = 'error';
+                    return;
+                }
+                render(resp.meetings);
+            })
+            .catch(err => {
+                document.getElementById('loading').innerHTML = 'Failed: ' + err;
+                document.getElementById('loading').className = 'error';
+            });
+    }
+
+    function render(meetings) {
+        if (!meetings.length) {
+            document.getElementById('content').innerHTML =
+                '<p class="empty">No committee meetings scheduled for this date.</p>';
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+            return;
+        }
+
+        var html = '';
+        meetings.forEach(function(m) {
+            html += '<div class="meeting' + (m.canceled ? ' meeting-canceled' : '') + '">';
+            html += '<div class="meeting-head">';
+            html += '<div class="meeting-time">' + esc(m.time) + '</div>';
+            html += '<div class="meeting-title">';
+            html += chamberSpan(m.chamber) + ' ';
+            html += '<a class="cmte-link" href="/committee/' + m.chamber + '/' + encodeURIComponent(m.committee_code) + '">';
+            html += esc(m.committee_name);
+            html += '</a>';
+            html += ' <span class="meeting-type">' + esc(m.committee_type) + '</span>';
+            if (m.canceled) html += ' <span class="meeting-canceled-badge">CANCELED</span>';
+            html += '</div>';
+            html += '<div class="meeting-loc">' + esc(m.location) + '</div>';
+            html += '</div>';
+
+            if (m.agenda.length) {
+                html += '<table class="compact meeting-agenda"><tbody>';
+                m.agenda.forEach(function(a) {
+                    var rowClass = a.billnumber ? '' : ' class="agenda-note"';
+                    html += '<tr' + rowClass + '>';
+                    html += '<td class="agenda-flags" title="' + flagTitle(a.flags) + '">' + esc(a.flags) + '</td>';
+                    html += '<td class="bill-number">';
+                    if (a.billnumber) {
+                        html += '<a href="/bill/' + encodeURIComponent(a.billnumber) + '">' + esc(a.billnumber) + '</a>';
+                    }
+                    html += '</td>';
+                    html += '<td>' + esc(a.title) + '</td>';
+                    html += '<td class="center">' + (a.teleconferenced ? '<span class="tc-badge">TC</span>' : '') + '</td>';
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+            }
+            html += '</div>';
+        });
+
+        // Legend at top
+        var legend = '<div class="sched-legend">';
+        legend += '<span><strong>*</strong> first hearing in first committee of referral</span>';
+        legend += '<span><strong>+</strong> teleconferenced</span>';
+        legend += '<span><strong>=</strong> previously heard / scheduled</span>';
+        legend += '<span><strong>TC</strong> = teleconferenced</span>';
+        legend += '</div>';
+
+        document.getElementById('content').innerHTML = legend + html;
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+    }
+
+    function flagTitle(flags) {
+        var notes = [];
+        if (flags.indexOf('*') >= 0) notes.push('First hearing in first committee of referral');
+        if (flags.indexOf('+') >= 0) notes.push('Teleconferenced');
+        if (flags.indexOf('=') >= 0) notes.push('Previously heard / scheduled');
+        return notes.join(' • ');
+    }
+
+    // Set up date picker (defaults to today)
+    var today = new Date();
+    var picker = document.getElementById('date-picker');
+    picker.value = fmtISO(today);
+
+    picker.addEventListener('change', function() {
+        if (!picker.value) return;
+        load(fmt(parseISO(picker.value)));
+    });
+    document.getElementById('prev-day').addEventListener('click', function() {
+        var d = parseISO(picker.value);
+        d.setDate(d.getDate() - 1);
+        picker.value = fmtISO(d);
+        load(fmt(d));
+    });
+    document.getElementById('next-day').addEventListener('click', function() {
+        var d = parseISO(picker.value);
+        d.setDate(d.getDate() + 1);
+        picker.value = fmtISO(d);
+        load(fmt(d));
+    });
+    document.getElementById('today-btn').addEventListener('click', function() {
+        var d = new Date();
+        picker.value = fmtISO(d);
+        load(fmt(d));
+    });
+
+    load(fmt(today));
+    </script>
+</body>
+</html>

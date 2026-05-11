@@ -83,6 +83,41 @@ nav a:hover { text-decoration: underline; }
     gap: 16px;
     margin-bottom: 24px;
 }
+/* Schedule page */
+.sched-controls { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
+.sched-controls button, .sched-controls input[type="date"] {
+    padding: 6px 12px; font-size: 13px;
+    border: 1px solid #bbb; border-radius: 3px;
+    background: #fff; cursor: pointer;
+}
+.sched-controls button:hover { background: #eef; }
+.sched-legend {
+    font-size: 11px; color: #666; margin-bottom: 14px;
+    display: flex; gap: 16px; flex-wrap: wrap;
+}
+.meeting {
+    background: #fff; border: 1px solid #ddd; border-radius: 4px;
+    padding: 12px; margin-bottom: 12px;
+}
+.meeting-canceled { opacity: 0.6; }
+.meeting-canceled-badge {
+    background: #c0392b; color: #fff; font-size: 10px; font-weight: 700;
+    padding: 2px 6px; border-radius: 3px; margin-left: 6px;
+}
+.meeting-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; margin-bottom: 8px; }
+.meeting-time { font-weight: 600; font-size: 13px; color: #1a5276; min-width: 180px; }
+.meeting-title { flex: 1; font-size: 14px; }
+.meeting-type { color: #888; font-size: 11px; font-weight: normal; }
+.meeting-loc { color: #555; font-size: 12px; }
+.meeting-agenda { margin-top: 4px; }
+.meeting-agenda td { padding: 3px 8px; }
+.agenda-flags { font-family: "SF Mono", "Consolas", monospace; color: #c0392b; font-size: 11px; min-width: 24px; text-align: center; }
+.agenda-note td { color: #777; font-style: italic; background: #fafafa; }
+.tc-badge {
+    background: #95a5a6; color: #fff; font-size: 9px; font-weight: 700;
+    padding: 1px 5px; border-radius: 3px;
+}
+
 .floor-stack { display: flex; flex-direction: column; gap: 16px; }
 .floor-stack h3 { font-size: 13px; margin-bottom: 6px; }
 .floor-section-header {
