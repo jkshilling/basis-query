@@ -18,7 +18,7 @@ from parse import (
 from fetch import (
     fetch_all_bills, fetch_hearing_schedule, fetch_hearing_counts,
     fetch_committee_reports, scan_all_actions, count_actions_by_year,
-    fetch_bill_detail,
+    fetch_bill_detail, fetch_floor_calendar,
 )
 
 
@@ -211,34 +211,12 @@ def dashboard_stats(session="34"):
     bills_only = sum(v for k, v in type_counts.items() if k in ("HB", "SB"))
     resolutions = sum(v for k, v in type_counts.items() if k not in ("HB", "SB"))
 
-    # Floor calendar.
-    house_floor = []
-    senate_floor = []
-    for b in all_bills:
-        status = b["status"]
-        status_upper = status.upper()
-        if "CAL" not in status_upper or "SECY" in status_upper:
-            continue
-        cal_match = re.search(r'CAL\(([HS])\)', status)
-        reading = ""
-        if "3RD RDG" in status_upper or "THIRD" in status_upper:
-            reading = "3rd Reading"
-        elif "2ND" in status_upper or "SECOND" in status_upper:
-            reading = "2nd Reading"
-        elif "HELD" in status_upper:
-            reading = "Held"
-        entry = {
-            "billnumber": b["billnumber"],
-            "title": b["short_title"],
-            "status": status,
-            "reading": reading,
-        }
-        if cal_match:
-            (house_floor if cal_match.group(1) == "H" else senate_floor).append(entry)
-        elif "(H)" in status:
-            house_floor.append(entry)
-        elif "(S)" in status:
-            senate_floor.append(entry)
+    # Floor calendar — scrape the canonical akleg floor.asp page for each
+    # chamber so we get exactly what the legislature publishes (including
+    # bills that don't have "CAL" in their BASIS StatusText, like ones
+    # returned to 2nd reading for amendments).
+    house_floor = fetch_floor_calendar("H")
+    senate_floor = fetch_floor_calendar("S")
 
     stats = {
         "total_house": total_house,

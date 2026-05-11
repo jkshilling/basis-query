@@ -81,9 +81,12 @@ def _invalidate_top_level_caches():
         "hb_in_senate", "sb_in_house", "dashboard_stats", "action_code_counts",
         "bill_progress", "all_actions", "governor_bills",
     ]
-    # Also clear any activity_feed_X entries
+    # Also clear any activity_feed_X entries and today's floor calendar
+    # (so refreshes pick up newly-calendared bills).
     for k in list(cache._cache.keys()):
-        if k.startswith("activity_feed_") or k in keys_to_clear:
+        if (k.startswith("activity_feed_")
+                or k.startswith("floor_cal_")
+                or k in keys_to_clear):
             cache._cache.pop(k, None)
 
 

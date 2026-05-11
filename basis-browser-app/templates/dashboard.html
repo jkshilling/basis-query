@@ -148,12 +148,10 @@
                     document.getElementById(containerId).innerHTML = '<p class="empty">' + msg + '</p>';
                     return;
                 }
-                var html = '<table class="compact"><thead><tr><th>Bill</th><th>Title</th><th>Reading</th><th>Status</th></tr></thead><tbody>';
+                var html = '<table class="compact"><thead><tr><th>Bill</th><th>Title</th></tr></thead><tbody>';
                 bills.forEach(b => {
-                    html += '<tr><td class="bill-number">' + esc(b.billnumber) + '</td>';
-                    html += '<td>' + esc(b.title) + '</td>';
-                    html += '<td class="center">' + esc(b.reading) + '</td>';
-                    html += '<td>' + esc(b.status) + '</td></tr>';
+                    html += '<tr><td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
+                    html += '<td>' + esc(b.title) + '</td></tr>';
                 });
                 html += '</tbody></table>';
                 document.getElementById(containerId).innerHTML = html;

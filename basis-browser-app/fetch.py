@@ -33,6 +33,74 @@ import query_basis  # noqa: E402
 log = logging.getLogger("basis_browser.fetch")
 
 SCHEDULE_URL = "https://www.akleg.gov/basis/Meeting/Index"
+FLOOR_URL = "https://www.akleg.gov/basis/floor.asp"
+
+
+def fetch_floor_calendar(chamber, date=None):
+    """Scrape the akleg floor calendar HTML for one chamber on one date.
+
+    Returns a list of dicts: [{billnumber, title, status_or_section}].
+    """
+    if date is None:
+        try:
+            from zoneinfo import ZoneInfo
+            now_ak = datetime.now(ZoneInfo("America/Anchorage"))
+        except ImportError:
+            now_ak = datetime.now()
+        date = now_ak.strftime("%-m/%-d/%Y")
+
+    url = f"{FLOOR_URL}?date={date}&chamber={chamber}"
+    cache_key = f"floor_cal_{chamber}_{date}"
+    cached = _cache.get(cache_key, max_age=300)
+    if cached is not None:
+        return cached
+
+    bills = []
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "basis-browser/0.1"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        log.warning("floor.fetch_failed chamber=%s date=%s err=%r", chamber, date, exc)
+        return bills
+
+    # Pattern: each bill is a <a href="...Bill/Detail/...?Root=HB 123">HB 123</a>
+    # followed by a <span class="col02">TITLE</span>. Section headers like
+    # "HOUSE LEGISLATION AWAITING RECEDE IN SENATE AMENDMENTS" appear as
+    # plain text between bill blocks.
+    current_section = ""
+    for line in html.split("\n"):
+        # Section header line
+        sm = re.search(r'>\s*([A-Z][A-Z ,&]+(?:AMENDMENTS|TABLE|SUSPENSION|FINAL PASSAGE|RECONSIDERATION|RECEDE[^<]*))\s*<', line)
+        if sm and "BILL" not in sm.group(1) and "TITLE" not in sm.group(1):
+            current_section = sm.group(1).strip()
+        # Bill link
+        bm = re.search(r'Bill/Detail/\d*\?Root=([^"]+)"[^>]*>([^<]+)</a>', line)
+        if bm:
+            bn = " ".join(bm.group(2).strip().split())
+            bills.append({
+                "billnumber": bn,
+                "title": "",
+                "section": current_section,
+            })
+            continue
+        # Title on subsequent col02 line — attach to most recent bill.
+        if bills and not bills[-1]["title"]:
+            tm = re.search(r'col02">(?:<font[^>]*>)?([^<]+)</?(?:font|span)', line)
+            if tm:
+                bills[-1]["title"] = tm.group(1).strip()
+
+    # Deduplicate (same bill could appear in multiple sections).
+    seen = set()
+    unique = []
+    for b in bills:
+        if b["billnumber"] in seen:
+            continue
+        seen.add(b["billnumber"])
+        unique.append(b)
+
+    _cache.put(cache_key, unique)
+    return unique
 
 
 # --- Low-level BASIS API call ---
