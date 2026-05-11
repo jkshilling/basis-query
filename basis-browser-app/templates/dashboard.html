@@ -148,16 +148,53 @@
                     document.getElementById(containerId).innerHTML = '<p class="empty">' + msg + '</p>';
                     return;
                 }
-                var html = '<table class="compact"><thead><tr><th>Bill</th><th>Title</th></tr></thead><tbody>';
-                bills.forEach(b => {
-                    html += '<tr><td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
-                    html += '<td>' + esc(b.title) + '</td></tr>';
+                // Group bills by section ("" = main calendar; named otherwise).
+                var sections = [];
+                var current = {name: '', bills: []};
+                sections.push(current);
+                bills.forEach(function(b) {
+                    var s = b.section || '';
+                    if (s !== current.name) {
+                        current = {name: s, bills: []};
+                        sections.push(current);
+                    }
+                    current.bills.push(b);
                 });
-                html += '</tbody></table>';
+
+                var html = '';
+                sections.forEach(function(sec) {
+                    if (!sec.bills.length) return;
+                    if (sec.name) {
+                        html += '<h4 class="floor-section-header">' + esc(sec.name) + '</h4>';
+                    }
+                    html += '<table class="compact"><thead><tr><th>Bill</th><th>Title</th><th>Status</th></tr></thead><tbody>';
+                    sec.bills.forEach(b => {
+                        var rowClass = b.live ? ' class="floor-live"' : '';
+                        var liveTag = b.live ? ' <span class="live-badge">LIVE</span>' : '';
+                        html += '<tr' + rowClass + '>';
+                        html += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a>' + liveTag + '</td>';
+                        html += '<td>' + esc(b.title) + '</td>';
+                        html += '<td>' + esc(b.status) + '</td>';
+                        html += '</tr>';
+                    });
+                    html += '</tbody></table>';
+                });
                 document.getElementById(containerId).innerHTML = html;
             }
             floorTable(s.house_floor, 'house-floor');
             floorTable(s.senate_floor, 'senate-floor');
+
+            // Auto-refresh just the floor calendar every 60 seconds when
+            // the tab is visible. This tracks the legislature's LIVE marker
+            // as bills move through the session.
+            function refreshFloor() {
+                if (document.hidden) return;
+                fetch('/api/floor').then(function(r) { return r.json(); }).then(function(fd) {
+                    if (fd.house) floorTable(fd.house, 'house-floor');
+                    if (fd.senate) floorTable(fd.senate, 'senate-floor');
+                }).catch(function() {});
+            }
+            setInterval(refreshFloor, 60 * 1000);
 
             // Throughput charts
             new Chart(document.getElementById('houseThroughput'), {

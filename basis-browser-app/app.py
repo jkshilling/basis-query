@@ -216,6 +216,19 @@ def api_freshness():
         return jsonify({})
 
 
+@app.route("/api/floor")
+def api_floor():
+    """Lightweight floor-calendar endpoint for dashboard auto-refresh."""
+    from fetch import fetch_floor_calendar
+    try:
+        return jsonify({
+            "house": fetch_floor_calendar("H"),
+            "senate": fetch_floor_calendar("S"),
+        })
+    except Exception as exc:
+        return jsonify({"house": [], "senate": [], "error": str(exc)})
+
+
 @app.route("/api/top-subjects")
 def api_top_subjects():
     try:

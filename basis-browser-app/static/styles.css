@@ -85,6 +85,24 @@ nav a:hover { text-decoration: underline; }
 }
 .floor-stack { display: flex; flex-direction: column; gap: 16px; }
 .floor-stack h3 { font-size: 13px; margin-bottom: 6px; }
+.floor-section-header {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.4px; color: #555;
+    margin: 12px 0 4px;
+    border-top: 1px solid #ddd; padding-top: 8px;
+}
+.floor-live { background: #fff4e6; }
+.live-badge {
+    display: inline-block; background: #c0392b; color: #fff;
+    font-size: 9px; font-weight: 700;
+    padding: 1px 5px; border-radius: 3px; margin-left: 4px;
+    vertical-align: middle;
+    animation: livePulse 1.5s ease-in-out infinite;
+}
+@keyframes livePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+}
 .chart-container {
     background: #fff;
     border: 1px solid #ddd;

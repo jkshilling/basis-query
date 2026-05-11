@@ -39,7 +39,13 @@ FLOOR_URL = "https://www.akleg.gov/basis/floor.asp"
 def fetch_floor_calendar(chamber, date=None):
     """Scrape the akleg floor calendar HTML for one chamber on one date.
 
-    Returns a list of dicts: [{billnumber, title, status_or_section}].
+    Returns a list of dicts:
+      [{billnumber, title, status, section, live}]
+    where:
+      section : '' for the main calendar; otherwise a header like
+                'HOUSE LEGISLATION AWAITING RECEDE IN SENATE AMENDMENTS'
+      live    : True when the legislature marks the bill as currently
+                being processed (akleg wraps the title in red text)
     """
     if date is None:
         try:
@@ -51,7 +57,9 @@ def fetch_floor_calendar(chamber, date=None):
 
     url = f"{FLOOR_URL}?date={date}&chamber={chamber}"
     cache_key = f"floor_cal_{chamber}_{date}"
-    cached = _cache.get(cache_key, max_age=300)
+    # Short cache so the LIVE badge tracks the legislature's session in
+    # near-real-time. Auto-refresh on the dashboard polls every 60s.
+    cached = _cache.get(cache_key, max_age=45)
     if cached is not None:
         return cached
 
@@ -64,33 +72,57 @@ def fetch_floor_calendar(chamber, date=None):
         log.warning("floor.fetch_failed chamber=%s date=%s err=%r", chamber, date, exc)
         return bills
 
-    # Pattern: each bill is a <a href="...Bill/Detail/...?Root=HB 123">HB 123</a>
-    # followed by a <span class="col02">TITLE</span>. Section headers like
-    # "HOUSE LEGISLATION AWAITING RECEDE IN SENATE AMENDMENTS" appear as
-    # plain text between bill blocks.
+    # Each <li> is either a bill row (col01..col04) or a section header
+    # (bold centered div). Split on <li> boundaries and inspect each.
+    li_blocks = re.split(r'<li[^>]*>', html)
     current_section = ""
-    for line in html.split("\n"):
-        # Section header line
-        sm = re.search(r'>\s*([A-Z][A-Z ,&]+(?:AMENDMENTS|TABLE|SUSPENSION|FINAL PASSAGE|RECONSIDERATION|RECEDE[^<]*))\s*<', line)
-        if sm and "BILL" not in sm.group(1) and "TITLE" not in sm.group(1):
-            current_section = sm.group(1).strip()
-        # Bill link
-        bm = re.search(r'Bill/Detail/\d*\?Root=([^"]+)"[^>]*>([^<]+)</a>', line)
-        if bm:
-            bn = " ".join(bm.group(2).strip().split())
-            bills.append({
-                "billnumber": bn,
-                "title": "",
-                "section": current_section,
-            })
+    for block in li_blocks:
+        # Section header — bold centered text inside a div
+        header_match = re.search(
+            r'font-weight:bold;text-align:center[^>]*>\s*([^<]+?)\s*</div>',
+            block,
+        )
+        if header_match:
+            txt = header_match.group(1).strip()
+            # Ignore generic chamber headers like "SENATE"
+            if txt and txt.upper() not in ("HOUSE", "SENATE") and "CALENDAR" not in txt.upper():
+                current_section = txt
             continue
-        # Title on subsequent col02 line — attach to most recent bill.
-        if bills and not bills[-1]["title"]:
-            tm = re.search(r'col02">(?:<font[^>]*>)?([^<]+)</?(?:font|span)', line)
-            if tm:
-                bills[-1]["title"] = tm.group(1).strip()
 
-    # Deduplicate (same bill could appear in multiple sections).
+        # Bill link
+        bm = re.search(r'Bill/Detail/\d*\?Root=([^"]+)"[^>]*>([^<]+)</a>', block)
+        if not bm:
+            continue
+        bn = " ".join(bm.group(2).strip().split())
+
+        # Title in col02. Look for <font color=red> to detect live flag.
+        title = ""
+        live = False
+        tm = re.search(
+            r'class="col02">\s*(?:<font\s+color=red>)?\s*([^<]+?)(?:</font>)?\s*</span>',
+            block,
+        )
+        if tm:
+            title = tm.group(1).strip()
+        if re.search(r'class="col02">[^<]*<font\s+color=red>', block):
+            live = True
+
+        # Status in col03
+        status = ""
+        sm = re.search(r'class="col03">\s*([^<]+?)\s*</span>', block)
+        if sm:
+            status = sm.group(1).strip()
+
+        bills.append({
+            "billnumber": bn,
+            "title": title,
+            "status": status,
+            "section": current_section,
+            "live": live,
+        })
+
+    # Deduplicate: a bill appearing under multiple sections keeps its
+    # first occurrence (the main calendar entry, which is listed first).
     seen = set()
     unique = []
     for b in bills:
