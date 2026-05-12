@@ -188,6 +188,14 @@ def dashboard():
 def api_dashboard():
     try:
         stats = dashboard_stats()
+        # Floor calendars need to be fresh — dashboard_stats may have
+        # been cached when the legislature hadn't yet published a
+        # chamber's calendar. Always re-fetch them on each dashboard
+        # request (fetch_floor_calendar has its own short cache).
+        from fetch import fetch_floor_calendar
+        stats = dict(stats)
+        stats["house_floor"] = fetch_floor_calendar("H")
+        stats["senate_floor"] = fetch_floor_calendar("S")
         return jsonify({"stats": stats, "error": None})
     except Exception as exc:
         return jsonify({"stats": None, "error": str(exc)})
