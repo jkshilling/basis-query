@@ -18,6 +18,8 @@
         <p>Alaska &mdash; 2025-2026</p>
     </header>
 
+    <div id="countdown" class="countdown-banner" style="display:none"></div>
+
     <div id="loading" class="loading">
         <div id="load-step">Connecting to BASIS API&hellip;</div>
     </div>
@@ -111,6 +113,20 @@
     // Honest loading: cold loads are slow, cached are instant.
     var stepEl = document.getElementById('load-step');
     var timers = [];
+
+    // Session countdown banner (independent of dashboard data).
+    fetch('/api/session-countdown').then(function(r) { return r.json(); }).then(function(s) {
+        if (!s || !s.total) return;
+        var banner = document.getElementById('countdown');
+        var urgent = s.remaining <= 10;
+        banner.className = 'countdown-banner' + (urgent ? ' urgent' : '');
+        banner.innerHTML = 'Day <strong>' + s.day + '</strong> of ' + s.total +
+            ' &mdash; <strong>' + s.remaining + '</strong> day' +
+            (s.remaining === 1 ? '' : 's') + ' until constitutional adjournment (' +
+            esc(s.adjournment_date) + ')' +
+            ' &middot; <a href="/pipeline">View end-of-session pipeline →</a>';
+        banner.style.display = 'block';
+    }).catch(function() {});
 
     fetch('/api/dashboard')
         .then(r => r.json())

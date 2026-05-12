@@ -83,6 +83,59 @@ nav a:hover { text-decoration: underline; }
     gap: 16px;
     margin-bottom: 24px;
 }
+/* Pipeline page */
+.pipeline-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+}
+.pipeline-col {
+    background: #fff; border: 1px solid #ddd; border-radius: 4px;
+    display: flex; flex-direction: column;
+    min-height: 200px;
+}
+.pipeline-col-head {
+    background: #1a5276; color: #fff;
+    padding: 8px 10px; font-size: 12px;
+    border-radius: 4px 4px 0 0;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.pipeline-count {
+    background: #fff; color: #1a5276;
+    padding: 1px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 700;
+}
+.pipeline-col-body { padding: 6px; flex: 1; }
+.pipeline-empty { color: #aaa; text-align: center; padding: 12px; font-size: 12px; }
+.pipeline-bill {
+    padding: 4px 0; font-size: 11px; line-height: 1.4;
+    border-bottom: 1px solid #f4f4f4;
+}
+.pipeline-bill:last-child { border-bottom: none; }
+.pipeline-bill a { font-weight: 600; color: #1a5276; text-decoration: none; }
+.pipeline-bill a:hover { text-decoration: underline; }
+.pipeline-title { color: #666; font-size: 10px; display: block; margin-left: 32px; }
+.pipeline-score {
+    display: inline-block; min-width: 26px; padding: 1px 4px;
+    font-size: 10px; font-weight: 700; color: #fff;
+    border-radius: 3px; text-align: center;
+    font-family: "SF Mono", "Consolas", monospace;
+}
+.pipeline-more {
+    font-size: 11px; color: #888; text-align: center;
+    padding: 4px; font-style: italic;
+}
+
+/* Session countdown banner */
+.countdown-banner {
+    background: #fff8e1; border-left: 3px solid #e67e22;
+    padding: 6px 12px; font-size: 12px; color: #555;
+    margin-bottom: 12px; border-radius: 3px;
+}
+.countdown-banner strong { color: #1a5276; }
+.countdown-banner.urgent { background: #fdecea; border-left-color: #c0392b; }
+
 /* Schedule page */
 .sched-controls { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
 .sched-controls button, .sched-controls input[type="date"] {

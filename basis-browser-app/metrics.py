@@ -930,6 +930,251 @@ def search_bills(query, session="34", limit=50):
     return matches[:limit]
 
 
+# --- Session countdown ---
+
+# 2nd regular session of the 34th Legislature convened the third Tuesday
+# of January 2026; the constitutional 121-day limit puts adjournment
+# around 5/20/2026. The legislature can pass a one-time 10-day extension.
+SESSION_START = datetime(2026, 1, 20)
+SESSION_LIMIT_DAYS = 121
+
+# Governor has 15 days to act on bills received during session.
+# Article II, Sec 17 of the Alaska Constitution.
+GOVERNOR_DEADLINE_DAYS = 15
+
+
+def session_countdown(today=None):
+    """Return days remaining in the regular session and metadata."""
+    if today is None:
+        today = datetime.now().date()
+    elif isinstance(today, datetime):
+        today = today.date()
+    start = SESSION_START.date()
+    day_of_session = (today - start).days + 1
+    remaining = SESSION_LIMIT_DAYS - day_of_session
+    return {
+        "day": max(day_of_session, 0),
+        "total": SESSION_LIMIT_DAYS,
+        "remaining": max(remaining, 0),
+        "adjournment_date": (start + timedelta(days=SESSION_LIMIT_DAYS - 1)).strftime("%b %-d, %Y"),
+        "expired": remaining < 0,
+    }
+
+
+# --- End-of-session pipeline ---
+
+# Pipeline stage definitions. Each bill maps to exactly one stage based
+# on the most-advanced position it currently sits at.
+PIPELINE_STAGES = [
+    "Origin Committee",
+    "Origin Floor",
+    "Crossed Over",
+    "Other-Chamber Committee",
+    "Other-Chamber Floor",
+    "Concurrence",
+    "Conference Committee",
+    "At Governor",
+    "Done",
+]
+
+
+def _classify_pipeline_stage(status, actions, origin):
+    """Return one of PIPELINE_STAGES based on current position."""
+    su = (status or "").upper()
+    other = "S" if origin == "H" else "H"
+
+    # Terminal states
+    if "CHAPTER" in su or "VETOED" in su or "VETO SUSTAINED" in su \
+            or "VETO OVERRIDDEN" in su or "WITHDRAWN" in su \
+            or "PERMANENTLY FILED" in su or "FAILED" in su:
+        return "Done"
+
+    if "TRANSM TO GOVERNOR" in su or "TRANSMITTED TO GOVERNOR" in su:
+        return "At Governor"
+
+    # Conference committee: has 029 but not 032/058 yet
+    codes = set(c[0] for c in actions)
+    if ("029" in codes or "069" in codes) and not (
+        "032" in codes or "058" in codes or "070" in codes
+    ):
+        return "Conference Committee"
+
+    # Concurrence: bill is in the FLD CONCUR or CONCURRED state, or has
+    # been transmitted as amended back to origin (083) without final
+    # resolution yet.
+    if "FLD CONCUR" in su or "CONCUR MESSAGE" in su:
+        return "Concurrence"
+    if "022" in codes and "083" in codes and "032" not in codes and "058" not in codes:
+        # Transmitted both directions: amendments are being negotiated
+        pass  # handled below
+
+    # Crossed over / in other chamber
+    current = current_chamber(status, origin)
+    if current == other:
+        # Currently in other chamber. Floor? Committee?
+        if "CAL" in su or "RDG" in su or "FLOOR" in su:
+            return "Other-Chamber Floor"
+        if "TRANSMITTED" in su or "READ FIRST TIME" in su:
+            return "Crossed Over"
+        return "Other-Chamber Committee"
+
+    # In origin chamber
+    if current == origin:
+        if "CAL" in su or "RDG" in su or "PASSD" in su \
+                or "RECON" in su or "FLOOR" in su:
+            return "Origin Floor"
+        # Default: still in committee
+        return "Origin Committee"
+
+    # Fallback
+    return "Origin Committee"
+
+
+def pipeline(session="34", min_legs_score=20):
+    """Build the end-of-session pipeline view.
+
+    Returns a dict of {stage_label: [bill_summary, ...]} for bills with
+    Legs Score >= min_legs_score (so we focus on bills with a real shot
+    of moving rather than the long tail of dormant ones).
+    """
+    cache_key = f"pipeline_{min_legs_score}"
+    cached = _cache.get(cache_key, max_age=300)
+    if cached is not None:
+        return cached
+
+    by_stage = {s: [] for s in PIPELINE_STAGES}
+    governor_bills_list = []  # bills currently with governor, with days info
+
+    today = datetime.now().date()
+
+    for bn, origin, title, status, actions in scan_all_actions(session):
+        prefix = bn.split()[0] if bn else ""
+        if prefix not in ("HB", "SB"):
+            continue
+
+        legs = legs_score(actions, origin)
+        if legs["score"] < min_legs_score:
+            continue
+
+        stage = _classify_pipeline_stage(status, actions, origin)
+
+        # Most recent meaningful date
+        last_date = ""
+        for c, a, jd, _ in actions:
+            if jd > last_date:
+                last_date = jd
+
+        entry = {
+            "billnumber": compact_billnumber(bn),
+            "title": truncate(title, 50),
+            "origin": origin,
+            "status": status,
+            "legs_score": legs["score"],
+            "legs_stage_label": legs["stage_label"],
+            "last_date": format_status_date(last_date),
+        }
+
+        # Special: for "At Governor", compute the deadline countdown
+        if stage == "At Governor":
+            # Find the 033 transmittal date
+            transmit_date = None
+            for c, a, jd, t in actions:
+                if c == "033":
+                    transmit_date = jd
+                    break
+            days_at_gov = None
+            days_left = None
+            if transmit_date:
+                try:
+                    d = datetime.strptime(transmit_date, "%Y-%m-%d").date()
+                    days_at_gov = (today - d).days
+                    days_left = GOVERNOR_DEADLINE_DAYS - days_at_gov
+                except ValueError:
+                    pass
+            entry["days_at_governor"] = days_at_gov
+            entry["governor_days_left"] = days_left
+            governor_bills_list.append(entry)
+
+        by_stage[stage].append(entry)
+
+    # Sort each stage by Legs Score (highest momentum first)
+    for stage in by_stage:
+        by_stage[stage].sort(key=lambda b: -b["legs_score"])
+
+    # Stage counts for summary
+    counts = {s: len(by_stage[s]) for s in PIPELINE_STAGES}
+
+    # Concurrence detail: what's the question?
+    concurrence_bills = []
+    for bn, origin, title, status, actions in scan_all_actions(session):
+        prefix = bn.split()[0] if bn else ""
+        if prefix not in ("HB", "SB", "HCR", "SCR", "HJR", "SJR"):
+            continue
+        su = (status or "").upper()
+        if "FLD CONCUR" not in su and "CONCUR MESSAGE" not in su:
+            continue
+        # Find the most recent meaningful action
+        last_date = ""
+        last_text = ""
+        for c, a, jd, t in actions:
+            if jd > last_date:
+                last_date = jd
+                last_text = t
+        concurrence_bills.append({
+            "billnumber": compact_billnumber(bn),
+            "title": truncate(title, 50),
+            "origin": origin,
+            "status": status,
+            "last_date": format_status_date(last_date),
+            "last_action_text": last_text,
+        })
+
+    # Conference committee detail
+    conference_bills = []
+    for bn, origin, title, status, actions in scan_all_actions(session):
+        codes = set(c[0] for c in actions)
+        if "029" not in codes and "069" not in codes:
+            continue
+        # Pick most recent conference-related action
+        last_cc_date = ""
+        last_cc_text = ""
+        for c, a, jd, t in actions:
+            if c in ("029", "030", "031", "032", "058", "059", "067", "069", "070", "079", "109"):
+                if jd > last_cc_date:
+                    last_cc_date = jd
+                    last_cc_text = t
+        # Conferees from action code 030
+        conferees = ""
+        for c, a, jd, t in actions:
+            if c == "030":
+                conferees = t  # last one wins
+        # Done if conference report adopted in both chambers (032 + 058)
+        done = "032" in codes or "058" in codes or "070" in codes
+        conference_bills.append({
+            "billnumber": compact_billnumber(bn),
+            "title": truncate(title, 60),
+            "origin": origin,
+            "status": status,
+            "last_cc_date": format_status_date(last_cc_date),
+            "last_cc_text": last_cc_text,
+            "conferees": conferees,
+            "done": done,
+        })
+    conference_bills.sort(key=lambda b: (b["done"], b["last_cc_date"]), reverse=True)
+
+    result = {
+        "by_stage": by_stage,
+        "counts": counts,
+        "stages": PIPELINE_STAGES,
+        "governor_bills": governor_bills_list,
+        "concurrence_bills": concurrence_bills,
+        "conference_bills": conference_bills,
+        "session": session_countdown(),
+    }
+    _cache.put(cache_key, result)
+    return result
+
+
 # --- Cache freshness ---
 
 def cache_freshness():

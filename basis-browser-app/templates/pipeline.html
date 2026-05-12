@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipeline — BASIS Browser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='util.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body class="wide">
+    <nav>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/schedule">Schedule</a> | <a href="/bill-progress">Bill Progress</a> | <strong>Pipeline</strong> | <a href="/governor">Governor</a> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
+    </nav>
+
+    <header>
+        <h1>End-of-Session Pipeline</h1>
+        <p id="session-banner"></p>
+    </header>
+
+    <div id="loading" class="loading">Loading pipeline&hellip;</div>
+    <div id="content" style="display:none">
+
+        <section>
+            <h2>Pipeline Status</h2>
+            <p class="chart-note">Bills with Legs Score ≥ 20, grouped by their current position in the legislative process. The closer to the right, the closer to passage.</p>
+            <div id="pipeline-stages" class="pipeline-grid"></div>
+        </section>
+
+        <section>
+            <h2>At Governor — Action Deadline Countdown</h2>
+            <p class="chart-note">Per Article II §17 of the Alaska Constitution, the governor has 15 days during session to act on bills received.</p>
+            <table class="compact" id="governor-table"></table>
+        </section>
+
+        <section>
+            <h2>Conference, Concur, or Die</h2>
+            <p class="chart-note">Bills that have crossed over, been amended, and returned to their origin chamber. The originating chamber must concur with the amendments, refuse to concur (forcing a conference committee), or let the bill die.</p>
+            <table class="compact" id="concurrence-table"></table>
+        </section>
+
+        <section>
+            <h2>Conference Committees</h2>
+            <p class="chart-note">Bills where a conference committee has been appointed. These are actively being negotiated between House and Senate conferees.</p>
+            <table class="compact" id="conference-table"></table>
+        </section>
+
+    </div>
+
+    <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
+
+    <script>
+    fetch('/api/pipeline')
+        .then(r => r.json())
+        .then(resp => {
+            if (resp.error) {
+                document.getElementById('loading').innerHTML = 'Failed: ' + esc(resp.error);
+                document.getElementById('loading').className = 'error';
+                return;
+            }
+            var d = resp.data;
+            var sess = d.session;
+            var banner = 'Day ' + sess.day + ' of ' + sess.total +
+                ' &mdash; <strong>' + sess.remaining + '</strong> day' +
+                (sess.remaining === 1 ? '' : 's') + ' until constitutional adjournment (' +
+                esc(sess.adjournment_date) + ')';
+            document.getElementById('session-banner').innerHTML = banner;
+
+            // Pipeline stages — render as horizontal cards
+            var pipelineHtml = '';
+            d.stages.forEach(function(stage) {
+                var bills = d.by_stage[stage] || [];
+                pipelineHtml += '<div class="pipeline-col">';
+                pipelineHtml += '<div class="pipeline-col-head"><strong>' + esc(stage) +
+                    '</strong> <span class="pipeline-count">' + bills.length + '</span></div>';
+                pipelineHtml += '<div class="pipeline-col-body">';
+                if (!bills.length) {
+                    pipelineHtml += '<div class="pipeline-empty">—</div>';
+                } else {
+                    bills.slice(0, 30).forEach(function(b) {
+                        var color = b.legs_score >= 80 ? '#27ae60'
+                                  : b.legs_score >= 50 ? '#2980b9'
+                                  : b.legs_score >= 30 ? '#f39c12'
+                                  : '#95a5a6';
+                        pipelineHtml += '<div class="pipeline-bill">';
+                        pipelineHtml += '<span class="pipeline-score" style="background:' + color + '">' + b.legs_score + '</span> ';
+                        pipelineHtml += '<a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a>';
+                        pipelineHtml += ' <span class="pipeline-title">' + esc(b.title) + '</span>';
+                        pipelineHtml += '</div>';
+                    });
+                    if (bills.length > 30) {
+                        pipelineHtml += '<div class="pipeline-more">+ ' + (bills.length - 30) + ' more</div>';
+                    }
+                }
+                pipelineHtml += '</div></div>';
+            });
+            document.getElementById('pipeline-stages').innerHTML = pipelineHtml;
+
+            // Governor table with countdown
+            if (d.governor_bills && d.governor_bills.length) {
+                var gHtml = '<thead><tr><th>Bill</th><th>Title</th><th class="center">Days at Governor</th><th class="center">Days Until Auto-Law</th></tr></thead><tbody>';
+                d.governor_bills.forEach(function(b) {
+                    var dl = b.governor_days_left;
+                    var dlCell = dl == null ? '—'
+                                : dl <= 2 ? '<strong style="color:#c0392b">' + dl + '</strong>'
+                                : dl <= 5 ? '<strong style="color:#e67e22">' + dl + '</strong>'
+                                : dl;
+                    gHtml += '<tr>';
+                    gHtml += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
+                    gHtml += '<td>' + esc(b.title) + '</td>';
+                    gHtml += '<td class="center">' + (b.days_at_governor != null ? b.days_at_governor : '—') + '</td>';
+                    gHtml += '<td class="center">' + dlCell + '</td>';
+                    gHtml += '</tr>';
+                });
+                gHtml += '</tbody>';
+                document.getElementById('governor-table').innerHTML = gHtml;
+            } else {
+                document.getElementById('governor-table').outerHTML = '<p class="empty">No bills currently at the governor.</p>';
+            }
+
+            // Concurrence
+            if (d.concurrence_bills && d.concurrence_bills.length) {
+                var cHtml = '<thead><tr><th>Bill</th><th>Title</th><th>Origin</th><th>Status</th><th>Last Action</th></tr></thead><tbody>';
+                d.concurrence_bills.forEach(function(b) {
+                    cHtml += '<tr>';
+                    cHtml += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
+                    cHtml += '<td>' + esc(b.title) + '</td>';
+                    cHtml += '<td class="center">' + chamberSpan(b.origin) + '</td>';
+                    cHtml += '<td>' + esc(b.status) + '</td>';
+                    cHtml += '<td>' + esc(b.last_date) + ' — ' + esc(b.last_action_text) + '</td>';
+                    cHtml += '</tr>';
+                });
+                cHtml += '</tbody>';
+                document.getElementById('concurrence-table').innerHTML = cHtml;
+            } else {
+                document.getElementById('concurrence-table').outerHTML = '<p class="empty">No bills currently in concurrence.</p>';
+            }
+
+            // Conference committees
+            if (d.conference_bills && d.conference_bills.length) {
+                var fHtml = '<thead><tr><th>Bill</th><th>Title</th><th>Conferees</th><th>Last CC Action</th><th class="center">Resolved?</th></tr></thead><tbody>';
+                d.conference_bills.forEach(function(b) {
+                    fHtml += '<tr>';
+                    fHtml += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
+                    fHtml += '<td>' + esc(b.title) + '</td>';
+                    fHtml += '<td>' + esc(b.conferees || '—') + '</td>';
+                    fHtml += '<td>' + esc(b.last_cc_date) + ' — ' + esc(b.last_cc_text) + '</td>';
+                    fHtml += '<td class="center">' + (b.done ? '✓' : '—') + '</td>';
+                    fHtml += '</tr>';
+                });
+                fHtml += '</tbody>';
+                document.getElementById('conference-table').innerHTML = fHtml;
+            } else {
+                document.getElementById('conference-table').outerHTML = '<p class="empty">No active conference committees.</p>';
+            }
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+        })
+        .catch(function(err) {
+            document.getElementById('loading').innerHTML = 'Failed: ' + err;
+            document.getElementById('loading').className = 'error';
+        });
+    </script>
+</body>
+</html>

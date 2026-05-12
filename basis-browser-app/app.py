@@ -21,7 +21,7 @@ from adapter import (
     governor_bills, _fetch_bill_detail, committee_detail, top_subjects,
     search_bills, cache_freshness,
 )
-from metrics import legs_score
+from metrics import legs_score, pipeline, session_countdown
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -238,6 +238,28 @@ def api_schedule():
         return jsonify({"date": date, "meetings": meetings, "error": None})
     except Exception as exc:
         return jsonify({"date": date, "meetings": [], "error": str(exc)})
+
+
+@app.route("/pipeline")
+def pipeline_page():
+    return render_template("pipeline.html")
+
+
+@app.route("/api/pipeline")
+def api_pipeline():
+    try:
+        data = pipeline()
+        return jsonify({"data": data, "error": None})
+    except Exception as exc:
+        return jsonify({"data": None, "error": str(exc)})
+
+
+@app.route("/api/session-countdown")
+def api_session_countdown():
+    try:
+        return jsonify(session_countdown())
+    except Exception:
+        return jsonify({})
 
 
 @app.route("/api/floor")
