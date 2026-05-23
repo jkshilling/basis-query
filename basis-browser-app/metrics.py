@@ -973,6 +973,7 @@ PIPELINE_STAGES = [
     "Other-Chamber Floor",
     "Concurrence",
     "Conference Committee",
+    "Awaiting Transmittal",
     "At Governor",
     "Done",
 ]
@@ -991,6 +992,11 @@ def _classify_pipeline_stage(status, actions, origin):
 
     if "TRANSM TO GOVERNOR" in su or "TRANSMITTED TO GOVERNOR" in su:
         return "At Governor"
+
+    # Passed both chambers, returning to origin chamber for engrossment /
+    # transmittal to the governor. Status looks like "RTN TO (S) GOV NEXT".
+    if "GOV NEXT" in su or "RTN TO" in su:
+        return "Awaiting Transmittal"
 
     # Conference committee: has 029 but not 032/058 yet
     codes = set(c[0] for c in actions)
@@ -1162,6 +1168,36 @@ def pipeline(session="34", min_legs_score=20):
         })
     conference_bills.sort(key=lambda b: (b["done"], b["last_cc_date"]), reverse=True)
 
+    # Awaiting transmittal detail: passed both chambers, sitting with
+    # origin-chamber engrossing/secretary before being transmitted to gov.
+    awaiting_transmittal_bills = []
+    for bn, origin, title, status, actions in scan_all_actions(session):
+        prefix = bn.split()[0] if bn else ""
+        if prefix not in ("HB", "SB", "HCR", "SCR", "HJR", "SJR"):
+            continue
+        su = (status or "").upper()
+        if "GOV NEXT" not in su and "RTN TO" not in su:
+            continue
+        # Skip if already transmitted or chaptered/vetoed (terminal)
+        if "TRANSM TO GOVERNOR" in su or "TRANSMITTED TO GOVERNOR" in su \
+                or "CHAPTER" in su or "VETOED" in su:
+            continue
+        last_date = ""
+        last_text = ""
+        for c, a, jd, t in actions:
+            if jd > last_date:
+                last_date = jd
+                last_text = t
+        awaiting_transmittal_bills.append({
+            "billnumber": compact_billnumber(bn),
+            "title": truncate(title, 60),
+            "origin": origin,
+            "status": status,
+            "last_date": format_status_date(last_date),
+            "last_action_text": last_text,
+        })
+    awaiting_transmittal_bills.sort(key=lambda b: b["last_date"], reverse=True)
+
     result = {
         "by_stage": by_stage,
         "counts": counts,
@@ -1169,6 +1205,7 @@ def pipeline(session="34", min_legs_score=20):
         "governor_bills": governor_bills_list,
         "concurrence_bills": concurrence_bills,
         "conference_bills": conference_bills,
+        "awaiting_transmittal_bills": awaiting_transmittal_bills,
         "session": session_countdown(),
     }
     _cache.put(cache_key, result)
