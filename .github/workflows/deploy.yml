@@ -1,0 +1,34 @@
+name: Deploy to Toolshed
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-basis-browser
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            set -e
+            cd /srv/basis-browser
+            git fetch origin main
+            git reset --hard origin/main
+            chown -R www-data:www-data .
+            sudo -u www-data basis-browser-app/.venv/bin/pip install -q -r basis-browser-app/requirements.txt
+            systemctl restart basis-browser.service
+            sleep 2
+            systemctl is-active basis-browser.service
