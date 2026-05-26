@@ -116,15 +116,6 @@
             margin-right: 4px;
             border: 1px solid #d8dde3;
         }
-        .at-immed-badge {
-            display: inline-block;
-            font-size: 0.74rem;
-            padding: 1px 7px;
-            background: #fdf2f8;
-            color: #80346b;
-            border: 1px solid #e8c4d8;
-            border-radius: 3px;
-        }
         .at-fn-pill.zero { background: #e8f8f0; border-color: #b7e1c8; color: #1e6e3a; }
         .at-fn-pill.indeterminate { background: #fef5e7; border-color: #f5cb7f; color: #885a00; }
         .at-fn-pill.amount { background: #fde8e8; border-color: #f1b0b0; color: #8a1e1e; }
@@ -565,14 +556,10 @@
                 html += '</div>';
             }
 
-            // Fiscal posture + immediate-effect indicator. The actual
-            // statutory effective date(s) are inside the bill text; we
-            // surface only the verifiable signal here and link to akleg
-            // for the real dates.
+            // Fiscal posture row. Effective-date references are
+            // deliberately omitted — actual statutory dates live in
+            // the bill text (linked via akleg.gov).
             var detailParts = [];
-            if (b.has_immediate_effect) {
-                detailParts.push('<div title="The bill contains one or more immediate-effect clauses under AS 01.10.070(c); both chambers adopted them by the required 2/3 vote. Statutory effective dates are written into the bill text — see akleg.gov."><span class="label">Effect</span><span class="at-immed-badge">Immediate-effect clause adopted</span></div>');
-            }
             if (b.fiscal_notes && b.fiscal_notes.length) {
                 var fnHtml = '<div><span class="label">Fiscal</span>';
                 b.fiscal_notes.forEach(function(fn) {
@@ -893,7 +880,7 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v4';
+    var LIST_KEY = 'at_list_v5';
     var DETAIL_KEY_PREFIX = 'at_detail_v7:';
 
     function lsGet(key) {

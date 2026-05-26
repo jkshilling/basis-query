@@ -1384,7 +1384,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v10", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v11", max_age=300)
     if cached is not None:
         return cached
 
@@ -1444,13 +1444,6 @@ def awaiting_transmittal(session="34"):
                     senate_vote = v
         passage_dates.sort()
         passed_both_date = passage_dates[-1] if passage_dates else ""
-
-        # Immediate-effect clause: action 021 logs the chambers' 2/3
-        # adoption of any same-as-passage clauses (AS 01.10.070(c)).
-        # Presence ≠ effective date — the actual statutory effective
-        # dates live in the bill text, not in the action stream. We
-        # surface a boolean rather than the misleading action text.
-        has_immediate_effect = any(c == "021" for c, _, _, _ in actions)
 
         # Fiscal notes (105): "FN1: ZERO(CED)", "FN2: (DOR)", etc.
         # Multiple revisions per FN number — keep the latest.
@@ -1598,7 +1591,6 @@ def awaiting_transmittal(session="34"):
             # Fiscal + effective-date
             "fiscal_notes": fiscal_notes,
             "fiscal_summary": fn_buckets,
-            "has_immediate_effect": has_immediate_effect,
         }
 
         if prefix in ("HB", "SB"):
@@ -1627,7 +1619,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v10", result)
+    _cache.put("awaiting_transmittal_v11", result)
     return result
 
 
