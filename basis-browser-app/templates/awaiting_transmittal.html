@@ -235,6 +235,49 @@
             letter-spacing: 0.04em;
         }
 
+        /* Filter/sort toolbar */
+        .at-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px 24px;
+            margin: 16px 0 4px;
+            padding: 10px 12px;
+            background: #fafbfc;
+            border: 1px solid #e2e6eb;
+            border-radius: 4px;
+        }
+        .at-toolbar-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .at-toolbar-label {
+            font-size: 0.74rem;
+            font-weight: 700;
+            color: #6e7681;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-right: 4px;
+        }
+        .at-pill {
+            background: #fff;
+            border: 1px solid #d6dbe1;
+            color: #4a5560;
+            font-size: 0.82rem;
+            padding: 3px 10px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .at-pill:hover { background: #eef2f6; }
+        .at-pill.active { background: #1a5276; color: #fff; border-color: #1a5276; }
+
+        .at-sub-meta { font-size: 0.78rem; color: #6e7681; margin-left: 2px; }
+        .at-extlink {
+            font-size: 0.74rem;
+            color: #1a5276;
+            text-decoration: none;
+            margin-left: 8px;
+            white-space: nowrap;
+        }
+        .at-extlink:hover { text-decoration: underline; }
+
         /* Stat strip */
         .at-strip { display: flex; gap: 12px; margin: 10px 0 20px; flex-wrap: wrap; }
         .at-stat {
@@ -306,6 +349,23 @@
 
         <div class="at-strip" id="at-strip"></div>
 
+        <div class="at-toolbar" id="at-toolbar">
+            <div class="at-toolbar-group">
+                <span class="at-toolbar-label">Sort:</span>
+                <button type="button" class="at-pill active" data-sort="days">Days waiting</button>
+                <button type="button" class="at-pill" data-sort="yeas">Combined yeas</button>
+                <button type="button" class="at-pill" data-sort="margin">Closest margin</button>
+            </div>
+            <div class="at-toolbar-group">
+                <span class="at-toolbar-label">Filter:</span>
+                <button type="button" class="at-pill active" data-filter="all">All</button>
+                <button type="button" class="at-pill" data-filter="not-veto-proof">Not veto-proof</button>
+                <button type="button" class="at-pill" data-filter="veto-proof">Veto-proof</button>
+                <button type="button" class="at-pill" data-filter="indeterminate">Indeterminate fiscal</button>
+                <button type="button" class="at-pill" data-filter="appropriations">Appropriations</button>
+            </div>
+        </div>
+
         <section>
             <h2>Bills <span id="bills-count"></span></h2>
             <p class="chart-note">Decision-support view for veto/sign analysis on HB/SB bills awaiting transmittal. Each card surfaces the chamber-by-chamber vote tallies (with combined yeas vs. the 40-vote standard / 45-vote appropriations override threshold), fiscal-note posture, effective date, and sponsorship breadth. The governor's clock (15 in session / 20 post-adjournment) has <em>not</em> started; it begins only on transmittal. <span id="gov-window-hint"></span></p>
@@ -368,21 +428,57 @@
             if (b.is_appropriations) html += '<span class="at-approps-badge">APPROPS</span>';
             html +=   '</div>';
 
-            // Sponsor + cosponsor count
+            // Sponsor + cosponsor breakdown
+            function partyTagInline(p) {
+                if (!p) return '';
+                return '<span class="at-party-' + esc(p) + '">' + esc(p) + '</span>';
+            }
+            function partyBreakdownText(byParty) {
+                if (!byParty) return '';
+                var keys = Object.keys(byParty);
+                if (!keys.length) return '';
+                // Stable order: D, R, then everything else.
+                var order = { D: 0, R: 1 };
+                keys.sort(function(a, c) {
+                    return (order[a] == null ? 9 : order[a]) - (order[c] == null ? 9 : order[c]);
+                });
+                return keys.map(function(k) { return byParty[k] + k; }).join(' ');
+            }
             if (b.sponsor) {
                 html += '<div class="at-sub"><strong>Sponsor:</strong> ' + esc(b.sponsor);
+                if (b.sponsor_party || b.sponsor_district) {
+                    html += ' <span class="at-sub-meta">(' + partyTagInline(b.sponsor_party);
+                    if (b.sponsor_district) html += '-D' + esc(b.sponsor_district);
+                    html += ')</span>';
+                }
                 if (b.cosponsor_count > 0) {
-                    html += ' <span class="at-sub">+ ' + b.cosponsor_count + ' cosponsor' + (b.cosponsor_count === 1 ? '' : 's') + '</span>';
+                    html += ' <span class="at-sub-meta">+ ' + b.cosponsor_count + ' cosponsor' + (b.cosponsor_count === 1 ? '' : 's');
+                    var cpBreak = partyBreakdownText(b.cosponsor_by_party);
+                    if (cpBreak) html += ' (' + cpBreak + ')';
+                    html += '</span>';
                 }
                 html += '</div>';
             }
 
-            // Vote tallies
-            function voteChip(label, v) {
+            // Vote tallies — show party breakdown when available
+            function partyMini(byParty) {
+                if (!byParty) return '';
+                var keys = Object.keys(byParty);
+                if (!keys.length) return '';
+                var order = { D: 0, R: 1 };
+                keys.sort(function(a, c) {
+                    return (order[a] == null ? 9 : order[a]) - (order[c] == null ? 9 : order[c]);
+                });
+                return ' (' + keys.map(function(k) {
+                    return '<span class="at-party-' + esc(k) + '">' + byParty[k] + k + '</span>';
+                }).join(' ') + ')';
+            }
+            function voteChip(label, v, breakdown) {
                 if (!v) return '';
+                var sb = breakdown || {};
                 var s = '<span class="at-vote-chip"><span class="ch">' + label + '</span>';
-                s += '<span class="y">Y' + v.yeas + '</span>';
-                s += '<span class="n">N' + v.nays + '</span>';
+                s += '<span class="y">Y' + v.yeas + partyMini(sb.Y) + '</span>';
+                s += '<span class="n">N' + v.nays + partyMini(sb.N) + '</span>';
                 if (v.excused) s += '<span class="e">E' + v.excused + '</span>';
                 if (v.absent)  s += '<span class="e">A' + v.absent + '</span>';
                 s += '</span>';
@@ -390,8 +486,8 @@
             }
             if (b.house_vote || b.senate_vote) {
                 html += '<div class="at-votes">';
-                html += voteChip('House', b.house_vote);
-                html += voteChip('Senate', b.senate_vote);
+                html += voteChip('House', b.house_vote, b.house_breakdown);
+                html += voteChip('Senate', b.senate_vote, b.senate_breakdown);
                 if (b.house_vote && b.senate_vote) {
                     var cls = b.veto_proof ? 'at-combined veto-proof' : 'at-combined';
                     html += '<span class="' + cls + '">Combined ' + b.combined_yeas + ' yeas (override needs ' + b.override_threshold + ')</span>';
@@ -427,8 +523,12 @@
                 html += '</div>';
             }
 
-            // Current status
-            html += '<div class="at-status">' + esc(b.status) + ' — ' + esc(b.last_action_text) + ' (' + esc(b.last_date) + ')</div>';
+            // Current status + external link
+            html += '<div class="at-status">' + esc(b.status) + ' — ' + esc(b.last_action_text) + ' (' + esc(b.last_date) + ')';
+            if (b.akleg_url) {
+                html += '  <a class="at-extlink" href="' + esc(b.akleg_url) + '" target="_blank" rel="noopener">View on akleg.gov ↗</a>';
+            }
+            html += '</div>';
 
             html += '</div>';
 
@@ -552,22 +652,6 @@
             h += '</ul></div>';
         }
 
-        // Action timeline
-        if (d.actions && d.actions.length) {
-            h += '<div class="at-section">';
-            h += '<div class="at-section-h">Action Timeline</div>';
-            h += '<table class="at-timeline"><thead><tr><th>Date</th><th>Ch</th><th>Code</th><th>Action</th></tr></thead><tbody>';
-            d.actions.forEach(function(a) {
-                h += '<tr>';
-                h += '<td>' + esc(a.date) + '</td>';
-                h += '<td>' + esc(a.chamber) + '</td>';
-                h += '<td><code>' + esc(a.code) + '</code></td>';
-                h += '<td>' + esc(a.text) + '</td>';
-                h += '</tr>';
-            });
-            h += '</tbody></table></div>';
-        }
-
         return h;
     }
 
@@ -606,8 +690,78 @@
     // data is essentially static during engrossment. Render from cache
     // instantly on revisit, refresh quietly in the background.
     // Versioned keys (_v1) so schema changes can be flushed by bumping.
-    var LIST_KEY = 'at_list_v1';
-    var DETAIL_KEY_PREFIX = 'at_detail_v1:';
+    // Toolbar state — sort key + active filter. Both default to the
+    // most useful initial scan ('days' = longest-waiting first, 'all').
+    var currentBills = [];
+    var sortMode = 'days';
+    var filterMode = 'all';
+
+    function applySortAndFilter(bills) {
+        var out = bills.slice();
+        // Filter
+        if (filterMode === 'veto-proof') {
+            out = out.filter(function(b) { return b.veto_proof; });
+        } else if (filterMode === 'not-veto-proof') {
+            out = out.filter(function(b) { return !b.veto_proof; });
+        } else if (filterMode === 'indeterminate') {
+            out = out.filter(function(b) {
+                return b.fiscal_summary && b.fiscal_summary.indeterminate > 0;
+            });
+        } else if (filterMode === 'appropriations') {
+            out = out.filter(function(b) { return b.is_appropriations; });
+        }
+        // Sort
+        if (sortMode === 'yeas') {
+            out.sort(function(a, b) { return (b.combined_yeas||0) - (a.combined_yeas||0); });
+        } else if (sortMode === 'margin') {
+            // Closest margin = smallest (combined yeas - override threshold) when positive,
+            // or the smallest absolute gap to threshold when negative.
+            function gap(b) {
+                if (b.combined_yeas == null || b.override_threshold == null) return 9999;
+                return Math.abs(b.combined_yeas - b.override_threshold);
+            }
+            out.sort(function(a, b) { return gap(a) - gap(b); });
+        } else {
+            // 'days' — longest-waiting first
+            out.sort(function(a, b) { return (b.days_since_passage||0) - (a.days_since_passage||0); });
+        }
+        return out;
+    }
+
+    function renderBillsWithToolbar() {
+        renderBillCards(applySortAndFilter(currentBills));
+        // Update bill count to reflect post-filter total.
+        var n = applySortAndFilter(currentBills).length;
+        var total = currentBills.length;
+        var el = document.getElementById('bills-count');
+        if (el) el.textContent = n === total ? '(' + total + ')' : '(' + n + ' of ' + total + ')';
+    }
+
+    // Wire up toolbar buttons (after DOM is ready — the script runs at
+    // body end so the elements exist by now).
+    document.querySelectorAll('#at-toolbar [data-sort]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('#at-toolbar [data-sort]').forEach(function(b) {
+                b.classList.remove('active');
+            });
+            btn.classList.add('active');
+            sortMode = btn.dataset.sort;
+            renderBillsWithToolbar();
+        });
+    });
+    document.querySelectorAll('#at-toolbar [data-filter]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('#at-toolbar [data-filter]').forEach(function(b) {
+                b.classList.remove('active');
+            });
+            btn.classList.add('active');
+            filterMode = btn.dataset.filter;
+            renderBillsWithToolbar();
+        });
+    });
+
+    var LIST_KEY = 'at_list_v2';
+    var DETAIL_KEY_PREFIX = 'at_detail_v2:';
 
     function lsGet(key) {
         try {
@@ -643,7 +797,8 @@
         renderStrip(d);
         document.getElementById('gov-window-hint').textContent =
             'If transmitted today, the governor would have ' + d.gov_deadline_if_transmitted_today + ' days to act.';
-        renderBillCards(d.bills);
+        currentBills = d.bills || [];
+        renderBillsWithToolbar();
         renderResRows('rs-table', d.resolutions_substantive);
         renderResRows('rp-table', d.resolutions_procedural);
 

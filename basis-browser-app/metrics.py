@@ -1313,6 +1313,58 @@ def pipeline(session="34", min_legs_score=20):
     return result
 
 
+# --- Roll-call helpers shared by awaiting_transmittal + bill_decision_detail ---
+
+def _latest_floor_passage_per_chamber(votes_list, members):
+    """Pick the latest 'Third Reading / Final Passage' roll call per
+    chamber from a votes list (as returned by fetch_bill_votes). Joins
+    each row against the members table to attach name/party/district.
+
+    Returns {'H': [voter, ...], 'S': [voter, ...]} where each voter dict
+    has vote/name/party/district/majority. Excludes the 'Advance from
+    Second to Third Reading' procedural roll.
+    """
+    by_ch_date = {}
+    for v in votes_list or []:
+        title_u = (v.get("title") or "").upper()
+        if "FINAL PASSAGE" not in title_u and "THIRD READING" not in title_u:
+            continue
+        if "ADVANCE FROM SECOND" in title_u:
+            continue
+        m = members.get(v.get("member_code") or "", {})
+        ch = m.get("chamber", "")
+        if ch not in ("H", "S"):
+            continue
+        by_ch_date.setdefault((ch, v.get("date") or ""), []).append({
+            "vote": v.get("vote", ""),
+            "name": m.get("name") or v.get("member_code", ""),
+            "party": m.get("party", ""),
+            "district": m.get("district", ""),
+            "majority": m.get("majority", False),
+        })
+    out = {"H": [], "S": []}
+    dates = {"H": "", "S": ""}
+    for ch in ("H", "S"):
+        ch_dates = sorted({d for (cc, d) in by_ch_date if cc == ch})
+        if ch_dates:
+            dates[ch] = ch_dates[-1]
+            out[ch] = by_ch_date[(ch, ch_dates[-1])]
+    return out, dates
+
+
+def _vote_party_breakdown(voter_rows):
+    """Collapse per-legislator rows into {'Y': {'D': N, 'R': N, ...},
+    'N': {...}} suitable for showing 'Y32 (28D 4R)' in vote chips."""
+    out = {"Y": {}, "N": {}, "E": {}, "A": {}}
+    for v in voter_rows:
+        bucket = out.get(v["vote"])
+        if bucket is None:
+            continue
+        party = v.get("party") or "?"
+        bucket[party] = bucket.get(party, 0) + 1
+    return out
+
+
 # --- Awaiting transmittal (passed both chambers, not yet transmitted) ---
 
 def awaiting_transmittal(session="34"):
@@ -1331,7 +1383,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v7", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v8", max_age=300)
     if cached is not None:
         return cached
 
@@ -1343,6 +1395,12 @@ def awaiting_transmittal(session="34"):
         for b in fetch_all_bills(chamber, session,
                                   queries=["Sponsors", "Subjects"]):
             meta[b["billnumber"]] = b
+
+    members = fetch_members(session)
+    # Non-blocking probe of the votes index: if it's been built (warm),
+    # we enrich vote chips with party breakdowns; if not, the page still
+    # loads with totals-only and breakdowns appear after the index warms.
+    votes_idx = _cache.get("all_votes_v1_" + session, max_age=3600) or {}
 
     today = datetime.now().date()
 
@@ -1448,6 +1506,70 @@ def awaiting_transmittal(session="34"):
         # cosponsor tally (clamped at 0).
         cosponsor_count = max((m.get("sponsor_count") or 1) - 1, 0)
 
+        # Prime sponsor party/district lookup (by member code from the
+        # Sponsors expansion; fall back to scanning by name).
+        prime_code = m.get("prime_sponsor_code") or ""
+        prime_member = members.get(prime_code, {})
+        sponsor_party = prime_member.get("party") or ""
+        sponsor_district = prime_member.get("district") or ""
+
+        # Cosponsor party breakdown: count Ds vs Rs (and others) among
+        # the non-prime sponsors. Gives a "bipartisan-cosponsored"
+        # signal which makes a veto politically costlier.
+        cosponsor_by_party = {}
+        for sp in m.get("sponsors") or []:
+            if sp.get("prime"):
+                continue
+            sp_member = members.get(sp.get("code") or "", {})
+            sp_party = sp_member.get("party") or "?"
+            cosponsor_by_party[sp_party] = cosponsor_by_party.get(sp_party, 0) + 1
+
+        # Per-chamber floor-passage roll calls (only available once the
+        # votes index has built). Used to enrich vote chips on the card
+        # with party breakdowns.
+        compact_bn = compact_billnumber(bn)
+        if votes_idx and compact_bn in votes_idx:
+            roll_calls, _ = _latest_floor_passage_per_chamber(
+                votes_idx[compact_bn], members,
+            )
+            house_breakdown = _vote_party_breakdown(roll_calls["H"])
+            senate_breakdown = _vote_party_breakdown(roll_calls["S"])
+            # If we have roll-call data, prefer THAT for the chamber
+            # vote totals (action-text parsing can occasionally lose a
+            # vote to formatting quirks). Counts derived from the
+            # legislator-level list are authoritative.
+            if roll_calls["H"]:
+                house_vote = {
+                    "yeas": sum(house_breakdown["Y"].values()),
+                    "nays": sum(house_breakdown["N"].values()),
+                    "excused": sum(house_breakdown["E"].values()),
+                    "absent": sum(house_breakdown["A"].values()),
+                }
+            if roll_calls["S"]:
+                senate_vote = {
+                    "yeas": sum(senate_breakdown["Y"].values()),
+                    "nays": sum(senate_breakdown["N"].values()),
+                    "excused": sum(senate_breakdown["E"].values()),
+                    "absent": sum(senate_breakdown["A"].values()),
+                }
+            # Recompute combined yeas + veto-proof using authoritative totals.
+            h_y = (house_vote or {}).get("yeas", 0)
+            s_y = (senate_vote or {}).get("yeas", 0)
+            combined_yeas = h_y + s_y
+            veto_proof = (house_vote is not None
+                          and senate_vote is not None
+                          and combined_yeas >= override_threshold)
+        else:
+            house_breakdown = None
+            senate_breakdown = None
+
+        # akleg.gov canonical bill page — single click to text, fiscal
+        # notes, sponsor statement, full action history, journal links.
+        akleg_url = (
+            "https://www.akleg.gov/basis/Bill/Detail/"
+            + session + "?Root=" + compact_bn.replace(" ", "%20")
+        )
+
         entry = {
             "billnumber": compact_billnumber(bn),
             "title": truncate(title, 80),
@@ -1457,13 +1579,19 @@ def awaiting_transmittal(session="34"):
             "last_action_text": last_text,
             "type": prefix,
             "sponsor": sponsor,
+            "sponsor_party": sponsor_party,
+            "sponsor_district": sponsor_district,
             "cosponsor_count": cosponsor_count,
+            "cosponsor_by_party": cosponsor_by_party,
             "subjects": subjects[:5],
+            "akleg_url": akleg_url,
             "passed_both_date": format_status_date(passed_both_date),
             "days_since_passage": days_since_passage,
             # Vote tallies and veto-override math
             "house_vote": house_vote,
             "senate_vote": senate_vote,
+            "house_breakdown": house_breakdown,
+            "senate_breakdown": senate_breakdown,
             "combined_yeas": combined_yeas,
             "override_threshold": override_threshold,
             "is_appropriations": is_appropriations,
@@ -1500,7 +1628,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v7", result)
+    _cache.put("awaiting_transmittal_v8", result)
     return result
 
 
@@ -1518,45 +1646,17 @@ def bill_decision_detail(billnumber, session="34"):
     members = fetch_members(session)
     raw_votes = fetch_bill_votes(billnumber, session)
 
-    # Group vote rows by (chamber, date) for "Final Passage" / "Third
-    # Reading" titles. Keep only the LATEST date per chamber so a
-    # recommit-repass shows the most recent roll call, not earlier ones.
-    by_ch_date = {}
-    for v in raw_votes:
-        title_u = (v.get("title") or "").upper()
-        # Floor passage markers — narrow to avoid amendment-vote noise.
-        if "FINAL PASSAGE" not in title_u and "THIRD READING" not in title_u:
-            continue
-        # Skip "Advance from Second to Third Reading" — that's
-        # procedural advancement, not the passage vote itself.
-        if "ADVANCE FROM SECOND" in title_u:
-            continue
-        m = members.get(v.get("member_code") or "", {})
-        ch = m.get("chamber", "")
-        if ch not in ("H", "S"):
-            continue
-        key = (ch, v.get("date") or "")
-        by_ch_date.setdefault(key, []).append({
-            "vote": v.get("vote", ""),
-            "name": m.get("name") or v.get("member_code", ""),
-            "party": m.get("party", ""),
-            "district": m.get("district", ""),
-            "majority": m.get("majority", False),
-        })
-
-    # Pick the latest date for each chamber
-    passage_votes = {"H": [], "S": []}
-    passage_dates = {"H": "", "S": ""}
+    # Shared helper: pick the latest "Third Reading / Final Passage"
+    # roll call per chamber, with members joined for name/party.
+    passage_votes, passage_dates = _latest_floor_passage_per_chamber(
+        raw_votes, members,
+    )
+    # Sort each chamber's roster: Y first, then N, then E/A; within
+    # each group, by last name.
+    order = {"Y": 0, "N": 1, "E": 2, "A": 3}
     for ch in ("H", "S"):
-        ch_dates = sorted({d for (cc, d) in by_ch_date if cc == ch})
-        if not ch_dates:
-            continue
-        latest = ch_dates[-1]
-        passage_dates[ch] = latest
-        # Sort: Y first, then N, then E/A; within each, by last name.
-        order = {"Y": 0, "N": 1, "E": 2, "A": 3}
         passage_votes[ch] = sorted(
-            by_ch_date[(ch, latest)],
+            passage_votes[ch],
             key=lambda r: (order.get(r["vote"], 9),
                            (r["name"].rsplit(" ", 1)[-1] if r["name"] else "")),
         )
@@ -1569,16 +1669,14 @@ def bill_decision_detail(billnumber, session="34"):
             if v["vote"] in counts[ch]:
                 counts[ch][v["vote"]] += 1
 
-    # Action timeline (full) and fiscal-note bodies
-    full_actions = []
+    # Fiscal-note bodies (full text, with dates). Action timeline was
+    # removed from this endpoint — the akleg.gov bill page covers it
+    # better than we can render here.
     fiscal_notes = []
     for bn, origin, title, status, actions in scan_all_actions(session):
         if bn != billnumber:
             continue
         for c, a, jd, t in actions:
-            full_actions.append({
-                "code": c, "chamber": a, "date": jd, "text": t,
-            })
             if c == "105" and t:
                 m = _FN_RE.match(t.strip())
                 if m:
@@ -1590,15 +1688,12 @@ def bill_decision_detail(billnumber, session="34"):
                     })
         break
 
-    full_actions.sort(key=lambda x: x["date"])
-
     result = {
         "billnumber": billnumber,
         "passage_votes": passage_votes,
         "passage_dates": {k: format_status_date(v)
                           for k, v in passage_dates.items()},
         "vote_counts": counts,
-        "actions": full_actions,
         "fiscal_notes": fiscal_notes,
     }
     _cache.put(cache_key, result)

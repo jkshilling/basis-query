@@ -214,7 +214,9 @@ def parse_bills_extended(result):
             "committee_code": child_attr(elem, "CurrentCommittee", "committeecode"),
             "next_referral": "",
             "prime_sponsor": "",
+            "prime_sponsor_code": "",
             "sponsor_count": 0,
+            "sponsors": [],
             "version_count": 0,
             "subjects": [],
         }
@@ -232,18 +234,29 @@ def parse_bills_extended(result):
             if strip_ns(sponsors.tag) != "Sponsors":
                 continue
             count = 0
+            sponsor_list = []
             for member in sponsors:
                 if strip_ns(member.tag) == "MemberDetails":
                     count += 1
-                    if member.attrib.get("primesponsor") == "true":
-                        first = child_text(member, "FirstName")
-                        last = child_text(member, "LastName")
-                        bill["prime_sponsor"] = f"{first} {last}"
+                    code = member.attrib.get("code", "")
+                    first = child_text(member, "FirstName")
+                    last = child_text(member, "LastName")
+                    is_prime = member.attrib.get("primesponsor") == "true"
+                    name = (first + " " + last).strip()
+                    sponsor_list.append({
+                        "code": code,
+                        "name": name or code,
+                        "prime": is_prime,
+                    })
+                    if is_prime:
+                        bill["prime_sponsor"] = name
+                        bill["prime_sponsor_code"] = code
                 elif strip_ns(member.tag) == "Committee":
                     if not bill["prime_sponsor"]:
                         bill["prime_sponsor"] = f"({member.attrib.get('code', '')})"
                     count += 1
             bill["sponsor_count"] = count
+            bill["sponsors"] = sponsor_list
 
         for versions in elem:
             if strip_ns(versions.tag) != "Versions":
