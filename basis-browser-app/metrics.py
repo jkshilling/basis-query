@@ -1385,7 +1385,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v12", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v13", max_age=300)
     if cached is not None:
         return cached
 
@@ -1419,10 +1419,28 @@ def awaiting_transmittal(session="34"):
         if prefix not in ("HB", "SB", "HJR", "SJR", "HCR", "SCR"):
             continue
         su = (status or "").upper()
-        is_at_gov = ("TRANSM TO GOVERNOR" in su
-                     or "TRANSMITTED TO GOVERNOR" in su)
-        is_awaiting = (("GOV NEXT" in su or "RTN TO" in su)
-                       and not is_at_gov)
+        # AT GOVERNOR: status indicates the bill has been physically
+        # transmitted to the governor's office. BASIS uses at least
+        # three phrasings; akleg.gov has historically also rendered
+        # "(X) DUE BACK FROM GOVERNOR mm/dd/yy" — covered defensively.
+        is_at_gov = (
+            "TRANSM TO GOVERNOR" in su
+            or "TRANSMITTED TO GOVERNOR" in su
+            or "DUE BACK FROM GOVERNOR" in su
+        )
+        # AWAITING TRANSMITTAL: passed both chambers, sitting with the
+        # origin chamber's secretary. Three known variants:
+        #   "RTN TO (X) GOV NEXT", "AWAIT TRANSMIT GOV",
+        #   "AWAITING TRANSMITTAL TO GOV"
+        is_awaiting = (
+            (
+                "GOV NEXT" in su
+                or "RTN TO" in su
+                or "AWAIT TRANSMIT" in su
+                or "AWAITING TRANSMITTAL" in su
+            )
+            and not is_at_gov
+        )
         # Skip terminal states regardless of bucket
         if "CHAPTER" in su or "VETOED" in su:
             continue
@@ -1674,7 +1692,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v12", result)
+    _cache.put("awaiting_transmittal_v13", result)
     return result
 
 
