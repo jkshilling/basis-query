@@ -171,7 +171,7 @@ def fetch(section, session="34", chamber=None, queries=None, result_range=None):
 def fetch_all_bills(chamber, session="34", queries=None):
     """Fetch all bills for a chamber with optional expansions. Cached
     for 10 minutes."""
-    cache_key = f"all_bills_v2_{session}_{chamber}_{','.join(queries or [])}"
+    cache_key = f"all_bills_v3_{session}_{chamber}_{','.join(queries or [])}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -200,8 +200,6 @@ def fetch_all_bills(chamber, session="34", queries=None):
     for b in all_bills:
         if b["billnumber"] in seen:
             continue
-        if is_procedural_resolution(b["billnumber"], b.get("short_title")):
-            continue
         seen.add(b["billnumber"])
         unique.append(b)
 
@@ -217,7 +215,7 @@ def scan_all_actions(session="34"):
     Returns list of (billnumber, chamber, short_title, status, actions_list)
     where actions_list is [(code, chamber, journaldate, action_text), ...].
     """
-    cached = _cache.get("all_actions_v2")
+    cached = _cache.get("all_actions_v3")
     if cached is not None:
         return cached
 
@@ -261,11 +259,8 @@ def scan_all_actions(session="34"):
                             action.attrib.get("journaldate", ""),
                             child_text(action, "ActionText"),
                         ))
-                compact_bn = compact_billnumber(bn)
-                if is_procedural_resolution(compact_bn, short_title):
-                    continue
                 bills.append((
-                    compact_bn,
+                    compact_billnumber(bn),
                     chamber,
                     truncate(short_title),
                     status,
@@ -275,7 +270,7 @@ def scan_all_actions(session="34"):
                 break
             start += 100
 
-    _cache.put("all_actions_v2", bills)
+    _cache.put("all_actions_v3", bills)
     return bills
 
 

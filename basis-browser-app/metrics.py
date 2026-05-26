@@ -18,7 +18,7 @@ from parse import (
 from fetch import (
     fetch_all_bills, fetch_hearing_schedule, fetch_hearing_counts,
     fetch_committee_reports, scan_all_actions, count_actions_by_year,
-    fetch_bill_detail, fetch_floor_calendar,
+    fetch_bill_detail, fetch_floor_calendar, is_procedural_resolution,
 )
 
 
@@ -819,6 +819,9 @@ def activity_feed(session="34", days=7):
     cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     events = []
     for bn, origin, title, status, actions in all_bills:
+        prefix = bn.split()[0] if bn else ""
+        if prefix not in ("HB", "SB"):
+            continue
         for code, achamber, jdate, text in actions:
             if code not in NOTABLE_CODES:
                 continue
@@ -1114,7 +1117,7 @@ def pipeline(session="34", min_legs_score=20):
     concurrence_bills = []
     for bn, origin, title, status, actions in scan_all_actions(session):
         prefix = bn.split()[0] if bn else ""
-        if prefix not in ("HB", "SB", "HCR", "SCR", "HJR", "SJR"):
+        if prefix not in ("HB", "SB"):
             continue
         su = (status or "").upper()
         if "FLD CONCUR" not in su and "CONCUR MESSAGE" not in su:
@@ -1138,6 +1141,9 @@ def pipeline(session="34", min_legs_score=20):
     # Conference committee detail
     conference_bills = []
     for bn, origin, title, status, actions in scan_all_actions(session):
+        prefix = bn.split()[0] if bn else ""
+        if prefix not in ("HB", "SB"):
+            continue
         codes = set(c[0] for c in actions)
         if "029" not in codes and "069" not in codes:
             continue
@@ -1173,7 +1179,7 @@ def pipeline(session="34", min_legs_score=20):
     awaiting_transmittal_bills = []
     for bn, origin, title, status, actions in scan_all_actions(session):
         prefix = bn.split()[0] if bn else ""
-        if prefix not in ("HB", "SB", "HCR", "SCR", "HJR", "SJR"):
+        if prefix not in ("HB", "SB"):
             continue
         su = (status or "").upper()
         if "GOV NEXT" not in su and "RTN TO" not in su:
@@ -1209,6 +1215,77 @@ def pipeline(session="34", min_legs_score=20):
         "session": session_countdown(),
     }
     _cache.put(cache_key, result)
+    return result
+
+
+# --- Resolutions (HJR/SJR/HCR/SCR) ---
+
+def resolutions(session="34"):
+    """Bucket every resolution into three lists:
+
+    - joint: HJR/SJR (constitutional amendments, memorials to Congress —
+      substantive, do not become statute but require both chambers).
+    - concurrent_substantive: HCR/SCR whose subject is NOT internal
+      uniform-rules plumbing (e.g. study commissions, official requests).
+    - concurrent_procedural: HCR/SCR titled "SUSPEND UNIFORM RULES FOR
+      ..." or otherwise touching the Uniform Rules — pure procedure.
+
+    Each entry carries enough metadata to render a simple status table
+    (origin, current status, last action) plus a link to the bill page.
+    """
+    cached = _cache.get("resolutions", max_age=300)
+    if cached is not None:
+        return cached
+
+    joint = []
+    concurrent_substantive = []
+    concurrent_procedural = []
+
+    for bn, origin, title, status, actions in scan_all_actions(session):
+        prefix = bn.split()[0] if bn else ""
+        if prefix not in ("HJR", "SJR", "HCR", "SCR"):
+            continue
+
+        # Most recent action for "Last Action" column
+        last_date = ""
+        last_text = ""
+        for c, a, jd, t in actions:
+            if jd > last_date:
+                last_date = jd
+                last_text = t
+
+        entry = {
+            "billnumber": compact_billnumber(bn),
+            "title": truncate(title, 70),
+            "origin": origin,
+            "status": status,
+            "last_date": format_status_date(last_date),
+            "last_action_text": last_text,
+            "type": prefix,
+        }
+
+        if prefix in ("HJR", "SJR"):
+            joint.append(entry)
+        elif is_procedural_resolution(bn, title):
+            concurrent_procedural.append(entry)
+        else:
+            concurrent_substantive.append(entry)
+
+    # Sort: most recent activity first within each bucket
+    for lst in (joint, concurrent_substantive, concurrent_procedural):
+        lst.sort(key=lambda b: b["last_date"], reverse=True)
+
+    result = {
+        "joint": joint,
+        "concurrent_substantive": concurrent_substantive,
+        "concurrent_procedural": concurrent_procedural,
+        "counts": {
+            "joint": len(joint),
+            "concurrent_substantive": len(concurrent_substantive),
+            "concurrent_procedural": len(concurrent_procedural),
+        },
+    }
+    _cache.put("resolutions", result)
     return result
 
 
