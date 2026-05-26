@@ -1046,7 +1046,7 @@ def pipeline(session="34", min_legs_score=20):
     Legs Score >= min_legs_score (so we focus on bills with a real shot
     of moving rather than the long tail of dormant ones).
     """
-    cache_key = f"pipeline_{min_legs_score}"
+    cache_key = f"pipeline_v2_{min_legs_score}"
     cached = _cache.get(cache_key, max_age=300)
     if cached is not None:
         return cached
@@ -1174,36 +1174,6 @@ def pipeline(session="34", min_legs_score=20):
         })
     conference_bills.sort(key=lambda b: (b["done"], b["last_cc_date"]), reverse=True)
 
-    # Awaiting transmittal detail: passed both chambers, sitting with
-    # origin-chamber engrossing/secretary before being transmitted to gov.
-    awaiting_transmittal_bills = []
-    for bn, origin, title, status, actions in scan_all_actions(session):
-        prefix = bn.split()[0] if bn else ""
-        if prefix not in ("HB", "SB"):
-            continue
-        su = (status or "").upper()
-        if "GOV NEXT" not in su and "RTN TO" not in su:
-            continue
-        # Skip if already transmitted or chaptered/vetoed (terminal)
-        if "TRANSM TO GOVERNOR" in su or "TRANSMITTED TO GOVERNOR" in su \
-                or "CHAPTER" in su or "VETOED" in su:
-            continue
-        last_date = ""
-        last_text = ""
-        for c, a, jd, t in actions:
-            if jd > last_date:
-                last_date = jd
-                last_text = t
-        awaiting_transmittal_bills.append({
-            "billnumber": compact_billnumber(bn),
-            "title": truncate(title, 60),
-            "origin": origin,
-            "status": status,
-            "last_date": format_status_date(last_date),
-            "last_action_text": last_text,
-        })
-    awaiting_transmittal_bills.sort(key=lambda b: b["last_date"], reverse=True)
-
     result = {
         "by_stage": by_stage,
         "counts": counts,
@@ -1211,42 +1181,50 @@ def pipeline(session="34", min_legs_score=20):
         "governor_bills": governor_bills_list,
         "concurrence_bills": concurrence_bills,
         "conference_bills": conference_bills,
-        "awaiting_transmittal_bills": awaiting_transmittal_bills,
         "session": session_countdown(),
     }
     _cache.put(cache_key, result)
     return result
 
 
-# --- Resolutions (HJR/SJR/HCR/SCR) ---
+# --- Awaiting transmittal (passed both chambers, not yet transmitted) ---
 
-def resolutions(session="34"):
-    """Bucket every resolution into three lists:
+def awaiting_transmittal(session="34"):
+    """Everything with status 'RTN TO (X) GOV NEXT' — passed both
+    chambers, sitting with the origin chamber's secretary awaiting
+    engrossment + transmittal. Split into three buckets so bills and
+    resolutions can be read separately:
 
-    - joint: HJR/SJR (constitutional amendments, memorials to Congress —
-      substantive, do not become statute but require both chambers).
-    - concurrent_substantive: HCR/SCR whose subject is NOT internal
-      uniform-rules plumbing (e.g. study commissions, official requests).
-    - concurrent_procedural: HCR/SCR titled "SUSPEND UNIFORM RULES FOR
-      ..." or otherwise touching the Uniform Rules — pure procedure.
+    - bills: HB/SB (the only things the governor actually signs)
+    - resolutions_substantive: HJR/SJR (constitutional amendments,
+      memorials to Congress) plus HCR/SCR on real subjects
+    - resolutions_procedural: HCR/SCR that exist only to suspend or
+      amend the chambers' Uniform Rules — pure plumbing
 
-    Each entry carries enough metadata to render a simple status table
-    (origin, current status, last action) plus a link to the bill page.
+    The 15-day gubernatorial clock does not start until transmittal,
+    so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("resolutions", max_age=300)
+    cached = _cache.get("awaiting_transmittal", max_age=300)
     if cached is not None:
         return cached
 
-    joint = []
-    concurrent_substantive = []
-    concurrent_procedural = []
+    bills = []
+    resolutions_substantive = []
+    resolutions_procedural = []
 
     for bn, origin, title, status, actions in scan_all_actions(session):
         prefix = bn.split()[0] if bn else ""
-        if prefix not in ("HJR", "SJR", "HCR", "SCR"):
+        if prefix not in ("HB", "SB", "HJR", "SJR", "HCR", "SCR"):
+            continue
+        su = (status or "").upper()
+        if "GOV NEXT" not in su and "RTN TO" not in su:
+            continue
+        # Skip terminal/transmitted (already past this stage)
+        if ("TRANSM TO GOVERNOR" in su or "TRANSMITTED TO GOVERNOR" in su
+                or "CHAPTER" in su or "VETOED" in su):
             continue
 
-        # Most recent action for "Last Action" column
+        # Most recent action for the "Last Action" column
         last_date = ""
         last_text = ""
         for c, a, jd, t in actions:
@@ -1264,28 +1242,27 @@ def resolutions(session="34"):
             "type": prefix,
         }
 
-        if prefix in ("HJR", "SJR"):
-            joint.append(entry)
+        if prefix in ("HB", "SB"):
+            bills.append(entry)
         elif is_procedural_resolution(bn, title):
-            concurrent_procedural.append(entry)
+            resolutions_procedural.append(entry)
         else:
-            concurrent_substantive.append(entry)
+            resolutions_substantive.append(entry)
 
-    # Sort: most recent activity first within each bucket
-    for lst in (joint, concurrent_substantive, concurrent_procedural):
+    for lst in (bills, resolutions_substantive, resolutions_procedural):
         lst.sort(key=lambda b: b["last_date"], reverse=True)
 
     result = {
-        "joint": joint,
-        "concurrent_substantive": concurrent_substantive,
-        "concurrent_procedural": concurrent_procedural,
+        "bills": bills,
+        "resolutions_substantive": resolutions_substantive,
+        "resolutions_procedural": resolutions_procedural,
         "counts": {
-            "joint": len(joint),
-            "concurrent_substantive": len(concurrent_substantive),
-            "concurrent_procedural": len(concurrent_procedural),
+            "bills": len(bills),
+            "resolutions_substantive": len(resolutions_substantive),
+            "resolutions_procedural": len(resolutions_procedural),
         },
     }
-    _cache.put("resolutions", result)
+    _cache.put("awaiting_transmittal", result)
     return result
 
 

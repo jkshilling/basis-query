@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resolutions — BASIS Browser</title>
+    <title>Awaiting Transmittal — BASIS Browser</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script src="{{ url_for('static', filename='util.js') }}"></script>
     <script src="{{ url_for('static', filename='sort.js') }}"></script>
@@ -11,32 +11,32 @@
 </head>
 <body class="wide">
     <nav>
-        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/schedule">Schedule</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/pipeline">Pipeline</a> | <strong>Resolutions</strong> | <a href="/governor">Governor</a> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/schedule">Schedule</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/pipeline">Pipeline</a> | <strong>Awaiting Transmittal</strong> | <a href="/governor">Governor</a> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
     </nav>
     <header>
-        <h1>Resolutions</h1>
-        <p>Session 34 &mdash; HJR/SJR (joint) and HCR/SCR (concurrent) resolutions, separated from the substantive bill feeds.</p>
+        <h1>Awaiting Transmittal</h1>
+        <p>Passed both chambers, sitting with the origin chamber\'s secretary/chief clerk awaiting engrossment + transmittal. The 15-day gubernatorial clock does <em>not</em> start until transmittal.</p>
     </header>
 
-    <div id="loading" class="loading">Loading resolutions&hellip;</div>
+    <div id="loading" class="loading">Loading&hellip;</div>
     <div id="content" style="display:none">
 
         <section>
-            <h2>Joint Resolutions <span id="joint-count"></span></h2>
-            <p class="chart-note">HJR/SJR. Used for constitutional amendments and memorials to Congress. Substantive — require both chambers' adoption but do not become statute.</p>
-            <table class="compact sortable" id="joint-table"></table>
+            <h2>Bills <span id="bills-count"></span></h2>
+            <p class="chart-note">HB/SB — substantive legislation headed to the governor for signature, veto, or auto-law.</p>
+            <table class="compact sortable" id="bills-table"></table>
         </section>
 
         <section>
-            <h2>Concurrent Resolutions — Substantive <span id="cs-count"></span></h2>
-            <p class="chart-note">HCR/SCR on policy or study matters (task forces, official requests, commemorations). Not procedural housekeeping.</p>
-            <table class="compact sortable" id="cs-table"></table>
+            <h2>Resolutions — Substantive <span id="rs-count"></span></h2>
+            <p class="chart-note">HJR/SJR (joint) and substantive HCR/SCR.</p>
+            <table class="compact sortable" id="rs-table"></table>
         </section>
 
         <section>
-            <h2>Concurrent Resolutions — Procedural (Uniform Rules) <span id="cp-count"></span></h2>
-            <p class="chart-note">HCR/SCR that suspend or amend the chambers' Uniform Rules. Pure plumbing — most are titled <code>SUSPEND UNIFORM RULES FOR SB X</code> and exist solely to waive deadline rules so a paired bill can be acted on faster. Excluded from the main pipeline, activity, and bill-progress views.</p>
-            <table class="compact sortable" id="cp-table"></table>
+            <h2>Resolutions — Procedural (Uniform Rules) <span id="rp-count"></span></h2>
+            <p class="chart-note">HCR/SCR that exist only to suspend the chambers\' Uniform Rules for a paired bill. Procedural housekeeping.</p>
+            <table class="compact sortable" id="rp-table"></table>
         </section>
 
     </div>
@@ -44,7 +44,7 @@
     <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
 
     <script>
-    function renderResolutionsTable(tableId, rows) {
+    function renderRows(tableId, rows) {
         if (!rows.length) {
             document.getElementById(tableId).outerHTML = '<p class="empty">None.</p>';
             return;
@@ -63,7 +63,7 @@
         document.getElementById(tableId).innerHTML = html;
     }
 
-    fetch('/api/resolutions')
+    fetch('/api/awaiting-transmittal')
         .then(r => r.json())
         .then(resp => {
             if (resp.error) {
@@ -72,13 +72,13 @@
                 return;
             }
             var d = resp.data;
-            document.getElementById('joint-count').textContent = '(' + d.counts.joint + ')';
-            document.getElementById('cs-count').textContent = '(' + d.counts.concurrent_substantive + ')';
-            document.getElementById('cp-count').textContent = '(' + d.counts.concurrent_procedural + ')';
+            document.getElementById('bills-count').textContent = '(' + d.counts.bills + ')';
+            document.getElementById('rs-count').textContent = '(' + d.counts.resolutions_substantive + ')';
+            document.getElementById('rp-count').textContent = '(' + d.counts.resolutions_procedural + ')';
 
-            renderResolutionsTable('joint-table', d.joint);
-            renderResolutionsTable('cs-table', d.concurrent_substantive);
-            renderResolutionsTable('cp-table', d.concurrent_procedural);
+            renderRows('bills-table', d.bills);
+            renderRows('rs-table', d.resolutions_substantive);
+            renderRows('rp-table', d.resolutions_procedural);
 
             attachSorting();
             document.getElementById('loading').style.display = 'none';

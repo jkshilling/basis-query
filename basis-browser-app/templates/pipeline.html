@@ -10,7 +10,7 @@
 </head>
 <body class="wide">
     <nav>
-        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/schedule">Schedule</a> | <a href="/bill-progress">Bill Progress</a> | <strong>Pipeline</strong> | <a href="/resolutions">Resolutions</a> | <a href="/governor">Governor</a> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/schedule">Schedule</a> | <a href="/bill-progress">Bill Progress</a> | <strong>Pipeline</strong> | <a href="/awaiting-transmittal">Awaiting Transmittal</a> | <a href="/governor">Governor</a> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
     </nav>
 
     <header>
@@ -25,12 +25,6 @@
             <h2>Pipeline Status</h2>
             <p class="chart-note">Bills with Legs Score ≥ 20, grouped by their current position in the legislative process. The closer to the right, the closer to passage.</p>
             <div id="pipeline-stages" class="pipeline-grid"></div>
-        </section>
-
-        <section>
-            <h2>Awaiting Transmittal to Governor</h2>
-            <p class="chart-note">Bills that have passed both chambers and are sitting with the origin chamber's secretary/chief clerk awaiting engrossment and transmittal to the governor. The 15-day gubernatorial clock does <em>not</em> start until transmittal.</p>
-            <table class="compact" id="awaiting-table"></table>
         </section>
 
         <section>
@@ -101,24 +95,6 @@
                 pipelineHtml += '</div></div>';
             });
             document.getElementById('pipeline-stages').innerHTML = pipelineHtml;
-
-            // Awaiting transmittal
-            if (d.awaiting_transmittal_bills && d.awaiting_transmittal_bills.length) {
-                var aHtml = '<thead><tr><th>Bill</th><th>Title</th><th>Origin</th><th>Status</th><th>Last Action</th></tr></thead><tbody>';
-                d.awaiting_transmittal_bills.forEach(function(b) {
-                    aHtml += '<tr>';
-                    aHtml += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
-                    aHtml += '<td>' + esc(b.title) + '</td>';
-                    aHtml += '<td class="center">' + chamberSpan(b.origin) + '</td>';
-                    aHtml += '<td>' + esc(b.status) + '</td>';
-                    aHtml += '<td>' + esc(b.last_date) + ' — ' + esc(b.last_action_text) + '</td>';
-                    aHtml += '</tr>';
-                });
-                aHtml += '</tbody>';
-                document.getElementById('awaiting-table').innerHTML = aHtml;
-            } else {
-                document.getElementById('awaiting-table').outerHTML = '<p class="empty">No bills currently awaiting transmittal.</p>';
-            }
 
             // Governor table with countdown
             if (d.governor_bills && d.governor_bills.length) {

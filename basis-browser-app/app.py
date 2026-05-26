@@ -21,7 +21,7 @@ from adapter import (
     governor_bills, _fetch_bill_detail, committee_detail, top_subjects,
     search_bills, cache_freshness,
 )
-from metrics import legs_score, pipeline, resolutions, session_countdown
+from metrics import legs_score, pipeline, awaiting_transmittal, session_countdown
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -254,15 +254,15 @@ def api_pipeline():
         return jsonify({"data": None, "error": str(exc)})
 
 
-@app.route("/resolutions")
-def resolutions_page():
-    return render_template("resolutions.html")
+@app.route("/awaiting-transmittal")
+def awaiting_transmittal_page():
+    return render_template("awaiting_transmittal.html")
 
 
-@app.route("/api/resolutions")
-def api_resolutions():
+@app.route("/api/awaiting-transmittal")
+def api_awaiting_transmittal():
     try:
-        data = resolutions()
+        data = awaiting_transmittal()
         return jsonify({"data": data, "error": None})
     except Exception as exc:
         return jsonify({"data": None, "error": str(exc)})
