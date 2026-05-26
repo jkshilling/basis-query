@@ -782,6 +782,59 @@ def legs_score(actions, origin, today=None):
     }
 
 
+# Alaska Legislature membership — used for veto-override math.
+# House: 40 seats. Senate: 20 seats. Total: 60.
+# Standard override (Article II §16): 2/3 of joint = 40 votes.
+# Appropriations or revenue: 3/4 of joint = 45 votes.
+AK_SEATS_HOUSE = 40
+AK_SEATS_SENATE = 20
+AK_OVERRIDE_THRESHOLD_STANDARD = 40
+AK_OVERRIDE_THRESHOLD_APPROPS = 45
+
+
+# Token parser for passage-action text like "PASSED Y32 N8 E1".
+# Captures (Y/N/E/A) and the number ("-" means zero).
+_VOTE_TOKEN_RE = re.compile(r'\b([YNAE])(\d+|-)', re.IGNORECASE)
+
+
+def parse_vote(text):
+    """Parse a passage line into {yeas, nays, excused, absent}.
+    Returns None if no Y/N tokens are present."""
+    if not text:
+        return None
+    found = _VOTE_TOKEN_RE.findall(text)
+    if not found:
+        return None
+    out = {"yeas": 0, "nays": 0, "excused": 0, "absent": 0}
+    key_map = {"Y": "yeas", "N": "nays", "E": "excused", "A": "absent"}
+    saw_y_or_n = False
+    for letter, num in found:
+        n = 0 if num == "-" else int(num)
+        k = key_map[letter.upper()]
+        out[k] = n
+        if letter.upper() in ("Y", "N"):
+            saw_y_or_n = True
+    return out if saw_y_or_n else None
+
+
+# Fiscal-note attachment text: "FN1: ZERO(CED)", "FN2: (DOR)", etc.
+_FN_RE = re.compile(r'^(FN\d+):\s*(.*)$')
+
+
+def categorize_fiscal_note(text):
+    """Return 'zero', 'indeterminate', or 'amount' for a fiscal note
+    body (the part after 'FNn: '). Used in summarizing whether a bill
+    costs money."""
+    if not text:
+        return "amount"
+    u = text.upper()
+    if "ZERO" in u:
+        return "zero"
+    if "INDETERMINATE" in u:
+        return "indeterminate"
+    return "amount"
+
+
 # Action codes that are pure bookkeeping (sponsor edits, fiscal-note
 # attachments, version registrations, vote rosters). These should NEVER
 # win the "Last Action" slot — users expect that column to describe
@@ -1277,7 +1330,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v6", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v7", max_age=300)
     if cached is not None:
         return cached
 
@@ -1313,12 +1366,64 @@ def awaiting_transmittal(session="34"):
         # bookkeeping codes via pick_last_action().
         last_date, last_text = pick_last_action(actions)
 
-        # Passage dates: action code 020 = Floor Vote / PASSED.
-        # Two of them = both chambers have passed. The later one marks
-        # the moment the bill is fully passed and waiting only on
-        # engrossment + transmittal mechanics.
-        passage_dates = sorted(jd for c, _, jd, _ in actions if c == "020")
+        # Passage dates and per-chamber vote tallies: action code 020
+        # is the Floor Vote / PASSED action. Iterate chronologically so
+        # the LATEST passage per chamber wins (handles recommit+repass).
+        passage_dates = []
+        house_vote = None
+        senate_vote = None
+        for c, a, jd, t in actions:
+            if c != "020":
+                continue
+            passage_dates.append(jd)
+            v = parse_vote(t)
+            if v:
+                if a == "H":
+                    house_vote = v
+                elif a == "S":
+                    senate_vote = v
+        passage_dates.sort()
         passed_both_date = passage_dates[-1] if passage_dates else ""
+
+        # Effective-date hint (021): typically "EFFECTIVE DATE(S) SAME
+        # AS PASSAGE" or a specific date.
+        effective_date = ""
+        for c, a, jd, t in actions:
+            if c == "021" and t:
+                effective_date = t.replace("EFFECTIVE DATE(S)", "").strip()
+                if not effective_date:
+                    effective_date = t.strip()
+
+        # Fiscal notes (105): "FN1: ZERO(CED)", "FN2: (DOR)", etc.
+        # Multiple revisions per FN number — keep the latest.
+        fn_latest = {}  # {"FN1": "ZERO(CED)"}
+        for c, a, jd, t in actions:
+            if c != "105" or not t:
+                continue
+            m = _FN_RE.match(t.strip())
+            if m:
+                fn_latest[m.group(1)] = m.group(2).strip()
+        # Categorize and summarize
+        fn_buckets = {"zero": 0, "indeterminate": 0, "amount": 0}
+        for body in fn_latest.values():
+            fn_buckets[categorize_fiscal_note(body)] += 1
+        fiscal_notes = [
+            {"label": k, "body": v} for k, v in sorted(fn_latest.items())
+        ]
+
+        # Veto-override math: combined yeas across both chambers vs.
+        # the 2/3 (40) and 3/4 (45) thresholds. We don't auto-detect
+        # appropriations, but expose both numbers so the UI can flag.
+        h_y = (house_vote or {}).get("yeas", 0)
+        s_y = (senate_vote or {}).get("yeas", 0)
+        combined_yeas = h_y + s_y
+        is_appropriations = (title or "").upper().startswith("APPROP:")
+        override_threshold = (AK_OVERRIDE_THRESHOLD_APPROPS
+                              if is_appropriations
+                              else AK_OVERRIDE_THRESHOLD_STANDARD)
+        veto_proof = (house_vote is not None
+                      and senate_vote is not None
+                      and combined_yeas >= override_threshold)
 
         # "Days since passage" — clock starts the moment the bill was
         # fully passed (second chamber's 020 floor vote), not when the
@@ -1338,6 +1443,9 @@ def awaiting_transmittal(session="34"):
         m = meta.get(compact_billnumber(bn), {})
         sponsor = m.get("prime_sponsor") or ""
         subjects = m.get("subjects") or []
+        # sponsor_count includes the prime sponsor; subtract 1 for the
+        # cosponsor tally (clamped at 0).
+        cosponsor_count = max((m.get("sponsor_count") or 1) - 1, 0)
 
         entry = {
             "billnumber": compact_billnumber(bn),
@@ -1348,9 +1456,21 @@ def awaiting_transmittal(session="34"):
             "last_action_text": last_text,
             "type": prefix,
             "sponsor": sponsor,
+            "cosponsor_count": cosponsor_count,
             "subjects": subjects[:5],
             "passed_both_date": format_status_date(passed_both_date),
             "days_since_passage": days_since_passage,
+            # Vote tallies and veto-override math
+            "house_vote": house_vote,
+            "senate_vote": senate_vote,
+            "combined_yeas": combined_yeas,
+            "override_threshold": override_threshold,
+            "is_appropriations": is_appropriations,
+            "veto_proof": veto_proof,
+            # Fiscal + effective-date
+            "fiscal_notes": fiscal_notes,
+            "fiscal_summary": fn_buckets,
+            "effective_date": effective_date,
         }
 
         if prefix in ("HB", "SB"):
@@ -1379,7 +1499,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v6", result)
+    _cache.put("awaiting_transmittal_v7", result)
     return result
 
 
