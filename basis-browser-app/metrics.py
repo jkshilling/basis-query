@@ -1384,7 +1384,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v9", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v10", max_age=300)
     if cached is not None:
         return cached
 
@@ -1627,7 +1627,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v9", result)
+    _cache.put("awaiting_transmittal_v10", result)
     return result
 
 
@@ -1637,7 +1637,7 @@ def bill_decision_detail(billnumber, session="34"):
     """Detailed veto-decision view for one bill: full per-legislator
     roll call on final passage in each chamber, plus action timeline
     and fiscal-note bodies. Cached 10 min."""
-    cache_key = f"bill_decision_detail_v4_{session}_{billnumber}"
+    cache_key = f"bill_decision_detail_v5_{session}_{billnumber}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -1686,6 +1686,15 @@ def bill_decision_detail(billnumber, session="34"):
             break
     if bill_meta:
         long_title = bill_meta.get("latest_version_title") or ""
+        # Strip the boilerplate effective-date clause that ends nearly
+        # every Alaska "An Act..." title — adds nothing the user cares
+        # about and crowds out the substantive provisions.
+        long_title = re.sub(
+            r"[;,]?\s*(and\s+)?providing for an effective date\.?\s*$",
+            ".",
+            long_title,
+            flags=re.IGNORECASE,
+        ).strip()
         version_letter = bill_meta.get("latest_version_letter") or ""
         for sp in bill_meta.get("sponsors") or []:
             if sp.get("prime"):

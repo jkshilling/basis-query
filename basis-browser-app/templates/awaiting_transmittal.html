@@ -596,12 +596,12 @@
                 html += '</div>';
             }
 
-            // Current status + external link
-            html += '<div class="at-status">' + esc(b.status) + ' — ' + esc(b.last_action_text) + ' (' + esc(b.last_date) + ')';
+            // External link only — every card on this page has the
+            // same "RTN TO ... AWAITING TRANSMITTAL" status, so the
+            // explicit line is just noise. Keep the akleg link.
             if (b.akleg_url) {
-                html += '  <a class="at-extlink" href="' + esc(b.akleg_url) + '" target="_blank" rel="noopener">View on akleg.gov ↗</a>';
+                html += '<div class="at-status"><a class="at-extlink" href="' + esc(b.akleg_url) + '" target="_blank" rel="noopener">View on akleg.gov ↗</a></div>';
             }
-            html += '</div>';
 
             html += '</div>';
 
@@ -893,8 +893,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v3';
-    var DETAIL_KEY_PREFIX = 'at_detail_v6:';
+    var LIST_KEY = 'at_list_v4';
+    var DETAIL_KEY_PREFIX = 'at_detail_v7:';
 
     function lsGet(key) {
         try {
