@@ -513,10 +513,8 @@
             }
             if (b.sponsor) {
                 html += '<div class="at-sub"><strong>Sponsor:</strong> ' + esc(b.sponsor);
-                if (b.sponsor_party || b.sponsor_district) {
-                    html += ' <span class="at-sub-meta">(' + partyTagInline(b.sponsor_party);
-                    if (b.sponsor_district) html += '-D' + esc(b.sponsor_district);
-                    html += ')</span>';
+                if (b.sponsor_party) {
+                    html += ' <span class="at-sub-meta">(' + partyTagInline(b.sponsor_party) + ')</span>';
                 }
                 if (b.cosponsor_count > 0) {
                     html += ' <span class="at-sub-meta">+ ' + b.cosponsor_count + ' cosponsor' + (b.cosponsor_count === 1 ? '' : 's');
@@ -688,7 +686,8 @@
                 var partyCls = 'at-party-' + (v.party || 'N');
                 h += '<li><span class="' + partyCls + '">' + esc(v.party || '?') + '</span> '
                    + esc(v.name)
-                   + '<span class="meta">D' + esc(v.district) + (v.majority ? ' · maj' : '') + '</span></li>';
+                   + (v.majority ? '<span class="meta">maj</span>' : '')
+                   + '</li>';
             });
             h += '</ul></div>';
             return h;
@@ -778,7 +777,8 @@
                 var partyCls = 'at-party-' + (c.party || 'N');
                 h += '<li><span class="' + partyCls + '">' + esc(c.party || '?') + '</span> '
                    + esc(c.name)
-                   + '<span class="cs-meta"> (' + esc(c.chamber || '?') + '-D' + esc(c.district) + ')</span></li>';
+                   + (c.chamber ? '<span class="cs-meta"> (' + esc(c.chamber) + ')</span>' : '')
+                   + '</li>';
             });
             h += '</ul></div>';
         }
@@ -913,8 +913,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v5';
-    var DETAIL_KEY_PREFIX = 'at_detail_v9:';
+    var LIST_KEY = 'at_list_v6';
+    var DETAIL_KEY_PREFIX = 'at_detail_v10:';
 
     function lsGet(key) {
         try {
