@@ -112,7 +112,18 @@
         <p>Passed both chambers, sitting with the origin chamber's secretary/chief clerk awaiting engrossment + transmittal. The gubernatorial clock — <strong>15 days during session, 20 days after adjournment</strong> (Article II §17) — does <em>not</em> start until transmittal.</p>
     </header>
 
-    <div id="loading" class="loading">Loading&hellip;</div>
+    <div id="loading" class="loading">
+        <div>Loading&hellip;</div>
+        <div id="loading-hint" style="font-size:0.85rem;color:#888;margin-top:8px;display:none">Cold start can take up to 30 seconds on the first request after deploy.</div>
+    </div>
+    <script>
+        // Reveal the cold-start hint if we're still loading after 5s.
+        setTimeout(function() {
+            var h = document.getElementById('loading-hint');
+            var l = document.getElementById('loading');
+            if (h && l && l.style.display !== 'none') h.style.display = 'block';
+        }, 5000);
+    </script>
     <div id="content" style="display:none">
 
         <div class="at-strip" id="at-strip"></div>
