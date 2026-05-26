@@ -37,6 +37,21 @@ SCHEDULE_URL = "https://www.akleg.gov/basis/Meeting/Index"
 FLOOR_URL = "https://www.akleg.gov/basis/floor.asp"
 
 
+def is_procedural_resolution(billnumber, title):
+    """True if the bill is a procedural HCR/SCR that only suspends or
+    amends the chambers' Uniform Rules — pure plumbing, not policy.
+
+    Examples filtered: "SUSPEND UNIFORM RULES FOR SB 64",
+    "AMEND UNIFORM RULES: ABSTAIN FROM VOTING",
+    "UNIFORM RULES: COMMITTEE RECORDS".
+    """
+    bn = (billnumber or "").upper()
+    if not (bn.startswith("HCR") or bn.startswith("SCR")):
+        return False
+    t = (title or "").upper()
+    return "UNIFORM RULES" in t or "UNIFORM RULE " in t
+
+
 def fetch_floor_calendar(chamber, date=None):
     """Scrape the akleg floor calendar HTML for one chamber on one date.
 
@@ -156,7 +171,7 @@ def fetch(section, session="34", chamber=None, queries=None, result_range=None):
 def fetch_all_bills(chamber, session="34", queries=None):
     """Fetch all bills for a chamber with optional expansions. Cached
     for 10 minutes."""
-    cache_key = f"all_bills_{session}_{chamber}_{','.join(queries or [])}"
+    cache_key = f"all_bills_v2_{session}_{chamber}_{','.join(queries or [])}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -183,9 +198,12 @@ def fetch_all_bills(chamber, session="34", queries=None):
     seen = set()
     unique = []
     for b in all_bills:
-        if b["billnumber"] not in seen:
-            seen.add(b["billnumber"])
-            unique.append(b)
+        if b["billnumber"] in seen:
+            continue
+        if is_procedural_resolution(b["billnumber"], b.get("short_title")):
+            continue
+        seen.add(b["billnumber"])
+        unique.append(b)
 
     _cache.put(cache_key, unique)
     return unique
@@ -199,7 +217,7 @@ def scan_all_actions(session="34"):
     Returns list of (billnumber, chamber, short_title, status, actions_list)
     where actions_list is [(code, chamber, journaldate, action_text), ...].
     """
-    cached = _cache.get("all_actions")
+    cached = _cache.get("all_actions_v2")
     if cached is not None:
         return cached
 
@@ -243,8 +261,11 @@ def scan_all_actions(session="34"):
                             action.attrib.get("journaldate", ""),
                             child_text(action, "ActionText"),
                         ))
+                compact_bn = compact_billnumber(bn)
+                if is_procedural_resolution(compact_bn, short_title):
+                    continue
                 bills.append((
-                    compact_billnumber(bn),
+                    compact_bn,
                     chamber,
                     truncate(short_title),
                     status,
@@ -254,7 +275,7 @@ def scan_all_actions(session="34"):
                 break
             start += 100
 
-    _cache.put("all_actions", bills)
+    _cache.put("all_actions_v2", bills)
     return bills
 
 
