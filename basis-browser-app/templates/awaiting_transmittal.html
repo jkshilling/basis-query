@@ -52,6 +52,7 @@
             text-align: center;
         }
         .at-card .at-days-label { display: block; font-size: 0.7rem; color: #888; margin-top: 4px; letter-spacing: 0.04em; text-transform: uppercase; }
+        .at-card .at-meta-sub { display: block; font-size: 0.7rem; color: #6e7681; margin-top: 6px; }
         .at-days-green { background: #27ae60; }
         .at-days-yellow { background: #f39c12; }
         .at-days-orange { background: #e67e22; }
@@ -392,11 +393,11 @@
 </head>
 <body class="wide">
     <nav>
-        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/schedule">Schedule</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/pipeline">Pipeline</a> | <strong>Awaiting Transmittal</strong> | <a href="/governor">Governor</a> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/schedule">Schedule</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/pipeline">Pipeline</a> | <strong>Governor’s Desk</strong> | <a href="/governor">Governor</a> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
     </nav>
     <header>
-        <h1>Awaiting Transmittal</h1>
-        <p>Passed both chambers, sitting with the origin chamber's secretary/chief clerk awaiting engrossment + transmittal. The gubernatorial clock — <strong>15 days during session, 20 days after adjournment</strong> (Article II §17) — does <em>not</em> start until transmittal.</p>
+        <h1>On the Governor's Desk</h1>
+        <p>Bills and resolutions currently with the governor: <strong>"At Governor"</strong> means transmitted and the 15-day (in-session) or 20-day (post-adjournment) clock is running (Article II §17). <strong>"Awaiting Transmittal"</strong> means passed both chambers but still sitting with the origin chamber's secretary — clock has <em>not</em> started.</p>
         <p style="font-size:0.78rem;color:#888;margin:4px 0 0;min-height:1em;"><span id="at-refresh-hint"></span> <button type="button" id="at-refresh-btn" style="background:none;border:none;color:#888;text-decoration:underline;cursor:pointer;font-size:inherit;padding:0;font-family:inherit">Refresh now</button></p>
     </header>
 
@@ -415,6 +416,12 @@
     <div id="content" style="display:none">
 
         <div class="at-strip" id="at-strip"></div>
+
+        <section id="at-gov-section" style="display:none">
+            <h2>At Governor — Clock Running <span id="at-gov-count"></span></h2>
+            <p class="chart-note">Bills and resolutions <strong>already transmitted</strong>. The 15-day in-session / 20-day post-adjournment gubernatorial clock is running; without action they become law automatically when the deadline lapses. Sorted by days remaining, most urgent first.</p>
+            <div id="at-gov-cards" class="at-cards"></div>
+        </section>
 
         <div class="at-toolbar" id="at-toolbar">
             <div class="at-toolbar-group">
@@ -472,17 +479,41 @@
         return "at-days-red";
     }
 
-    function renderBillCards(rows) {
-        var host = document.getElementById("bills-cards");
+    // Days-remaining color scale for the at-governor mode. Inverted
+    // from days-since-passage: low days remaining = urgent (red).
+    function daysLeftClass(d) {
+        if (d == null) return "at-days-orange";
+        if (d <= 2)  return "at-days-red";
+        if (d <= 5)  return "at-days-orange";
+        if (d <= 10) return "at-days-yellow";
+        return "at-days-green";
+    }
+
+    function renderBillCards(rows, opts) {
+        opts = opts || {};
+        var hostId = opts.hostId || "bills-cards";
+        var emptyMsg = opts.emptyMsg || "No bills currently awaiting transmittal.";
+        var mode = opts.mode || "awaiting";  // 'awaiting' | 'at_gov'
+        var host = document.getElementById(hostId);
+        if (!host) return;
         if (!rows.length) {
-            host.outerHTML = '<p class="empty">No bills currently awaiting transmittal.</p>';
+            host.outerHTML = '<p class="empty">' + esc(emptyMsg) + '</p>';
             return;
         }
         var html = "";
         rows.forEach(function(b) {
-            var d = b.days_since_passage;
-            var dClass = daysClass(d);
-            var dTxt = d == null ? "—" : d;
+            var d, dClass, dTxt, dLabel;
+            if (mode === "at_gov") {
+                d = b.governor_days_left;
+                dClass = daysLeftClass(d);
+                dTxt = d == null ? "—" : d;
+                dLabel = "days left at gov";
+            } else {
+                d = b.days_since_passage;
+                dClass = daysClass(d);
+                dTxt = d == null ? "—" : d;
+                dLabel = "days since passage";
+            }
 
             html += '<div class="at-card origin-' + esc(b.origin) + '">';
 
@@ -607,7 +638,11 @@
             // Column 3: days badge first, then expander spans all columns below.
             html += '<div class="at-meta">';
             html +=   '<span class="at-days ' + dClass + '">' + dTxt + '</span>';
-            html +=   '<span class="at-days-label">days since passage</span>';
+            html +=   '<span class="at-days-label">' + esc(dLabel) + '</span>';
+            // Add the transmittal date as a secondary line for at-gov mode.
+            if (mode === "at_gov" && b.transmit_date) {
+                html += '<span class="at-meta-sub">transmitted ' + esc(b.transmit_date) + '</span>';
+            }
             html += '</div>';
 
             // Expander spans the full card row.
@@ -623,7 +658,9 @@
         // Wire up lazy-load on first expand. Stale-while-revalidate:
         // if we have a cached payload in localStorage, render it
         // immediately; in any case fetch the latest in the background.
-        document.querySelectorAll('.at-expand').forEach(function(el) {
+        // Scope to THIS host so re-rendering one section doesn't
+        // duplicate listeners on the other.
+        host.querySelectorAll('.at-expand').forEach(function(el) {
             el.addEventListener('toggle', function() {
                 if (!el.open) return;
                 var body = el.querySelector('.at-expand-body');
@@ -831,10 +868,25 @@
         var b = d.bills;
         var oldest = b.length ? Math.max.apply(null, b.map(function(x){return x.days_since_passage||0;})) : 0;
         var totalRes = d.counts.resolutions_substantive + d.counts.resolutions_procedural;
+        var atGov = (d.counts.at_gov_bills || 0) + (d.counts.at_gov_resolutions || 0);
+        // Minimum days-left across everything at-governor (most urgent
+        // deadline approaching). null means no transmittal date found.
+        var atGovItems = (d.at_gov_bills || []).concat(d.at_gov_resolutions || []);
+        var minLeft = null;
+        atGovItems.forEach(function(x) {
+            if (x.governor_days_left == null) return;
+            if (minLeft == null || x.governor_days_left < minLeft) minLeft = x.governor_days_left;
+        });
         var s = "";
-        s += '<div class="at-stat"><div class="n">' + d.counts.bills + '</div><div class="l">Bills</div></div>';
-        s += '<div class="at-stat"><div class="n">' + totalRes + '</div><div class="l">Resolutions</div></div>';
-        s += '<div class="at-stat"><div class="n">' + oldest + '</div><div class="l">Longest since passage (days)</div></div>';
+        if (atGov) {
+            s += '<div class="at-stat"><div class="n">' + atGov + '</div><div class="l">At Governor</div></div>';
+            if (minLeft != null) {
+                s += '<div class="at-stat"><div class="n">' + minLeft + '</div><div class="l">Soonest deadline (days)</div></div>';
+            }
+        }
+        s += '<div class="at-stat"><div class="n">' + d.counts.bills + '</div><div class="l">Bills awaiting</div></div>';
+        s += '<div class="at-stat"><div class="n">' + totalRes + '</div><div class="l">Resolutions awaiting</div></div>';
+        s += '<div class="at-stat"><div class="n">' + oldest + '</div><div class="l">Longest awaiting (days)</div></div>';
         document.getElementById("at-strip").innerHTML = s;
     }
 
@@ -913,8 +965,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v6';
-    var DETAIL_KEY_PREFIX = 'at_detail_v10:';
+    var LIST_KEY = 'at_list_v7';
+    var DETAIL_KEY_PREFIX = 'at_detail_v11:';
 
     function lsGet(key) {
         try {
@@ -950,6 +1002,24 @@
         renderStrip(d);
         document.getElementById('gov-window-hint').textContent =
             'If transmitted today, the governor would have ' + d.gov_deadline_if_transmitted_today + ' days to act.';
+
+        // At-governor section (mixes bills + resolutions, sorted by urgency).
+        var atGov = (d.at_gov_bills || []).concat(d.at_gov_resolutions || []);
+        atGov.sort(function(a, b) {
+            var ax = a.governor_days_left == null ? 9999 : a.governor_days_left;
+            var bx = b.governor_days_left == null ? 9999 : b.governor_days_left;
+            return ax - bx;
+        });
+        var atGovSection = document.getElementById('at-gov-section');
+        document.getElementById('at-gov-count').textContent = '(' + atGov.length + ')';
+        if (atGov.length) {
+            atGovSection.style.display = '';
+            renderBillCards(atGov, {hostId: 'at-gov-cards', mode: 'at_gov',
+                                    emptyMsg: 'Nothing at the governor right now.'});
+        } else {
+            atGovSection.style.display = 'none';
+        }
+
         currentBills = d.bills || [];
         renderBillsWithToolbar();
         renderResRows('rs-table', d.resolutions_substantive);

@@ -1385,7 +1385,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v11", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v12", max_age=300)
     if cached is not None:
         return cached
 
@@ -1406,20 +1406,28 @@ def awaiting_transmittal(session="34"):
 
     today = datetime.now().date()
 
+    # AWAITING: passed, secretary's office, clock NOT started
     bills = []
     resolutions_substantive = []
     resolutions_procedural = []
+    # AT GOVERNOR: transmitted, 15/20-day clock IS running
+    at_gov_bills = []
+    at_gov_resolutions = []
 
     for bn, origin, title, status, actions in scan_all_actions(session):
         prefix = bn.split()[0] if bn else ""
         if prefix not in ("HB", "SB", "HJR", "SJR", "HCR", "SCR"):
             continue
         su = (status or "").upper()
-        if "GOV NEXT" not in su and "RTN TO" not in su:
+        is_at_gov = ("TRANSM TO GOVERNOR" in su
+                     or "TRANSMITTED TO GOVERNOR" in su)
+        is_awaiting = (("GOV NEXT" in su or "RTN TO" in su)
+                       and not is_at_gov)
+        # Skip terminal states regardless of bucket
+        if "CHAPTER" in su or "VETOED" in su:
             continue
-        # Skip terminal/transmitted (already past this stage)
-        if ("TRANSM TO GOVERNOR" in su or "TRANSMITTED TO GOVERNOR" in su
-                or "CHAPTER" in su or "VETOED" in su):
+        # Skip anything not in one of our two buckets
+        if not (is_at_gov or is_awaiting):
             continue
 
         # Most recent meaningful action (drives the days-waiting badge
@@ -1563,6 +1571,26 @@ def awaiting_transmittal(session="34"):
             + session + "?Root=" + compact_bn.replace(" ", "%20")
         )
 
+        # At-governor-specific fields: when the bill IS at the governor,
+        # find action 033's date and compute the clock countdown.
+        transmit_date = ""
+        days_at_governor = None
+        gov_deadline = None
+        gov_days_left = None
+        if is_at_gov:
+            for c, _, jd, _ in actions:
+                if c == "033" and jd:
+                    transmit_date = jd
+                    break
+            if transmit_date:
+                try:
+                    td = datetime.strptime(transmit_date, "%Y-%m-%d").date()
+                    days_at_governor = (today - td).days
+                    gov_deadline = governor_deadline_days(td)
+                    gov_days_left = gov_deadline - days_at_governor
+                except ValueError:
+                    pass
+
         entry = {
             "billnumber": compact_billnumber(bn),
             "title": truncate(title, 80),
@@ -1592,9 +1620,22 @@ def awaiting_transmittal(session="34"):
             # Fiscal + effective-date
             "fiscal_notes": fiscal_notes,
             "fiscal_summary": fn_buckets,
+            # At-governor flag + clock fields (populated only when at gov)
+            "is_at_governor": is_at_gov,
+            "transmit_date": format_status_date_full(transmit_date),
+            "days_at_governor": days_at_governor,
+            "governor_deadline_days": gov_deadline,
+            "governor_days_left": gov_days_left,
         }
 
-        if prefix in ("HB", "SB"):
+        # Route to bucket. At-governor wins routing over bill-vs-resolution
+        # split because the urgency dominates the UX.
+        if is_at_gov:
+            if prefix in ("HB", "SB"):
+                at_gov_bills.append(entry)
+            else:
+                at_gov_resolutions.append(entry)
+        elif prefix in ("HB", "SB"):
             bills.append(entry)
         elif is_procedural_resolution(bn, title):
             resolutions_procedural.append(entry)
@@ -1606,21 +1647,34 @@ def awaiting_transmittal(session="34"):
     bills.sort(key=lambda b: -(b["days_since_passage"] or 0))
     for lst in (resolutions_substantive, resolutions_procedural):
         lst.sort(key=lambda b: b["last_date"], reverse=True)
+    # At-governor buckets sorted by days_left ASC (most urgent first —
+    # bills closest to auto-law deadline rise to the top).
+    def _atgov_sort_key(b):
+        d = b.get("governor_days_left")
+        return d if d is not None else 9999
+    at_gov_bills.sort(key=_atgov_sort_key)
+    at_gov_resolutions.sort(key=_atgov_sort_key)
 
     result = {
+        # Awaiting transmittal — passed, clock NOT started
         "bills": bills,
         "resolutions_substantive": resolutions_substantive,
         "resolutions_procedural": resolutions_procedural,
+        # At governor — transmitted, clock IS running
+        "at_gov_bills": at_gov_bills,
+        "at_gov_resolutions": at_gov_resolutions,
         "counts": {
             "bills": len(bills),
             "resolutions_substantive": len(resolutions_substantive),
             "resolutions_procedural": len(resolutions_procedural),
+            "at_gov_bills": len(at_gov_bills),
+            "at_gov_resolutions": len(at_gov_resolutions),
         },
         # Which gov window kicks in if any of these are transmitted
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v11", result)
+    _cache.put("awaiting_transmittal_v12", result)
     return result
 
 
