@@ -173,17 +173,17 @@ def fetch(section, session="34", chamber=None, queries=None, result_range=None,
 def fetch_all_bills(chamber, session="34", queries=None):
     """Fetch all bills for a chamber with optional expansions. Cached
     for 10 minutes."""
-    cache_key = f"all_bills_v3_{session}_{chamber}_{','.join(queries or [])}"
+    cache_key = f"all_bills_v5_{session}_{chamber}_{','.join(queries or [])}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
 
     PAGE_SIZE = 100
     all_bills = []
-    start = 1
+    start = 0
     while True:
         end = start + PAGE_SIZE - 1
-        range_str = f"{start}..{end}" if start > 1 else f"..{PAGE_SIZE}"
+        range_str = f"{start}..{end}"
         result = fetch(
             section="bills", session=session,
             chamber=chamber, queries=queries,
@@ -217,17 +217,17 @@ def scan_all_actions(session="34"):
     Returns list of (billnumber, chamber, short_title, status, actions_list)
     where actions_list is [(code, chamber, journaldate, action_text), ...].
     """
-    cached = _cache.get("all_actions_v3")
+    cached = _cache.get("all_actions_v5")
     if cached is not None:
         return cached
 
     bills = []
     for chamber in ["H", "S"]:
         seen = set()
-        start = 1
+        start = 0
         while True:
             end = start + 99
-            range_str = f"{start}..{end}" if start > 1 else "..100"
+            range_str = f"{start}..{end}"
             result = fetch(
                 section="bills", session=session, chamber=chamber,
                 queries=["Actions"], result_range=range_str,
@@ -272,7 +272,7 @@ def scan_all_actions(session="34"):
                 break
             start += 100
 
-    _cache.put("all_actions_v3", bills)
+    _cache.put("all_actions_v5", bills)
     return bills
 
 
@@ -559,10 +559,10 @@ def count_actions_by_year(session, years):
     counts = {y: Counter() for y in years}
 
     for chamber in ["H", "S"]:
-        start = 1
+        start = 0
         while True:
             end = start + 99
-            range_str = f"{start}..{end}" if start > 1 else "..100"
+            range_str = f"{start}..{end}"
             result = fetch(
                 section="bills", session=session, chamber=chamber,
                 queries=["Actions"], result_range=range_str,
@@ -602,7 +602,7 @@ def count_actions_by_year(session, years):
 def fetch_members(session="34"):
     """Member roster keyed by BASIS code. Each value carries name,
     chamber, party, district, and majority flag. Cached an hour."""
-    cache_key = f"members_v2_{session}"
+    cache_key = f"members_v3_{session}"
     cached = _cache.get(cache_key, max_age=3600)
     if cached is not None:
         return cached
@@ -613,7 +613,7 @@ def fetch_members(session="34"):
     # Always use an explicit "start..end" so pagination actually
     # advances forward through the roster.
     PAGE = 50
-    start = 1
+    start = 0
     while True:
         end = start + PAGE - 1
         rng = f"{start}..{end}"
@@ -663,7 +663,7 @@ def fetch_all_votes_index(session="34"):
     thread; cached for an hour. Once warm, per-bill votes lookups are
     a dict access in microseconds.
     """
-    cache_key = f"all_votes_v1_{session}"
+    cache_key = f"all_votes_v2_{session}"
     cached = _cache.get(cache_key, max_age=3600)
     if cached is not None:
         return cached
@@ -674,7 +674,7 @@ def fetch_all_votes_index(session="34"):
     REQ_TIMEOUT = 60.0  # per-request socket timeout
 
     for chamber in ("H", "S"):
-        start = 1
+        start = 0
         while True:
             end = start + PAGE - 1
             rng = f"{start}..{end}"
@@ -740,7 +740,7 @@ def fetch_bill_votes(billnumber, session="34"):
     list rather than triggering a 3-minute build inside the request
     handler. The build is performed by _build_votes_index_async on its
     own daemon thread; once warm, results appear on the next refresh."""
-    cache_key = f"all_votes_v1_{session}"
+    cache_key = f"all_votes_v2_{session}"
     idx = _cache.get(cache_key, max_age=3600)
     if idx is None:
         # Don't block the request handler. Empty roll call is preferable
@@ -878,7 +878,8 @@ def fetch_bill_detail(billnumber, session="34"):
                 break
     if bill_elem is None:
         # Filter sometimes returns wrong bill — fall back to scanning.
-        for rng in ["..100", "101..200", "201..300", "301..400", "401..500"]:
+        # Use explicit forward ranges — "..100" returns LAST 100, not first.
+        for rng in ["0..99", "100..199", "200..299", "300..399", "400..499"]:
             rr = fetch(
                 section="bills", session=session, chamber=chamber,
                 queries=["Actions", "Sponsors", "Versions", "Subjects"],

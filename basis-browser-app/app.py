@@ -104,8 +104,8 @@ def _invalidate_top_level_caches():
     Underlying caches (bills, hearing windows) keep their own freshness rules."""
     keys_to_clear = [
         "hb_in_senate", "sb_in_house", "dashboard_stats", "action_code_counts",
-        "bill_progress", "all_actions", "all_actions_v3", "governor_bills",
-        "awaiting_transmittal_v13", "pipeline_v3_20",
+        "bill_progress", "all_actions", "all_actions_v5", "governor_bills",
+        "awaiting_transmittal_v14", "pipeline_v3_20",
     ]
     # Also clear any activity_feed_X entries and today's floor calendar
     # (so refreshes pick up newly-calendared bills).

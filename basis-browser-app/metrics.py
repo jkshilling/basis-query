@@ -1385,7 +1385,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v13", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v14", max_age=300)
     if cached is not None:
         return cached
 
@@ -1402,7 +1402,7 @@ def awaiting_transmittal(session="34"):
     # Non-blocking probe of the votes index: if it's been built (warm),
     # we enrich vote chips with party breakdowns; if not, the page still
     # loads with totals-only and breakdowns appear after the index warms.
-    votes_idx = _cache.get("all_votes_v1_" + session, max_age=3600) or {}
+    votes_idx = _cache.get("all_votes_v2_" + session, max_age=3600) or {}
 
     today = datetime.now().date()
 
@@ -1692,7 +1692,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v13", result)
+    _cache.put("awaiting_transmittal_v14", result)
     return result
 
 
