@@ -29,7 +29,7 @@
 
         <section>
             <h2>At Governor — Action Deadline Countdown</h2>
-            <p class="chart-note">Per Article II §17 of the Alaska Constitution, the governor has 15 days during session to act on bills received.</p>
+            <p class="chart-note">Per Article II §17 of the Alaska Constitution, the governor has <strong>15 days during session</strong> and <strong>20 days after adjournment</strong> to act on bills received. The deadline per bill below is calculated against whichever window applied on the bill's transmittal date.</p>
             <table class="compact" id="governor-table"></table>
         </section>
 
@@ -98,17 +98,21 @@
 
             // Governor table with countdown
             if (d.governor_bills && d.governor_bills.length) {
-                var gHtml = '<thead><tr><th>Bill</th><th>Title</th><th class="center">Days at Governor</th><th class="center">Days Until Auto-Law</th></tr></thead><tbody>';
+                var gHtml = '<thead><tr><th>Bill</th><th>Title</th><th class="center">Days at Governor</th><th class="center">Window</th><th class="center">Days Until Auto-Law</th></tr></thead><tbody>';
                 d.governor_bills.forEach(function(b) {
                     var dl = b.governor_days_left;
                     var dlCell = dl == null ? '—'
                                 : dl <= 2 ? '<strong style="color:#c0392b">' + dl + '</strong>'
                                 : dl <= 5 ? '<strong style="color:#e67e22">' + dl + '</strong>'
                                 : dl;
+                    var winCell = b.governor_deadline_days != null
+                                ? b.governor_deadline_days + 'd'
+                                : '—';
                     gHtml += '<tr>';
                     gHtml += '<td class="bill-number"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + esc(b.billnumber) + '</a></td>';
                     gHtml += '<td>' + esc(b.title) + '</td>';
                     gHtml += '<td class="center">' + (b.days_at_governor != null ? b.days_at_governor : '—') + '</td>';
+                    gHtml += '<td class="center">' + winCell + '</td>';
                     gHtml += '<td class="center">' + dlCell + '</td>';
                     gHtml += '</tr>';
                 });

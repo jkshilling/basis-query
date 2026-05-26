@@ -980,9 +980,44 @@ def search_bills(query, session="34", limit=50):
 SESSION_START = datetime(2026, 1, 20)
 SESSION_LIMIT_DAYS = 121
 
-# Governor has 15 days to act on bills received during session.
-# Article II, Sec 17 of the Alaska Constitution.
-GOVERNOR_DEADLINE_DAYS = 15
+# Article II, Sec 17 of the Alaska Constitution: the governor has
+#   15 days to act on bills transmitted DURING session, and
+#   20 days to act on bills transmitted AFTER adjournment.
+# Sundays are excluded from the count in both windows, but we don't
+# model that here — call it a near-miss.
+GOVERNOR_DEADLINE_IN_SESSION = 15
+GOVERNOR_DEADLINE_POST_SESSION = 20
+
+
+def governor_deadline_days(transmit_date=None):
+    """Return the gubernatorial action window in days. 15 if the
+    bill was transmitted while the regular session was still active,
+    20 if transmitted after adjournment. If transmit_date is None,
+    base the call on today's date — useful for the awaiting-transmittal
+    page where we want to show the window that WOULD apply if the
+    bill were transmitted right now."""
+    if transmit_date is None:
+        today = datetime.now().date()
+    elif isinstance(transmit_date, str):
+        try:
+            today = datetime.strptime(transmit_date, "%Y-%m-%d").date()
+        except ValueError:
+            today = datetime.now().date()
+    elif isinstance(transmit_date, datetime):
+        today = transmit_date.date()
+    else:
+        today = transmit_date
+    adjournment = (SESSION_START.date()
+                   + timedelta(days=SESSION_LIMIT_DAYS - 1))
+    return (GOVERNOR_DEADLINE_IN_SESSION if today <= adjournment
+            else GOVERNOR_DEADLINE_POST_SESSION)
+
+
+# Backward-compat alias for callers expecting the old constant.
+# Resolves to the deadline that applies *today*; callers that know
+# the actual transmittal date should call governor_deadline_days()
+# directly with that date.
+GOVERNOR_DEADLINE_DAYS = governor_deadline_days()
 
 
 def session_countdown(today=None):
@@ -1085,7 +1120,7 @@ def pipeline(session="34", min_legs_score=20):
     Legs Score >= min_legs_score (so we focus on bills with a real shot
     of moving rather than the long tail of dormant ones).
     """
-    cache_key = f"pipeline_v2_{min_legs_score}"
+    cache_key = f"pipeline_v3_{min_legs_score}"
     cached = _cache.get(cache_key, max_age=300)
     if cached is not None:
         return cached
@@ -1132,15 +1167,18 @@ def pipeline(session="34", min_legs_score=20):
                     break
             days_at_gov = None
             days_left = None
+            deadline_days = None
             if transmit_date:
                 try:
                     d = datetime.strptime(transmit_date, "%Y-%m-%d").date()
                     days_at_gov = (today - d).days
-                    days_left = GOVERNOR_DEADLINE_DAYS - days_at_gov
+                    deadline_days = governor_deadline_days(d)
+                    days_left = deadline_days - days_at_gov
                 except ValueError:
                     pass
             entry["days_at_governor"] = days_at_gov
             entry["governor_days_left"] = days_left
+            entry["governor_deadline_days"] = deadline_days
             governor_bills_list.append(entry)
 
         by_stage[stage].append(entry)
@@ -1235,10 +1273,11 @@ def awaiting_transmittal(session="34"):
     - resolutions_procedural: HCR/SCR that exist only to suspend or
       amend the chambers' Uniform Rules — pure plumbing
 
-    The 15-day gubernatorial clock does not start until transmittal,
+    The gubernatorial clock (15 days during session, 20 days after
+    adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v5", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v6", max_age=300)
     if cached is not None:
         return cached
 
@@ -1286,7 +1325,8 @@ def awaiting_transmittal(session="34"):
         # AWAITING-TRANSMITTAL housekeeping line was logged 1-2 days
         # later. This is the honest count of how long the bill has
         # been sitting fully passed without being handed to the
-        # governor. The 15-day gubernatorial clock has NOT started.
+        # governor. The gubernatorial clock (15 during session / 20
+        # after adjournment) has NOT started.
         days_since_passage = None
         if passed_both_date:
             try:
@@ -1335,8 +1375,11 @@ def awaiting_transmittal(session="34"):
             "resolutions_substantive": len(resolutions_substantive),
             "resolutions_procedural": len(resolutions_procedural),
         },
+        # Which gov window kicks in if any of these are transmitted
+        # today — 15 (in session) or 20 (post-adjournment).
+        "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v5", result)
+    _cache.put("awaiting_transmittal_v6", result)
     return result
 
 

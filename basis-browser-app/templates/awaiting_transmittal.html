@@ -109,7 +109,7 @@
     </nav>
     <header>
         <h1>Awaiting Transmittal</h1>
-        <p>Passed both chambers, sitting with the origin chamber's secretary/chief clerk awaiting engrossment + transmittal. The 15-day gubernatorial clock does <em>not</em> start until transmittal.</p>
+        <p>Passed both chambers, sitting with the origin chamber's secretary/chief clerk awaiting engrossment + transmittal. The gubernatorial clock — <strong>15 days during session, 20 days after adjournment</strong> (Article II §17) — does <em>not</em> start until transmittal.</p>
     </header>
 
     <div id="loading" class="loading">Loading&hellip;</div>
@@ -119,7 +119,7 @@
 
         <section>
             <h2>Bills <span id="bills-count"></span></h2>
-            <p class="chart-note">HB/SB — substantive legislation headed to the governor for signature, veto, or auto-law. The badge shows days since the bill was fully passed (second chamber's floor vote). The governor's 15-day clock has <em>not</em> started; it begins only on transmittal.</p>
+            <p class="chart-note">HB/SB — substantive legislation headed to the governor for signature, veto, or auto-law. The badge shows days since the bill was fully passed (second chamber's floor vote). The governor's clock (15 in session / 20 post-adjournment) has <em>not</em> started; it begins only on transmittal. <span id="gov-window-hint"></span></p>
             <div id="bills-cards" class="at-cards"></div>
         </section>
 
@@ -233,6 +233,8 @@
             document.getElementById('rp-count').textContent    = '(' + d.counts.resolutions_procedural + ')';
 
             renderStrip(d);
+            document.getElementById('gov-window-hint').textContent =
+                'If transmitted today, the governor would have ' + d.gov_deadline_if_transmitted_today + ' days to act.';
             renderBillCards(d.bills);
             renderResRows('rs-table', d.resolutions_substantive);
             renderResRows('rp-table', d.resolutions_procedural);
