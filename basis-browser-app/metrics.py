@@ -13,7 +13,8 @@ from datetime import datetime, timedelta
 
 import cache as _cache
 from parse import (
-    compact_billnumber, current_chamber, format_status_date, truncate,
+    compact_billnumber, current_chamber, format_status_date,
+    format_status_date_full, truncate,
 )
 from fetch import (
     fetch_all_bills, fetch_hearing_schedule, fetch_hearing_counts,
@@ -1636,7 +1637,7 @@ def bill_decision_detail(billnumber, session="34"):
     """Detailed veto-decision view for one bill: full per-legislator
     roll call on final passage in each chamber, plus action timeline
     and fiscal-note bodies. Cached 10 min."""
-    cache_key = f"bill_decision_detail_{session}_{billnumber}"
+    cache_key = f"bill_decision_detail_v2_{session}_{billnumber}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -1667,24 +1668,123 @@ def bill_decision_detail(billnumber, session="34"):
             if v["vote"] in counts[ch]:
                 counts[ch][v["vote"]] += 1
 
-    # Fiscal-note bodies (full text, with dates). Action timeline was
-    # removed from this endpoint — the akleg.gov bill page covers it
-    # better than we can render here.
-    fiscal_notes = []
+    # Cosponsor list with party/district resolved. Pulled from the
+    # extended bill feed (Sponsors expansion).
+    cosponsors = []
+    bill_meta = None
+    for chamber in ("H", "S"):
+        for b in fetch_all_bills(chamber, session,
+                                  queries=["Sponsors", "Subjects"]):
+            if b.get("billnumber") == billnumber:
+                bill_meta = b
+                break
+        if bill_meta:
+            break
+    if bill_meta:
+        for sp in bill_meta.get("sponsors") or []:
+            if sp.get("prime"):
+                continue
+            sp_member = members.get(sp.get("code") or "", {})
+            cosponsors.append({
+                "code": sp.get("code") or "",
+                "name": sp_member.get("name") or sp.get("name") or "",
+                "party": sp_member.get("party") or "",
+                "district": sp_member.get("district") or "",
+                "chamber": sp_member.get("chamber") or "",
+            })
+        # Stable order: by chamber (H first), then party (D, R), then name
+        party_order = {"D": 0, "R": 1}
+        cosponsors.sort(key=lambda c: (
+            0 if c["chamber"] == "H" else 1,
+            party_order.get(c["party"], 9),
+            (c["name"].rsplit(" ", 1)[-1] if c["name"] else ""),
+        ))
+
+    # Committee path: ordered list of committees the bill went through
+    # in each chamber, derived from action 002 (committee reports).
+    # Plus key milestone dates.
+    committee_path = {"H": [], "S": []}
+    milestones = {
+        "introduced": "",
+        "first_committee_report": "",
+        "first_cs_adopted": "",
+        "crossover": "",  # transmitted to other chamber
+        "passed_house": "",
+        "passed_senate": "",
+    }
+    actions_for_bill = []
     for bn, origin, title, status, actions in scan_all_actions(session):
-        if bn != billnumber:
-            continue
-        for c, a, jd, t in actions:
-            if c == "105" and t:
-                m = _FN_RE.match(t.strip())
-                if m:
-                    fiscal_notes.append({
-                        "label": m.group(1),
-                        "body": m.group(2).strip(),
-                        "date": jd,
-                        "category": categorize_fiscal_note(m.group(2)),
-                    })
-        break
+        if bn == billnumber:
+            actions_for_bill = list(actions)
+            break
+
+    # Build committee path via 002 (committee report) actions per chamber.
+    # BASIS doesn't always return actions in chronological order, so we
+    # collect (date, committee, formatted_date) tuples then sort.
+    cmte_seen = {"H": {}, "S": {}}  # ch -> {committee_code: earliest_jd}
+    for c, a, jd, t in actions_for_bill:
+        if c == "002" and a in ("H", "S") and t:
+            # Text format like "FIN RPT 3DP 4NR" — committee code first.
+            cmte = (t.split()[0] if t.strip() else "").strip()
+            if not cmte:
+                continue
+            prev = cmte_seen[a].get(cmte)
+            if prev is None or jd < prev:
+                cmte_seen[a][cmte] = jd
+    for ch in ("H", "S"):
+        ordered = sorted(cmte_seen[ch].items(), key=lambda kv: kv[1])
+        committee_path[ch] = [
+            {"code": code, "date": format_status_date_full(jd)}
+            for code, jd in ordered
+        ]
+
+    # Milestone scan
+    for c, a, jd, t in actions_for_bill:
+        if c == "001" and not milestones["introduced"]:
+            milestones["introduced"] = jd
+        elif c == "002" and not milestones["first_committee_report"]:
+            milestones["first_committee_report"] = jd
+        elif c in ("009", "122") and not milestones["first_cs_adopted"]:
+            milestones["first_cs_adopted"] = jd
+        elif c == "022" and not milestones["crossover"]:
+            # 022 in origin chamber = transmitted to other chamber
+            milestones["crossover"] = jd
+        elif c == "020" and a == "H" and not milestones["passed_house"]:
+            milestones["passed_house"] = jd
+        elif c == "020" and a == "S" and not milestones["passed_senate"]:
+            milestones["passed_senate"] = jd
+
+    # Days-between calculations for the milestone narrative
+    def _days_between(a, b):
+        try:
+            da = datetime.strptime(a, "%Y-%m-%d").date()
+            db = datetime.strptime(b, "%Y-%m-%d").date()
+            return (db - da).days
+        except (ValueError, TypeError):
+            return None
+
+    days_intro_to_first_cmte = _days_between(
+        milestones["introduced"], milestones["first_committee_report"]
+    )
+    days_intro_to_passage = None
+    if milestones["passed_house"] and milestones["passed_senate"]:
+        last = max(milestones["passed_house"], milestones["passed_senate"])
+        days_intro_to_passage = _days_between(milestones["introduced"], last)
+
+    milestones_display = {k: format_status_date_full(v) for k, v in milestones.items()}
+
+    # Fiscal-note bodies (full text, with dates).
+    fiscal_notes = []
+    for c, a, jd, t in actions_for_bill:
+        if c == "105" and t:
+            m = _FN_RE.match(t.strip())
+            if m:
+                fiscal_notes.append({
+                    "label": m.group(1),
+                    "body": m.group(2).strip(),
+                    "date": jd,
+                    "category": categorize_fiscal_note(m.group(2)),
+                })
 
     result = {
         "billnumber": billnumber,
@@ -1692,6 +1792,11 @@ def bill_decision_detail(billnumber, session="34"):
         "passage_dates": {k: format_status_date(v)
                           for k, v in passage_dates.items()},
         "vote_counts": counts,
+        "cosponsors": cosponsors,
+        "committee_path": committee_path,
+        "milestones": milestones_display,
+        "days_intro_to_first_committee": days_intro_to_first_cmte,
+        "days_intro_to_passage": days_intro_to_passage,
         "fiscal_notes": fiscal_notes,
     }
     _cache.put(cache_key, result)

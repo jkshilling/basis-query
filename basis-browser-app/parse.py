@@ -42,6 +42,17 @@ def format_status_date(date_str: str) -> str:
         return date_str
 
 
+def format_status_date_full(date_str: str) -> str:
+    """Like format_status_date but includes year — useful for bills
+    that carry over from one regular session to the next, where
+    'May 2' alone is ambiguous between two different years."""
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return dt.strftime("%b %-d, %Y")
+    except (ValueError, TypeError):
+        return date_str
+
+
 def compact_billnumber(raw: str) -> str:
     """'HB  173' -> 'HB 173'. Collapse internal whitespace."""
     return " ".join(raw.split())

@@ -91,6 +91,7 @@
         }
         .at-combined.veto-proof { color: #1e8449; border-color: #1e8449; font-weight: 600; }
         .at-combined.veto-proof::before { content: "✓ "; }
+        .at-combined .at-short { color: #c0392b; font-weight: 500; margin-left: 3px; }
         .at-detail-row {
             display: flex;
             flex-wrap: wrap;
@@ -231,6 +232,62 @@
         .at-fn-list { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; }
         .at-fn-list li { padding: 4px 0; }
         .at-fn-list .lbl { font-weight: 600; color: #2c3e50; margin-right: 6px; }
+
+        /* Process timeline */
+        .at-milestones {
+            font-size: 0.85rem;
+            border-collapse: collapse;
+            margin-top: 4px;
+        }
+        .at-milestones td {
+            padding: 3px 14px 3px 0;
+            border-bottom: 1px solid #eef2f6;
+        }
+        .at-milestones .ml-lbl {
+            color: #6e7681;
+            white-space: nowrap;
+        }
+        .at-ml-note {
+            margin-top: 6px;
+            font-size: 0.78rem;
+            color: #5b6770;
+            font-style: italic;
+        }
+
+        /* Committee path */
+        .at-cmte-path { font-size: 0.85rem; }
+        .at-cmte-row { margin-bottom: 6px; }
+        .at-cmte-ch {
+            font-weight: 600;
+            color: #4a5560;
+            margin-right: 6px;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .at-cmte-chip {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #eef2f6;
+            border: 1px solid #d8dde3;
+            border-radius: 10px;
+            margin: 2px 0;
+        }
+        .at-cmte-date { color: #6e7681; font-size: 0.74rem; margin-left: 4px; }
+        .at-cmte-arrow { color: #95a5a6; margin: 0 4px; }
+
+        /* Cosponsor list */
+        .at-cosponsor-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            font-size: 0.85rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 2px 16px;
+        }
+        .at-cosponsor-list li { padding: 2px 0; }
+        .at-cosponsor-list .cs-meta { color: #6e7681; font-size: 0.74rem; margin-left: 4px; }
 
         .at-approps-badge {
             display: inline-block;
@@ -499,7 +556,15 @@
                 html += voteChip('Senate', b.senate_vote, b.senate_breakdown);
                 if (b.house_vote && b.senate_vote) {
                     var cls = b.veto_proof ? 'at-combined veto-proof' : 'at-combined';
-                    html += '<span class="' + cls + '">Combined ' + b.combined_yeas + ' yeas (override needs ' + b.override_threshold + ')</span>';
+                    // Bare combined-yeas: ✓ when veto-proof, otherwise
+                    // a small "(N short)" hint. The override threshold
+                    // is in the section caption, not on every card.
+                    if (b.veto_proof) {
+                        html += '<span class="' + cls + '">Combined ' + b.combined_yeas + ' yeas</span>';
+                    } else {
+                        var shortBy = (b.override_threshold || 0) - (b.combined_yeas || 0);
+                        html += '<span class="' + cls + '">Combined ' + b.combined_yeas + ' yeas <span class="at-short">(' + shortBy + ' short)</span></span>';
+                    }
                 }
                 html += '</div>';
             }
@@ -642,6 +707,71 @@
     function renderDecisionDetail(d) {
         var h = '';
 
+        // Process timeline: milestone dates + days-between summaries
+        if (d.milestones) {
+            var ms = d.milestones;
+            var rows = [];
+            function row(label, date) {
+                if (!date) return;
+                rows.push('<tr><td class="ml-lbl">' + label + '</td><td>' + esc(date) + '</td></tr>');
+            }
+            row('Introduced', ms.introduced);
+            row('First committee report', ms.first_committee_report);
+            row('First CS adopted', ms.first_cs_adopted);
+            row('Crossover (to other chamber)', ms.crossover);
+            row('House final passage', ms.passed_house);
+            row('Senate final passage', ms.passed_senate);
+            if (rows.length) {
+                h += '<div class="at-section">';
+                h += '<div class="at-section-h">Process Timeline</div>';
+                h += '<table class="at-milestones"><tbody>' + rows.join('') + '</tbody></table>';
+                var notes = [];
+                if (d.days_intro_to_first_committee != null) {
+                    notes.push(d.days_intro_to_first_committee + ' days from intro to first committee report');
+                }
+                if (d.days_intro_to_passage != null) {
+                    notes.push(d.days_intro_to_passage + ' days from intro to final passage');
+                }
+                if (notes.length) {
+                    h += '<div class="at-ml-note">' + notes.join(' · ') + '</div>';
+                }
+                h += '</div>';
+            }
+        }
+
+        // Committee path per chamber
+        if (d.committee_path && (d.committee_path.H.length || d.committee_path.S.length)) {
+            h += '<div class="at-section">';
+            h += '<div class="at-section-h">Committee Path</div>';
+            h += '<div class="at-cmte-path">';
+            function pathCh(label, arr) {
+                if (!arr.length) return '';
+                var s = '<div class="at-cmte-row"><span class="at-cmte-ch">' + esc(label) + ':</span> ';
+                s += arr.map(function(c) {
+                    return '<span class="at-cmte-chip">' + esc(c.code) + ' <span class="at-cmte-date">' + esc(c.date) + '</span></span>';
+                }).join(' <span class="at-cmte-arrow">→</span> ');
+                s += '</div>';
+                return s;
+            }
+            h += pathCh('House', d.committee_path.H);
+            h += pathCh('Senate', d.committee_path.S);
+            h += '</div></div>';
+        }
+
+        // Cosponsor list with party tags
+        if (d.cosponsors && d.cosponsors.length) {
+            h += '<div class="at-section">';
+            h += '<div class="at-section-h">Cosponsors (' + d.cosponsors.length + ')</div>';
+            h += '<ul class="at-cosponsor-list">';
+            d.cosponsors.forEach(function(c) {
+                var partyCls = 'at-party-' + (c.party || 'N');
+                h += '<li><span class="' + partyCls + '">' + esc(c.party || '?') + '</span> '
+                   + esc(c.name)
+                   + '<span class="cs-meta"> (' + esc(c.chamber || '?') + '-D' + esc(c.district) + ')</span></li>';
+            });
+            h += '</ul></div>';
+        }
+
         // Roll calls
         h += '<div class="at-section">';
         h += '<div class="at-section-h">Roll Calls — Floor Passage</div>';
@@ -773,7 +903,7 @@
     });
 
     var LIST_KEY = 'at_list_v3';
-    var DETAIL_KEY_PREFIX = 'at_detail_v3:';
+    var DETAIL_KEY_PREFIX = 'at_detail_v4:';
 
     function lsGet(key) {
         try {
