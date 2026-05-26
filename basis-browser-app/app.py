@@ -56,6 +56,11 @@ def _refresh_all():
                         name, time.monotonic() - s, exc)
 
     # Stage 2: independent fetches, parallel.
+    # awaiting_transmittal needs the votes index for its decision-detail
+    # endpoint to be instant — but we build the index in stage 3 so it
+    # runs serially after stage 2 (each Votes page can take ~2s and we
+    # don't want to block dashboard refreshes on a 60-90s warmup).
+    from fetch import fetch_members, fetch_all_votes_index
     parallel = [
         ("action_codes", action_code_counts),
         ("bill_progress", bill_progress),
@@ -63,6 +68,7 @@ def _refresh_all():
         ("governor", governor_bills),
         ("pipeline", pipeline),
         ("awaiting_transmittal", awaiting_transmittal),
+        ("members", fetch_members),
     ]
     with ThreadPoolExecutor(max_workers=4) as ex:
         futures = {ex.submit(fn): name for name, fn in parallel}
@@ -75,6 +81,18 @@ def _refresh_all():
                          name, time.monotonic() - s)
             except Exception as exc:
                 log.warning("refresh.step name=%s status=fail err=%r", name, exc)
+
+    # Stage 3: heavy serial warmup. The votes index pages 10 bills at
+    # a time with a 60s socket timeout — taking 60-90s total on cold
+    # boot. We run it last so the rest of the dashboard is responsive
+    # while it builds in the background.
+    s = time.monotonic()
+    try:
+        fetch_all_votes_index()
+        log.info("refresh.step name=votes_index elapsed=%.1fs status=ok",
+                 time.monotonic() - s)
+    except Exception as exc:
+        log.warning("refresh.step name=votes_index status=fail err=%r", exc)
 
     log.info("refresh.complete total_elapsed=%.1fs", time.monotonic() - t0)
 

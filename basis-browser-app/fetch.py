@@ -153,7 +153,8 @@ def fetch_floor_calendar(chamber, date=None):
 
 # --- Low-level BASIS API call ---
 
-def fetch(section, session="34", chamber=None, queries=None, result_range=None):
+def fetch(section, session="34", chamber=None, queries=None, result_range=None,
+          timeout=30.0):
     """Thin wrapper around query_basis.fetch_basis()."""
     return query_basis.fetch_basis(
         base_url=query_basis.DEFAULT_BASE_URL,
@@ -163,6 +164,7 @@ def fetch(section, session="34", chamber=None, queries=None, result_range=None):
         queries=queries or [],
         result_range=result_range,
         version=query_basis.DEFAULT_VERSION,
+        timeout=timeout,
     )
 
 
@@ -652,66 +654,89 @@ def fetch_members(session="34"):
     return members
 
 
-def fetch_bill_votes(billnumber, session="34"):
-    """Fetch the per-legislator roll call list for one bill.
-    Returns [{vote, member_code, title, date}, ...]. Cached 10 min."""
-    bn = billnumber.strip()
-    if not bn:
-        return []
-    prefix = bn.split()[0]
-    chamber = "H" if prefix.startswith("H") else "S"
+def fetch_all_votes_index(session="34"):
+    """Build a chamber-wide votes index: {billnumber: [vote, ...]}.
 
-    cache_key = f"bill_votes_{session}_{bn}"
-    cached = _cache.get(cache_key, max_age=600)
+    Heavy operation — paginates the Votes expansion for both chambers
+    in 10-bill chunks (larger pages routinely exceed the 30s socket
+    timeout). Pays a one-time 60-90s cost in the background prefetch
+    thread; cached for an hour. Once warm, per-bill votes lookups are
+    a dict access in microseconds.
+    """
+    cache_key = f"all_votes_v1_{session}"
+    cached = _cache.get(cache_key, max_age=3600)
     if cached is not None:
         return cached
 
-    # BASIS billnumber filter is finicky — scan a window of bills with
-    # the Votes expansion and pick the one matching ours.
-    raw_votes = []
-    for rng in ("..100", "101..200", "201..300", "301..400", "401..500"):
-        r = fetch(section="bills", session=session, chamber=chamber,
-                  queries=["Votes"], result_range=rng)
-        body = r["body"].decode("utf-8", errors="replace")
-        if len(body) < 300 or "FaultException" in body:
-            break
-        try:
-            root = ET.fromstring(body)
-        except ET.ParseError:
-            break
-        found = False
-        for bill in root.iter():
-            if strip_ns(bill.tag) != "Bill":
-                continue
-            this_bn = compact_billnumber(bill.attrib.get("billnumber", ""))
-            if this_bn != compact_billnumber(bn):
-                continue
-            found = True
-            for ve in bill.iter():
-                if strip_ns(ve.tag) != "Vote":
+    out = {}
+    PAGE = 10  # bills per request — Votes is the slowest expansion in
+               # BASIS; this is the largest size that reliably finishes.
+    REQ_TIMEOUT = 60.0  # per-request socket timeout
+
+    for chamber in ("H", "S"):
+        start = 1
+        while True:
+            end = start + PAGE - 1
+            rng = f"{start}..{end}"
+            try:
+                r = fetch(section="bills", session=session, chamber=chamber,
+                          queries=["Votes"], result_range=rng,
+                          timeout=REQ_TIMEOUT)
+            except Exception as exc:
+                log.warning("votes_index.fetch_failed chamber=%s rng=%s err=%r",
+                            chamber, rng, exc)
+                break
+            body = r["body"].decode("utf-8", errors="replace")
+            if len(body) < 300 or "FaultException" in body:
+                break
+            try:
+                root = ET.fromstring(body)
+            except ET.ParseError:
+                break
+            page_count = 0
+            for bill in root.iter():
+                if strip_ns(bill.tag) != "Bill":
                     continue
-                member = ""
-                title = ""
-                date = ""
-                for ch in ve:
-                    tag = strip_ns(ch.tag)
-                    if tag == "Member":
-                        member = (ch.text or "").strip()
-                    elif tag == "Title":
-                        title = (ch.text or "").strip()
-                    elif tag == "Date":
-                        date = (ch.text or "").strip()
-                raw_votes.append({
-                    "vote": ve.attrib.get("vote", "").strip(),
-                    "member_code": member,
-                    "title": title,
-                    "date": date,
-                })
-            break
-        if found:
-            break
-    _cache.put(cache_key, raw_votes)
-    return raw_votes
+                bn = compact_billnumber(bill.attrib.get("billnumber", ""))
+                if not bn:
+                    continue
+                page_count += 1
+                if bn in out:
+                    continue
+                votes = []
+                for vote in bill.iter():
+                    if strip_ns(vote.tag) != "Vote":
+                        continue
+                    member = ""
+                    title = ""
+                    date = ""
+                    for ch in vote:
+                        tag = strip_ns(ch.tag)
+                        if tag == "Member":
+                            member = (ch.text or "").strip()
+                        elif tag == "Title":
+                            title = (ch.text or "").strip()
+                        elif tag == "Date":
+                            date = (ch.text or "").strip()
+                    votes.append({
+                        "vote": vote.attrib.get("vote", "").strip(),
+                        "member_code": member,
+                        "title": title,
+                        "date": date,
+                    })
+                out[bn] = votes
+            if page_count < PAGE:
+                break
+            start += PAGE
+
+    _cache.put(cache_key, out)
+    return out
+
+
+def fetch_bill_votes(billnumber, session="34"):
+    """Look up one bill's votes from the chamber-wide index. Returns
+    [{vote, member_code, title, date}, ...]."""
+    return fetch_all_votes_index(session).get(billnumber.strip(), [])
 
 
 def fetch_bill_detail(billnumber, session="34"):
