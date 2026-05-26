@@ -22,6 +22,7 @@ from fetch import (
     fetch_bill_detail, fetch_floor_calendar, is_procedural_resolution,
     fetch_members, fetch_bill_votes, fetch_sponsor_statement,
 )
+from bill_summaries import get_bill_summary
 
 
 # --- Crossover bills (House↔Senate) ---
@@ -1629,7 +1630,7 @@ def bill_decision_detail(billnumber, session="34"):
     """Detailed veto-decision view for one bill: full per-legislator
     roll call on final passage in each chamber, plus action timeline
     and fiscal-note bodies. Cached 10 min."""
-    cache_key = f"bill_decision_detail_v6_{session}_{billnumber}"
+    cache_key = f"bill_decision_detail_v7_{session}_{billnumber}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -1779,6 +1780,12 @@ def bill_decision_detail(billnumber, session="34"):
         "cosponsors": cosponsors,
         "long_title": long_title,
         "version_letter": version_letter,
+        # Hand-authored neutral summary (None if not yet written for
+        # this bill — template falls back to Legal Description only).
+        "neutral_summary": get_bill_summary(billnumber, session),
+        # Sponsor statement still fetched so the PDF link is available
+        # for users who want the advocacy framing. We no longer surface
+        # the body text inline since the user wants editorial neutrality.
         "sponsor_statement": fetch_sponsor_statement(billnumber, session),
         "milestones": milestones_display,
         "days_intro_to_first_committee": days_intro_to_first_cmte,

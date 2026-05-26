@@ -704,23 +704,22 @@
     function renderDecisionDetail(d) {
         var h = '';
 
-        // Sponsor Statement — plain-English summary scraped from the
-        // akleg.gov bill page. The legislator's own description of
-        // what the bill does and why. This is the substantive
-        // summary the governor's office wants.
+        // Neutral Summary — hand-authored description of what the
+        // bill does, with the sponsor-statement PDF still linked for
+        // users who want the advocacy framing.
+        var ns = d.neutral_summary;
         var ss = d.sponsor_statement;
-        if (ss && ss.text) {
+        if (ns && ns.summary) {
             h += '<div class="at-section">';
-            h += '<div class="at-section-h">Sponsor Statement';
-            if (ss.url) {
-                h += ' <a class="at-section-link" href="' + esc(ss.url) + '" target="_blank" rel="noopener">PDF ↗</a>';
+            h += '<div class="at-section-h">Summary';
+            if (ss && ss.url) {
+                h += ' <a class="at-section-link" href="' + esc(ss.url) + '" target="_blank" rel="noopener">Sponsor statement (PDF) ↗</a>';
             }
             h += '</div>';
-            // Preserve paragraph breaks; escape everything else.
-            var paragraphs = ss.text.split(/\n\s*\n/).map(function(p) {
+            var paras = ns.summary.split(/\n\s*\n/).map(function(p) {
                 return '<p>' + esc(p.trim()).replace(/\n/g, ' ') + '</p>';
             }).join('');
-            h += '<div class="at-summary at-summary-rich">' + paragraphs + '</div>';
+            h += '<div class="at-summary at-summary-rich">' + paras + '</div>';
             h += '</div>';
         }
 
@@ -915,7 +914,7 @@
     });
 
     var LIST_KEY = 'at_list_v5';
-    var DETAIL_KEY_PREFIX = 'at_detail_v8:';
+    var DETAIL_KEY_PREFIX = 'at_detail_v9:';
 
     function lsGet(key) {
         try {
