@@ -515,7 +515,9 @@ def governor_bills(session="34"):
                 referrals = text
             if code == "001" and not intro_date:
                 intro_date = jdate
-            if jdate > last_action_date:
+            if code in LOW_SIGNAL_CODES:
+                pass
+            elif jdate >= last_action_date:
                 last_action_date = jdate
                 last_action_text = text
             if code == "002":
@@ -778,6 +780,43 @@ def legs_score(actions, origin, today=None):
         "stage_label": STAGE_LABELS[stage],
         "reasons": reasons,
     }
+
+
+# Action codes that are pure bookkeeping (sponsor edits, fiscal-note
+# attachments, version registrations, vote rosters). These should NEVER
+# win the "Last Action" slot — users expect that column to describe
+# the bill's legislative state, not its metadata changes. When multiple
+# actions land on the same date, skip these and prefer the procedural one.
+LOW_SIGNAL_CODES = {
+    "063",  # DP/NR/AM vote roster
+    "084",  # Sponsor change
+    "086",  # Sponsor change
+    "092",  # Cosponsor added
+    "100",  # Cross-sponsor added
+    "103",  # Version registered
+    "105",  # Fiscal note attached
+}
+
+
+def pick_last_action(actions):
+    """Return (last_date, last_text) for the most recent *meaningful*
+    action in the list. Among same-date actions, the last procedural
+    one wins. Falls back to any latest action if every action is
+    low-signal (defensive — shouldn't happen on real bills)."""
+    last_date = ""
+    last_text = ""
+    for c, a, jd, t in actions:
+        if c in LOW_SIGNAL_CODES:
+            continue
+        if jd >= last_date:
+            last_date = jd
+            last_text = t
+    if not last_date and actions:
+        # Pathological fallback: every action was low-signal.
+        latest = max(a[2] for a in actions)
+        latest_text = next(a[3] for a in actions if a[2] == latest)
+        return latest, latest_text
+    return last_date, last_text
 
 
 NOTABLE_CODES = {
@@ -1070,7 +1109,7 @@ def pipeline(session="34", min_legs_score=20):
         # Most recent meaningful date
         last_date = ""
         for c, a, jd, _ in actions:
-            if jd > last_date:
+            if jd >= last_date:
                 last_date = jd
 
         entry = {
@@ -1122,13 +1161,8 @@ def pipeline(session="34", min_legs_score=20):
         su = (status or "").upper()
         if "FLD CONCUR" not in su and "CONCUR MESSAGE" not in su:
             continue
-        # Find the most recent meaningful action
-        last_date = ""
-        last_text = ""
-        for c, a, jd, t in actions:
-            if jd > last_date:
-                last_date = jd
-                last_text = t
+        # Find the most recent meaningful action (skips bookkeeping)
+        last_date, last_text = pick_last_action(actions)
         concurrence_bills.append({
             "billnumber": compact_billnumber(bn),
             "title": truncate(title, 50),
@@ -1152,7 +1186,7 @@ def pipeline(session="34", min_legs_score=20):
         last_cc_text = ""
         for c, a, jd, t in actions:
             if c in ("029", "030", "031", "032", "058", "059", "067", "069", "070", "079", "109"):
-                if jd > last_cc_date:
+                if jd >= last_cc_date:
                     last_cc_date = jd
                     last_cc_text = t
         # Conferees from action code 030
@@ -1204,7 +1238,7 @@ def awaiting_transmittal(session="34"):
     The 15-day gubernatorial clock does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v2", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v4", max_age=300)
     if cached is not None:
         return cached
 
@@ -1235,23 +1269,17 @@ def awaiting_transmittal(session="34"):
                 or "CHAPTER" in su or "VETOED" in su):
             continue
 
-        # Most recent action (drives the "days awaiting" countdown) and
-        # the third-reading dates that mark each chamber's passage.
-        last_date = ""
-        last_text = ""
-        third_reading_dates = []  # action code 022
-        for c, a, jd, t in actions:
-            if jd > last_date:
-                last_date = jd
-                last_text = t
-            if c == "022":
-                third_reading_dates.append(jd)
-        third_reading_dates.sort()
-        # The second chamber's passage date = the later 022. If only one
-        # 022 exists (resolution that only needs one chamber), use it.
-        passed_both_date = (
-            third_reading_dates[-1] if third_reading_dates else ""
-        )
+        # Most recent meaningful action (drives the days-waiting badge
+        # and the human-readable "Last Action" column). Skip pure
+        # bookkeeping codes via pick_last_action().
+        last_date, last_text = pick_last_action(actions)
+
+        # Passage dates: action code 020 = Floor Vote / PASSED.
+        # Two of them = both chambers have passed. The later one marks
+        # the moment the bill is fully passed and waiting only on
+        # engrossment + transmittal mechanics.
+        passage_dates = sorted(jd for c, _, jd, _ in actions if c == "020")
+        passed_both_date = passage_dates[-1] if passage_dates else ""
 
         days_awaiting = None
         if last_date:
@@ -1302,7 +1330,7 @@ def awaiting_transmittal(session="34"):
             "resolutions_procedural": len(resolutions_procedural),
         },
     }
-    _cache.put("awaiting_transmittal_v2", result)
+    _cache.put("awaiting_transmittal_v4", result)
     return result
 
 
