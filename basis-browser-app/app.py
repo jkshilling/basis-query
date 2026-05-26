@@ -56,11 +56,7 @@ def _refresh_all():
                         name, time.monotonic() - s, exc)
 
     # Stage 2: independent fetches, parallel.
-    # awaiting_transmittal needs the votes index for its decision-detail
-    # endpoint to be instant — but we build the index in stage 3 so it
-    # runs serially after stage 2 (each Votes page can take ~2s and we
-    # don't want to block dashboard refreshes on a 60-90s warmup).
-    from fetch import fetch_members, fetch_all_votes_index
+    from fetch import fetch_members
     parallel = [
         ("action_codes", action_code_counts),
         ("bill_progress", bill_progress),
@@ -82,19 +78,25 @@ def _refresh_all():
             except Exception as exc:
                 log.warning("refresh.step name=%s status=fail err=%r", name, exc)
 
-    # Stage 3: heavy serial warmup. The votes index pages 10 bills at
-    # a time with a 60s socket timeout — taking 60-90s total on cold
-    # boot. We run it last so the rest of the dashboard is responsive
-    # while it builds in the background.
-    s = time.monotonic()
-    try:
-        fetch_all_votes_index()
-        log.info("refresh.step name=votes_index elapsed=%.1fs status=ok",
-                 time.monotonic() - s)
-    except Exception as exc:
-        log.warning("refresh.step name=votes_index status=fail err=%r", exc)
-
     log.info("refresh.complete total_elapsed=%.1fs", time.monotonic() - t0)
+
+
+def _build_votes_index_async():
+    """Build the votes index on its own daemon thread. The first build
+    takes 3+ minutes and would otherwise tie up a gunicorn worker; this
+    lets it run independently. Repeated hourly so the index stays
+    reasonably fresh."""
+    from fetch import fetch_all_votes_index
+    while True:
+        s = time.monotonic()
+        try:
+            fetch_all_votes_index()
+            log.info("votes_index.build elapsed=%.1fs status=ok",
+                     time.monotonic() - s)
+        except Exception as exc:
+            log.warning("votes_index.build status=fail err=%r", exc)
+        # Index has a 1-hour TTL inside fetch; rebuild before that.
+        time.sleep(REFRESH_INTERVAL)
 
 
 def _invalidate_top_level_caches():
@@ -382,6 +384,9 @@ def _start_prefetch_once():
         return
     _prefetch_started = True
     threading.Thread(target=prefetch, daemon=True).start()
+    # Separate daemon thread for the slow votes-index build so it can
+    # run in parallel with the main prefetch and not block requests.
+    threading.Thread(target=_build_votes_index_async, daemon=True).start()
 
 
 _start_prefetch_once()
