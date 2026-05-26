@@ -734,9 +734,19 @@ def fetch_all_votes_index(session="34"):
 
 
 def fetch_bill_votes(billnumber, session="34"):
-    """Look up one bill's votes from the chamber-wide index. Returns
-    [{vote, member_code, title, date}, ...]."""
-    return fetch_all_votes_index(session).get(billnumber.strip(), [])
+    """Look up one bill's votes from the chamber-wide index.
+
+    NON-BLOCKING: if the index isn't already cached, returns an empty
+    list rather than triggering a 3-minute build inside the request
+    handler. The build is performed by _build_votes_index_async on its
+    own daemon thread; once warm, results appear on the next refresh."""
+    cache_key = f"all_votes_v1_{session}"
+    idx = _cache.get(cache_key, max_age=3600)
+    if idx is None:
+        # Don't block the request handler. Empty roll call is preferable
+        # to a 3-minute hang; the daemon is building in the background.
+        return []
+    return idx.get(billnumber.strip(), [])
 
 
 def fetch_bill_detail(billnumber, session="34"):
