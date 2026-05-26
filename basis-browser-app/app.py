@@ -21,7 +21,10 @@ from adapter import (
     governor_bills, _fetch_bill_detail, committee_detail, top_subjects,
     search_bills, cache_freshness,
 )
-from metrics import legs_score, pipeline, awaiting_transmittal, session_countdown
+from metrics import (
+    legs_score, pipeline, awaiting_transmittal, session_countdown,
+    bill_decision_detail,
+)
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -266,6 +269,17 @@ def awaiting_transmittal_page():
 def api_awaiting_transmittal():
     try:
         data = awaiting_transmittal()
+        return jsonify({"data": data, "error": None})
+    except Exception as exc:
+        return jsonify({"data": None, "error": str(exc)})
+
+
+@app.route("/api/bill/<path:billnumber>/decision-detail")
+def api_bill_decision_detail(billnumber):
+    """Lazy-loaded detail bundle for one bill on the awaiting-transmittal
+    page: per-legislator roll call, full action timeline, fiscal notes."""
+    try:
+        data = bill_decision_detail(billnumber)
         return jsonify({"data": data, "error": None})
     except Exception as exc:
         return jsonify({"data": None, "error": str(exc)})

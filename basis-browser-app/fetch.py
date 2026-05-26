@@ -597,6 +597,123 @@ def count_actions_by_year(session, years):
 
 # --- Single-bill detail fetch ---
 
+def fetch_members(session="34"):
+    """Member roster keyed by BASIS code. Each value carries name,
+    chamber, party, district, and majority flag. Cached an hour."""
+    cache_key = f"members_v2_{session}"
+    cached = _cache.get(cache_key, max_age=3600)
+    if cached is not None:
+        return cached
+
+    members = {}
+    # BASIS members endpoint rejects ranges of 100+; also the open-form
+    # "..50" returns the LAST 50 records alphabetically, not the first.
+    # Always use an explicit "start..end" so pagination actually
+    # advances forward through the roster.
+    PAGE = 50
+    start = 1
+    while True:
+        end = start + PAGE - 1
+        rng = f"{start}..{end}"
+        r = fetch(section="members", session=session, result_range=rng)
+        body = r["body"].decode("utf-8", errors="replace")
+        if "<Error" in body[:300] or "FaultException" in body:
+            break
+        try:
+            root = ET.fromstring(body)
+        except ET.ParseError:
+            break
+        page_count = 0
+        for det in root.iter():
+            if strip_ns(det.tag) != "MemberDetails":
+                continue
+            code = det.attrib.get("code", "").strip()
+            if not code or code in members:
+                continue
+            chamber = det.attrib.get("chamber", "")
+            majority = det.attrib.get("majority") == "true"
+            first = child_text(det, "FirstName") or ""
+            last = child_text(det, "LastName") or ""
+            party = child_text(det, "Party") or ""
+            district = child_text(det, "District") or ""
+            members[code] = {
+                "code": code,
+                "chamber": chamber,
+                "name": (first + " " + last).strip(),
+                "party": party,
+                "district": district,
+                "majority": majority,
+            }
+            page_count += 1
+        if page_count < PAGE:
+            break
+        start += PAGE
+    _cache.put(cache_key, members)
+    return members
+
+
+def fetch_bill_votes(billnumber, session="34"):
+    """Fetch the per-legislator roll call list for one bill.
+    Returns [{vote, member_code, title, date}, ...]. Cached 10 min."""
+    bn = billnumber.strip()
+    if not bn:
+        return []
+    prefix = bn.split()[0]
+    chamber = "H" if prefix.startswith("H") else "S"
+
+    cache_key = f"bill_votes_{session}_{bn}"
+    cached = _cache.get(cache_key, max_age=600)
+    if cached is not None:
+        return cached
+
+    # BASIS billnumber filter is finicky — scan a window of bills with
+    # the Votes expansion and pick the one matching ours.
+    raw_votes = []
+    for rng in ("..100", "101..200", "201..300", "301..400", "401..500"):
+        r = fetch(section="bills", session=session, chamber=chamber,
+                  queries=["Votes"], result_range=rng)
+        body = r["body"].decode("utf-8", errors="replace")
+        if len(body) < 300 or "FaultException" in body:
+            break
+        try:
+            root = ET.fromstring(body)
+        except ET.ParseError:
+            break
+        found = False
+        for bill in root.iter():
+            if strip_ns(bill.tag) != "Bill":
+                continue
+            this_bn = compact_billnumber(bill.attrib.get("billnumber", ""))
+            if this_bn != compact_billnumber(bn):
+                continue
+            found = True
+            for ve in bill.iter():
+                if strip_ns(ve.tag) != "Vote":
+                    continue
+                member = ""
+                title = ""
+                date = ""
+                for ch in ve:
+                    tag = strip_ns(ch.tag)
+                    if tag == "Member":
+                        member = (ch.text or "").strip()
+                    elif tag == "Title":
+                        title = (ch.text or "").strip()
+                    elif tag == "Date":
+                        date = (ch.text or "").strip()
+                raw_votes.append({
+                    "vote": ve.attrib.get("vote", "").strip(),
+                    "member_code": member,
+                    "title": title,
+                    "date": date,
+                })
+            break
+        if found:
+            break
+    _cache.put(cache_key, raw_votes)
+    return raw_votes
+
+
 def fetch_bill_detail(billnumber, session="34"):
     """Fetch one bill with all expansions (Actions/Sponsors/Versions/
     Subjects) for the detail page. Cached for 10 minutes."""

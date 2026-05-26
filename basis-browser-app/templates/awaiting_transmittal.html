@@ -118,6 +118,111 @@
         .at-fn-pill.zero { background: #e8f8f0; border-color: #b7e1c8; color: #1e6e3a; }
         .at-fn-pill.indeterminate { background: #fef5e7; border-color: #f5cb7f; color: #885a00; }
         .at-fn-pill.amount { background: #fde8e8; border-color: #f1b0b0; color: #8a1e1e; }
+        /* Expanded detail block */
+        .at-expand {
+            grid-column: 1 / -1;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #d6dbe1;
+        }
+        .at-expand summary {
+            cursor: pointer;
+            font-size: 0.82rem;
+            color: #1a5276;
+            user-select: none;
+            list-style: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .at-expand summary::-webkit-details-marker { display: none; }
+        .at-expand summary::before { content: "▸"; font-size: 0.75rem; color: #95a5a6; }
+        .at-expand[open] summary::before { content: "▾"; }
+        .at-expand summary:hover { text-decoration: underline; }
+        .at-expand-body { margin-top: 12px; }
+        .at-expand-body .loading-inline { color: #888; font-style: italic; }
+        .at-section { margin-top: 14px; }
+        .at-section-h {
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #4a5560;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
+        }
+        .at-rollcall {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        .at-rollcall-col {
+            border: 1px solid #e2e6eb;
+            border-radius: 4px;
+            padding: 10px 12px;
+            background: #fafbfc;
+        }
+        .at-rollcall-col h4 {
+            margin: 0 0 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #2c3e50;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }
+        .at-rollcall-col h4 .tally {
+            font-family: ui-monospace, "SF Mono", Menlo, monospace;
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: #5b6770;
+        }
+        .at-rollcall-col .grp { margin-top: 6px; }
+        .at-rollcall-col .grp-h {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin-bottom: 3px;
+        }
+        .at-rollcall-col .grp-h.yea { color: #1e8449; }
+        .at-rollcall-col .grp-h.nay { color: #922b21; }
+        .at-rollcall-col .grp-h.exc { color: #888; }
+        .at-rollcall-col ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            font-size: 0.82rem;
+            color: #2c3e50;
+        }
+        .at-rollcall-col li { padding: 2px 0; }
+        .at-rollcall-col li .meta { color: #6e7681; font-size: 0.74rem; margin-left: 4px; }
+        .at-party-D { color: #1f4e79; font-weight: 600; }
+        .at-party-R { color: #922b21; font-weight: 600; }
+        .at-party-N { color: #5b6770; font-weight: 600; }
+
+        .at-timeline {
+            font-size: 0.82rem;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .at-timeline th, .at-timeline td {
+            text-align: left;
+            padding: 3px 8px;
+            border-bottom: 1px solid #eef2f6;
+            vertical-align: top;
+        }
+        .at-timeline th {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #6e7681;
+        }
+        .at-timeline code { font-size: 0.78rem; color: #4a5560; }
+
+        .at-fn-list { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; }
+        .at-fn-list li { padding: 4px 0; }
+        .at-fn-list .lbl { font-weight: 600; color: #2c3e50; margin-right: 6px; }
+
         .at-approps-badge {
             display: inline-block;
             font-size: 0.7rem;
@@ -326,15 +431,125 @@
 
             html += '</div>';
 
-            // Column 3: days badge
+            // Column 3: days badge first, then expander spans all columns below.
             html += '<div class="at-meta">';
             html +=   '<span class="at-days ' + dClass + '">' + dTxt + '</span>';
             html +=   '<span class="at-days-label">days since passage</span>';
             html += '</div>';
 
+            // Expander spans the full card row.
+            html += '<details class="at-expand" data-billnumber="' + esc(b.billnumber) + '">';
+            html += '<summary>Show roll call &amp; full timeline</summary>';
+            html += '<div class="at-expand-body"></div>';
+            html += '</details>';
+
             html += '</div>';
         });
         host.innerHTML = html;
+
+        // Wire up lazy-load on first expand.
+        document.querySelectorAll('.at-expand').forEach(function(el) {
+            el.addEventListener('toggle', function() {
+                if (!el.open) return;
+                var body = el.querySelector('.at-expand-body');
+                if (body.dataset.loaded === '1') return;
+                var bn = el.dataset.billnumber;
+                body.innerHTML = '<p class="loading-inline">Loading roll call&hellip;</p>';
+                fetch('/api/bill/' + encodeURIComponent(bn) + '/decision-detail')
+                    .then(r => r.json())
+                    .then(function(resp) {
+                        if (resp.error) {
+                            body.innerHTML = '<p class="error">' + esc(resp.error) + '</p>';
+                            return;
+                        }
+                        body.innerHTML = renderDecisionDetail(resp.data);
+                        body.dataset.loaded = '1';
+                    })
+                    .catch(function(err) {
+                        body.innerHTML = '<p class="error">Failed: ' + esc(String(err)) + '</p>';
+                    });
+            });
+        });
+    }
+
+    function renderRollCallCol(label, votes, count, date) {
+        var html = '<div class="at-rollcall-col">';
+        html += '<h4>' + esc(label);
+        var tally = 'Y' + (count.Y||0) + ' / N' + (count.N||0);
+        if (count.E) tally += ' / E' + count.E;
+        if (count.A) tally += ' / A' + count.A;
+        if (date) tally += ' · ' + esc(date);
+        html += '<span class="tally">' + tally + '</span></h4>';
+        if (!votes || !votes.length) {
+            html += '<p class="empty">No roll call recorded.</p></div>';
+            return html;
+        }
+        var groups = {Y: [], N: [], E: [], A: []};
+        votes.forEach(function(v) {
+            (groups[v.vote] || groups.N).push(v);
+        });
+        function renderList(letter, cls, headerLabel, items) {
+            if (!items.length) return '';
+            var h = '<div class="grp"><div class="grp-h ' + cls + '">' + headerLabel + ' (' + items.length + ')</div><ul>';
+            items.forEach(function(v) {
+                var partyCls = 'at-party-' + (v.party || 'N');
+                h += '<li><span class="' + partyCls + '">' + esc(v.party || '?') + '</span> '
+                   + esc(v.name)
+                   + '<span class="meta">D' + esc(v.district) + (v.majority ? ' · maj' : '') + '</span></li>';
+            });
+            h += '</ul></div>';
+            return h;
+        }
+        html += renderList('Y', 'yea', 'Yeas', groups.Y);
+        html += renderList('N', 'nay', 'Nays', groups.N);
+        html += renderList('E', 'exc', 'Excused', groups.E);
+        html += renderList('A', 'exc', 'Absent', groups.A);
+        html += '</div>';
+        return html;
+    }
+
+    function renderDecisionDetail(d) {
+        var h = '';
+
+        // Roll calls
+        h += '<div class="at-section">';
+        h += '<div class="at-section-h">Roll Calls — Floor Passage</div>';
+        h += '<div class="at-rollcall">';
+        h += renderRollCallCol('House', d.passage_votes.H, d.vote_counts.H, d.passage_dates.H);
+        h += renderRollCallCol('Senate', d.passage_votes.S, d.vote_counts.S, d.passage_dates.S);
+        h += '</div></div>';
+
+        // Fiscal notes (full)
+        if (d.fiscal_notes && d.fiscal_notes.length) {
+            h += '<div class="at-section">';
+            h += '<div class="at-section-h">Fiscal Notes</div>';
+            h += '<ul class="at-fn-list">';
+            d.fiscal_notes.forEach(function(fn) {
+                h += '<li><span class="at-fn-pill ' + esc(fn.category) + '">' + esc(fn.label) + '</span>';
+                h += '<span class="lbl"></span>' + esc(fn.body);
+                if (fn.date) h += '<span class="meta" style="color:#888;font-size:0.75rem;margin-left:6px">· ' + esc(fn.date) + '</span>';
+                h += '</li>';
+            });
+            h += '</ul></div>';
+        }
+
+        // Action timeline
+        if (d.actions && d.actions.length) {
+            h += '<div class="at-section">';
+            h += '<div class="at-section-h">Action Timeline</div>';
+            h += '<table class="at-timeline"><thead><tr><th>Date</th><th>Ch</th><th>Code</th><th>Action</th></tr></thead><tbody>';
+            d.actions.forEach(function(a) {
+                h += '<tr>';
+                h += '<td>' + esc(a.date) + '</td>';
+                h += '<td>' + esc(a.chamber) + '</td>';
+                h += '<td><code>' + esc(a.code) + '</code></td>';
+                h += '<td>' + esc(a.text) + '</td>';
+                h += '</tr>';
+            });
+            h += '</tbody></table></div>';
+        }
+
+        return h;
     }
 
     function renderResRows(tableId, rows) {

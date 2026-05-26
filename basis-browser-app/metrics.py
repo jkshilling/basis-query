@@ -19,6 +19,7 @@ from fetch import (
     fetch_all_bills, fetch_hearing_schedule, fetch_hearing_counts,
     fetch_committee_reports, scan_all_actions, count_actions_by_year,
     fetch_bill_detail, fetch_floor_calendar, is_procedural_resolution,
+    fetch_members, fetch_bill_votes,
 )
 
 
@@ -1500,6 +1501,107 @@ def awaiting_transmittal(session="34"):
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
     _cache.put("awaiting_transmittal_v7", result)
+    return result
+
+
+# --- Per-bill decision detail (lazy-loaded) ---
+
+def bill_decision_detail(billnumber, session="34"):
+    """Detailed veto-decision view for one bill: full per-legislator
+    roll call on final passage in each chamber, plus action timeline
+    and fiscal-note bodies. Cached 10 min."""
+    cache_key = f"bill_decision_detail_{session}_{billnumber}"
+    cached = _cache.get(cache_key, max_age=600)
+    if cached is not None:
+        return cached
+
+    members = fetch_members(session)
+    raw_votes = fetch_bill_votes(billnumber, session)
+
+    # Group vote rows by (chamber, date) for "Final Passage" / "Third
+    # Reading" titles. Keep only the LATEST date per chamber so a
+    # recommit-repass shows the most recent roll call, not earlier ones.
+    by_ch_date = {}
+    for v in raw_votes:
+        title_u = (v.get("title") or "").upper()
+        # Floor passage markers — narrow to avoid amendment-vote noise.
+        if "FINAL PASSAGE" not in title_u and "THIRD READING" not in title_u:
+            continue
+        # Skip "Advance from Second to Third Reading" — that's
+        # procedural advancement, not the passage vote itself.
+        if "ADVANCE FROM SECOND" in title_u:
+            continue
+        m = members.get(v.get("member_code") or "", {})
+        ch = m.get("chamber", "")
+        if ch not in ("H", "S"):
+            continue
+        key = (ch, v.get("date") or "")
+        by_ch_date.setdefault(key, []).append({
+            "vote": v.get("vote", ""),
+            "name": m.get("name") or v.get("member_code", ""),
+            "party": m.get("party", ""),
+            "district": m.get("district", ""),
+            "majority": m.get("majority", False),
+        })
+
+    # Pick the latest date for each chamber
+    passage_votes = {"H": [], "S": []}
+    passage_dates = {"H": "", "S": ""}
+    for ch in ("H", "S"):
+        ch_dates = sorted({d for (cc, d) in by_ch_date if cc == ch})
+        if not ch_dates:
+            continue
+        latest = ch_dates[-1]
+        passage_dates[ch] = latest
+        # Sort: Y first, then N, then E/A; within each, by last name.
+        order = {"Y": 0, "N": 1, "E": 2, "A": 3}
+        passage_votes[ch] = sorted(
+            by_ch_date[(ch, latest)],
+            key=lambda r: (order.get(r["vote"], 9),
+                           (r["name"].rsplit(" ", 1)[-1] if r["name"] else "")),
+        )
+
+    # Tallies
+    counts = {ch: {"Y": 0, "N": 0, "E": 0, "A": 0}
+              for ch in ("H", "S")}
+    for ch, votes in passage_votes.items():
+        for v in votes:
+            if v["vote"] in counts[ch]:
+                counts[ch][v["vote"]] += 1
+
+    # Action timeline (full) and fiscal-note bodies
+    full_actions = []
+    fiscal_notes = []
+    for bn, origin, title, status, actions in scan_all_actions(session):
+        if bn != billnumber:
+            continue
+        for c, a, jd, t in actions:
+            full_actions.append({
+                "code": c, "chamber": a, "date": jd, "text": t,
+            })
+            if c == "105" and t:
+                m = _FN_RE.match(t.strip())
+                if m:
+                    fiscal_notes.append({
+                        "label": m.group(1),
+                        "body": m.group(2).strip(),
+                        "date": jd,
+                        "category": categorize_fiscal_note(m.group(2)),
+                    })
+        break
+
+    full_actions.sort(key=lambda x: x["date"])
+
+    result = {
+        "billnumber": billnumber,
+        "passage_votes": passage_votes,
+        "passage_dates": {k: format_status_date(v)
+                          for k, v in passage_dates.items()},
+        "vote_counts": counts,
+        "actions": full_actions,
+        "fiscal_notes": fiscal_notes,
+    }
+    _cache.put(cache_key, result)
     return result
 
 
