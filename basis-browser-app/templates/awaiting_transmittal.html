@@ -233,6 +233,24 @@
         .at-fn-list li { padding: 4px 0; }
         .at-fn-list .lbl { font-weight: 600; color: #2c3e50; margin-right: 6px; }
 
+        /* Bill summary */
+        .at-summary {
+            font-size: 0.92rem;
+            line-height: 1.5;
+            color: #1a2530;
+            background: #fafbfc;
+            border-left: 3px solid #1a5276;
+            padding: 10px 14px;
+            border-radius: 0 3px 3px 0;
+        }
+        .at-section-meta {
+            font-weight: 400;
+            font-size: 0.72rem;
+            color: #6e7681;
+            letter-spacing: 0;
+            text-transform: none;
+        }
+
         /* Process timeline */
         .at-milestones {
             font-size: 0.85rem;
@@ -707,6 +725,20 @@
     function renderDecisionDetail(d) {
         var h = '';
 
+        // Bill summary — the legal "An Act relating to..." title from
+        // the latest adopted version. Much more substantive than the
+        // short title shown on the card.
+        if (d.long_title) {
+            h += '<div class="at-section">';
+            h += '<div class="at-section-h">Bill Summary';
+            if (d.version_letter) {
+                h += ' <span class="at-section-meta">(version ' + esc(d.version_letter) + ')</span>';
+            }
+            h += '</div>';
+            h += '<div class="at-summary">' + esc(d.long_title) + '</div>';
+            h += '</div>';
+        }
+
         // Process timeline: milestone dates + days-between summaries
         if (d.milestones) {
             var ms = d.milestones;
@@ -903,7 +935,7 @@
     });
 
     var LIST_KEY = 'at_list_v3';
-    var DETAIL_KEY_PREFIX = 'at_detail_v4:';
+    var DETAIL_KEY_PREFIX = 'at_detail_v5:';
 
     function lsGet(key) {
         try {

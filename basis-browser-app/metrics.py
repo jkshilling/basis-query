@@ -1394,7 +1394,7 @@ def awaiting_transmittal(session="34"):
     meta = {}
     for chamber in ("H", "S"):
         for b in fetch_all_bills(chamber, session,
-                                  queries=["Sponsors", "Subjects"]):
+                                  queries=["Sponsors", "Subjects", "Versions"]):
             meta[b["billnumber"]] = b
 
     members = fetch_members(session)
@@ -1637,7 +1637,7 @@ def bill_decision_detail(billnumber, session="34"):
     """Detailed veto-decision view for one bill: full per-legislator
     roll call on final passage in each chamber, plus action timeline
     and fiscal-note bodies. Cached 10 min."""
-    cache_key = f"bill_decision_detail_v2_{session}_{billnumber}"
+    cache_key = f"bill_decision_detail_v3_{session}_{billnumber}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -1668,19 +1668,25 @@ def bill_decision_detail(billnumber, session="34"):
             if v["vote"] in counts[ch]:
                 counts[ch][v["vote"]] += 1
 
-    # Cosponsor list with party/district resolved. Pulled from the
-    # extended bill feed (Sponsors expansion).
+    # Cosponsor list + long bill title from the extended bill feed.
+    # Versions expansion carries the legal "An Act relating to..."
+    # text — much more informative than the short title shown on the
+    # card. We grab the latest version's title for the summary.
     cosponsors = []
+    long_title = ""
+    version_letter = ""
     bill_meta = None
     for chamber in ("H", "S"):
         for b in fetch_all_bills(chamber, session,
-                                  queries=["Sponsors", "Subjects"]):
+                                  queries=["Sponsors", "Subjects", "Versions"]):
             if b.get("billnumber") == billnumber:
                 bill_meta = b
                 break
         if bill_meta:
             break
     if bill_meta:
+        long_title = bill_meta.get("latest_version_title") or ""
+        version_letter = bill_meta.get("latest_version_letter") or ""
         for sp in bill_meta.get("sponsors") or []:
             if sp.get("prime"):
                 continue
@@ -1793,6 +1799,8 @@ def bill_decision_detail(billnumber, session="34"):
                           for k, v in passage_dates.items()},
         "vote_counts": counts,
         "cosponsors": cosponsors,
+        "long_title": long_title,
+        "version_letter": version_letter,
         "committee_path": committee_path,
         "milestones": milestones_display,
         "days_intro_to_first_committee": days_intro_to_first_cmte,

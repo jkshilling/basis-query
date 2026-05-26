@@ -229,6 +229,8 @@ def parse_bills_extended(result):
             "sponsor_count": 0,
             "sponsors": [],
             "version_count": 0,
+            "latest_version_letter": "",
+            "latest_version_title": "",
             "subjects": [],
         }
 
@@ -273,12 +275,23 @@ def parse_bills_extended(result):
             if strip_ns(versions.tag) != "Versions":
                 continue
             ver_count = 0
+            latest_letter = ""
+            latest_title = ""
             for ver in versions:
                 if strip_ns(ver.tag) == "Version":
                     letter = ver.attrib.get("versionletter", "")
                     if letter != "Z":
                         ver_count += 1
+                    # Keep the alphabetically-latest version's title.
+                    # Versions are issued A, B, C in adoption order, so
+                    # max letter = current operative version.
+                    title = child_text(ver, "Title") or ""
+                    if letter and letter > latest_letter:
+                        latest_letter = letter
+                        latest_title = title.strip().strip('"').strip()
             bill["version_count"] = ver_count
+            bill["latest_version_letter"] = latest_letter
+            bill["latest_version_title"] = latest_title
 
         bills.append(bill)
     return bills
