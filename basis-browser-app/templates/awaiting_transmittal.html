@@ -234,6 +234,10 @@
             padding: 10px 14px;
             border-radius: 0 3px 3px 0;
         }
+        .at-summary-rich p {
+            margin: 0 0 10px;
+        }
+        .at-summary-rich p:last-child { margin-bottom: 0; }
         .at-section-meta {
             font-weight: 400;
             font-size: 0.72rem;
@@ -241,6 +245,16 @@
             letter-spacing: 0;
             text-transform: none;
         }
+        .at-section-link {
+            font-weight: 400;
+            font-size: 0.74rem;
+            color: #1a5276;
+            text-decoration: none;
+            margin-left: 6px;
+            letter-spacing: 0;
+            text-transform: none;
+        }
+        .at-section-link:hover { text-decoration: underline; }
 
         /* Process timeline */
         .at-milestones {
@@ -690,12 +704,32 @@
     function renderDecisionDetail(d) {
         var h = '';
 
-        // Bill summary — the legal "An Act relating to..." title from
-        // the latest adopted version. Much more substantive than the
-        // short title shown on the card.
+        // Sponsor Statement — plain-English summary scraped from the
+        // akleg.gov bill page. The legislator's own description of
+        // what the bill does and why. This is the substantive
+        // summary the governor's office wants.
+        var ss = d.sponsor_statement;
+        if (ss && ss.text) {
+            h += '<div class="at-section">';
+            h += '<div class="at-section-h">Sponsor Statement';
+            if (ss.url) {
+                h += ' <a class="at-section-link" href="' + esc(ss.url) + '" target="_blank" rel="noopener">PDF ↗</a>';
+            }
+            h += '</div>';
+            // Preserve paragraph breaks; escape everything else.
+            var paragraphs = ss.text.split(/\n\s*\n/).map(function(p) {
+                return '<p>' + esc(p.trim()).replace(/\n/g, ' ') + '</p>';
+            }).join('');
+            h += '<div class="at-summary at-summary-rich">' + paragraphs + '</div>';
+            h += '</div>';
+        }
+
+        // Legal description — the "An Act relating to..." title from
+        // the latest adopted version. Precise legal scope; complements
+        // the plain-English sponsor statement above.
         if (d.long_title) {
             h += '<div class="at-section">';
-            h += '<div class="at-section-h">Bill Summary';
+            h += '<div class="at-section-h">Legal Description';
             if (d.version_letter) {
                 h += ' <span class="at-section-meta">(version ' + esc(d.version_letter) + ')</span>';
             }
@@ -881,7 +915,7 @@
     });
 
     var LIST_KEY = 'at_list_v5';
-    var DETAIL_KEY_PREFIX = 'at_detail_v7:';
+    var DETAIL_KEY_PREFIX = 'at_detail_v8:';
 
     function lsGet(key) {
         try {

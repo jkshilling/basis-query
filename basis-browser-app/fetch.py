@@ -749,6 +749,101 @@ def fetch_bill_votes(billnumber, session="34"):
     return idx.get(billnumber.strip(), [])
 
 
+# Scrapes the akleg bill-detail page for any <a> linking to a
+# get_documents.asp PDF whose anchor text mentions "Sponsor Statement".
+# Most-recent statement appears first in HTML source order.
+_SPONSOR_PDF_RE = re.compile(
+    r'href="(https://www\.akleg\.gov/basis/get_documents\.asp'
+    r'\?session=\d+&(?:amp;)?docid=\d+)"[^>]*>'
+    r'([^<]*Sponsor Statement[^<]*)<',
+    re.IGNORECASE,
+)
+
+
+def _clean_sponsor_text(raw):
+    """Strip the legislator letterhead/contact block from a sponsor-
+    statement PDF and return the body. Most statements have a line
+    matching 'Sponsor Statement' followed by the topic heading and
+    body — we anchor on that and discard everything before."""
+    if not raw:
+        return ""
+    m = re.search(r'Sponsor Statement[^\n]*\n', raw, re.IGNORECASE)
+    body = raw[m.end():] if m else raw
+    # Normalize whitespace: collapse runs of spaces, dedupe blank lines.
+    body = re.sub(r'[ \t]+', ' ', body)
+    body = re.sub(r'\n{3,}', '\n\n', body)
+    # Drop lines that are clearly letterhead remnants (page-2 headers etc).
+    drop_re = re.compile(
+        r'^\s*(Representative|Senator|Chair,|Serving (House|Senate) District|'
+        r'Session:|Interim:|State Capitol)',
+        re.IGNORECASE,
+    )
+    lines = [ln for ln in body.splitlines() if not drop_re.search(ln)]
+    return "\n".join(lines).strip()
+
+
+def fetch_sponsor_statement(billnumber, session="34"):
+    """Scrape the akleg bill page for the most recent Sponsor
+    Statement PDF, download it, and extract the cleaned text body.
+
+    Returns {'url': ..., 'text': ..., 'label': ...}. Empty strings if
+    the bill has no statement on file. Cached for 24h since these
+    documents don't change after passage."""
+    bn = (billnumber or "").strip()
+    if not bn:
+        return {"url": "", "text": "", "label": ""}
+
+    cache_key = f"sponsor_stmt_v1_{session}_{bn}"
+    cached = _cache.get(cache_key, max_age=86400)
+    if cached is not None:
+        return cached
+
+    result = {"url": "", "text": "", "label": ""}
+    try:
+        page_url = (
+            f"https://www.akleg.gov/basis/Bill/Detail/{session}"
+            f"?Root={bn.replace(' ', '%20')}"
+        )
+        req = urllib.request.Request(
+            page_url, headers={"User-Agent": "basis-browser/1"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html_body = resp.read().decode("utf-8", errors="replace")
+        matches = _SPONSOR_PDF_RE.findall(html_body)
+        # Deduplicate by URL while preserving order — akleg sometimes
+        # lists the same statement multiple times.
+        seen = set()
+        unique = []
+        for href, label in matches:
+            href = href.replace("&amp;", "&")
+            if href in seen:
+                continue
+            seen.add(href)
+            unique.append((href, label.strip()))
+        if not unique:
+            _cache.put(cache_key, result)
+            return result
+        pdf_url, label = unique[0]
+        result["url"] = pdf_url
+        result["label"] = label
+        req2 = urllib.request.Request(
+            pdf_url, headers={"User-Agent": "basis-browser/1"},
+        )
+        with urllib.request.urlopen(req2, timeout=25) as r2:
+            pdf_bytes = r2.read()
+        # pypdf is imported lazily — heavy dep only paid for here.
+        import pypdf
+        import io as _io
+        reader = pypdf.PdfReader(_io.BytesIO(pdf_bytes))
+        raw_text = "\n".join((p.extract_text() or "") for p in reader.pages)
+        result["text"] = _clean_sponsor_text(raw_text)
+    except Exception as exc:
+        log.warning("sponsor_stmt.fail bn=%s err=%r", bn, exc)
+
+    _cache.put(cache_key, result)
+    return result
+
+
 def fetch_bill_detail(billnumber, session="34"):
     """Fetch one bill with all expansions (Actions/Sponsors/Versions/
     Subjects) for the detail page. Cached for 10 minutes."""
