@@ -8,6 +8,100 @@
     <script src="{{ url_for('static', filename='util.js') }}"></script>
     <script src="{{ url_for('static', filename='sort.js') }}"></script>
     <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+    <style>
+        /* Bill card list */
+        .at-cards { display: grid; gap: 12px; margin-top: 16px; }
+        .at-card {
+            display: grid;
+            grid-template-columns: 110px 1fr auto;
+            gap: 14px;
+            padding: 14px 16px;
+            background: #fff;
+            border: 1px solid #d6dbe1;
+            border-left: 4px solid #1a5276;
+            border-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        }
+        .at-card.origin-S { border-left-color: #922b21; }
+        .at-card .at-bn { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 1.05rem; font-weight: 600; }
+        .at-card .at-bn a { text-decoration: none; }
+        .at-card .at-title { font-weight: 600; font-size: 1.02rem; margin-bottom: 4px; color: #1a2530; }
+        .at-card .at-sub { font-size: 0.88rem; color: #5b6770; }
+        .at-card .at-sub strong { color: #2c3e50; }
+        .at-card .at-tags { margin-top: 6px; }
+        .at-card .at-tags .tag {
+            display: inline-block;
+            font-size: 0.72rem;
+            padding: 2px 7px;
+            background: #eef2f6;
+            color: #4a5560;
+            border-radius: 10px;
+            margin-right: 4px;
+            margin-top: 3px;
+        }
+        .at-card .at-status { font-size: 0.78rem; color: #6e7681; margin-top: 4px; font-style: italic; }
+        .at-card .at-meta { text-align: right; font-size: 0.85rem; white-space: nowrap; }
+        .at-card .at-days {
+            display: inline-block;
+            font-weight: 700;
+            font-size: 1.4rem;
+            padding: 6px 12px;
+            border-radius: 4px;
+            color: #fff;
+            min-width: 50px;
+            text-align: center;
+        }
+        .at-card .at-days-label { display: block; font-size: 0.7rem; color: #888; margin-top: 4px; letter-spacing: 0.04em; text-transform: uppercase; }
+        .at-days-green { background: #27ae60; }
+        .at-days-yellow { background: #f39c12; }
+        .at-days-orange { background: #e67e22; }
+        .at-days-red { background: #c0392b; }
+        .at-passed { font-size: 0.78rem; color: #5b6770; margin-top: 6px; }
+
+        /* Stat strip */
+        .at-strip { display: flex; gap: 12px; margin: 10px 0 20px; flex-wrap: wrap; }
+        .at-stat {
+            background: #fff;
+            border: 1px solid #d6dbe1;
+            border-radius: 4px;
+            padding: 10px 16px;
+            min-width: 130px;
+        }
+        .at-stat .n { font-size: 1.6rem; font-weight: 700; color: #1a5276; }
+        .at-stat .l { font-size: 0.78rem; color: #5b6770; text-transform: uppercase; letter-spacing: 0.04em; }
+
+        /* Collapsibles */
+        details.at-collapse {
+            margin-top: 16px;
+            border: 1px solid #d6dbe1;
+            border-radius: 4px;
+            background: #fff;
+        }
+        details.at-collapse > summary {
+            cursor: pointer;
+            padding: 12px 16px;
+            font-weight: 600;
+            font-size: 1.05rem;
+            color: #1a2530;
+            list-style: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+        }
+        details.at-collapse > summary::-webkit-details-marker { display: none; }
+        details.at-collapse > summary::before {
+            content: "▸";
+            margin-right: 8px;
+            font-size: 0.8rem;
+            color: #95a5a6;
+            transition: transform 0.15s;
+        }
+        details.at-collapse[open] > summary::before { content: "▾"; }
+        details.at-collapse > summary .at-coll-note { font-size: 0.82rem; font-weight: 400; color: #6e7681; margin-left: 8px; }
+        details.at-collapse > .at-coll-body { padding: 0 16px 16px; }
+        details.at-collapse table { margin-top: 4px; }
+    </style>
 </head>
 <body class="wide">
     <nav>
@@ -15,36 +109,87 @@
     </nav>
     <header>
         <h1>Awaiting Transmittal</h1>
-        <p>Passed both chambers, sitting with the origin chamber\'s secretary/chief clerk awaiting engrossment + transmittal. The 15-day gubernatorial clock does <em>not</em> start until transmittal.</p>
+        <p>Passed both chambers, sitting with the origin chamber's secretary/chief clerk awaiting engrossment + transmittal. The 15-day gubernatorial clock does <em>not</em> start until transmittal.</p>
     </header>
 
     <div id="loading" class="loading">Loading&hellip;</div>
     <div id="content" style="display:none">
 
+        <div class="at-strip" id="at-strip"></div>
+
         <section>
             <h2>Bills <span id="bills-count"></span></h2>
-            <p class="chart-note">HB/SB — substantive legislation headed to the governor for signature, veto, or auto-law.</p>
-            <table class="compact sortable" id="bills-table"></table>
+            <p class="chart-note">HB/SB — substantive legislation headed to the governor for signature, veto, or auto-law. Sorted longest-waiting first.</p>
+            <div id="bills-cards" class="at-cards"></div>
         </section>
 
-        <section>
-            <h2>Resolutions — Substantive <span id="rs-count"></span></h2>
-            <p class="chart-note">HJR/SJR (joint) and substantive HCR/SCR.</p>
-            <table class="compact sortable" id="rs-table"></table>
-        </section>
+        <details class="at-collapse">
+            <summary>
+                <span>Resolutions — Substantive <span id="rs-count"></span></span>
+                <span class="at-coll-note">HJR/SJR (joint) and substantive HCR/SCR. Click to expand.</span>
+            </summary>
+            <div class="at-coll-body">
+                <table class="compact sortable" id="rs-table"></table>
+            </div>
+        </details>
 
-        <section>
-            <h2>Resolutions — Procedural (Uniform Rules) <span id="rp-count"></span></h2>
-            <p class="chart-note">HCR/SCR that exist only to suspend the chambers\' Uniform Rules for a paired bill. Procedural housekeeping.</p>
-            <table class="compact sortable" id="rp-table"></table>
-        </section>
+        <details class="at-collapse">
+            <summary>
+                <span>Resolutions — Procedural <span id="rp-count"></span></span>
+                <span class="at-coll-note">Uniform-rules housekeeping. Click to expand.</span>
+            </summary>
+            <div class="at-coll-body">
+                <table class="compact sortable" id="rp-table"></table>
+            </div>
+        </details>
 
     </div>
 
     <footer>Read-only &mdash; data from the Alaska Legislature BASIS API</footer>
 
     <script>
-    function renderRows(tableId, rows) {
+    function daysClass(d) {
+        if (d == null) return "at-days-green";
+        if (d <= 2)  return "at-days-green";
+        if (d <= 5)  return "at-days-yellow";
+        if (d <= 10) return "at-days-orange";
+        return "at-days-red";
+    }
+
+    function renderBillCards(rows) {
+        var host = document.getElementById("bills-cards");
+        if (!rows.length) {
+            host.outerHTML = '<p class="empty">No bills currently awaiting transmittal.</p>';
+            return;
+        }
+        var html = "";
+        rows.forEach(function(b) {
+            var d = b.days_awaiting;
+            var dClass = daysClass(d);
+            var dTxt = d == null ? "—" : d;
+            html += '<div class="at-card origin-' + esc(b.origin) + '">';
+            html += '<div class="at-bn"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + chamberSpan(b.origin) + ' ' + esc(b.billnumber) + '</a></div>';
+            html += '<div>';
+            html +=   '<div class="at-title">' + esc(b.title) + '</div>';
+            if (b.sponsor) html += '<div class="at-sub"><strong>Sponsor:</strong> ' + esc(b.sponsor) + '</div>';
+            if (b.passed_both_date) html += '<div class="at-passed"><strong>Passed both chambers:</strong> ' + esc(b.passed_both_date) + '</div>';
+            html +=   '<div class="at-status">' + esc(b.status) + ' — ' + esc(b.last_action_text) + ' (' + esc(b.last_date) + ')</div>';
+            if (b.subjects && b.subjects.length) {
+                html += '<div class="at-tags">';
+                b.subjects.forEach(function(s) { html += '<span class="tag">' + esc(s) + '</span>'; });
+                html += '</div>';
+            }
+            html += '</div>';
+            html += '<div class="at-meta">';
+            html +=   '<span class="at-days ' + dClass + '">' + dTxt + '</span>';
+            html +=   '<span class="at-days-label">days waiting</span>';
+            html += '</div>';
+            html += '</div>';
+        });
+        host.innerHTML = html;
+    }
+
+    function renderResRows(tableId, rows) {
         if (!rows.length) {
             document.getElementById(tableId).outerHTML = '<p class="empty">None.</p>';
             return;
@@ -63,6 +208,17 @@
         document.getElementById(tableId).innerHTML = html;
     }
 
+    function renderStrip(d) {
+        var b = d.bills;
+        var oldest = b.length ? Math.max.apply(null, b.map(function(x){return x.days_awaiting||0;})) : 0;
+        var totalRes = d.counts.resolutions_substantive + d.counts.resolutions_procedural;
+        var s = "";
+        s += '<div class="at-stat"><div class="n">' + d.counts.bills + '</div><div class="l">Bills</div></div>';
+        s += '<div class="at-stat"><div class="n">' + totalRes + '</div><div class="l">Resolutions</div></div>';
+        s += '<div class="at-stat"><div class="n">' + oldest + '</div><div class="l">Oldest (days)</div></div>';
+        document.getElementById("at-strip").innerHTML = s;
+    }
+
     fetch('/api/awaiting-transmittal')
         .then(r => r.json())
         .then(resp => {
@@ -73,12 +229,13 @@
             }
             var d = resp.data;
             document.getElementById('bills-count').textContent = '(' + d.counts.bills + ')';
-            document.getElementById('rs-count').textContent = '(' + d.counts.resolutions_substantive + ')';
-            document.getElementById('rp-count').textContent = '(' + d.counts.resolutions_procedural + ')';
+            document.getElementById('rs-count').textContent    = '(' + d.counts.resolutions_substantive + ')';
+            document.getElementById('rp-count').textContent    = '(' + d.counts.resolutions_procedural + ')';
 
-            renderRows('bills-table', d.bills);
-            renderRows('rs-table', d.resolutions_substantive);
-            renderRows('rp-table', d.resolutions_procedural);
+            renderStrip(d);
+            renderBillCards(d.bills);
+            renderResRows('rs-table', d.resolutions_substantive);
+            renderResRows('rp-table', d.resolutions_procedural);
 
             attachSorting();
             document.getElementById('loading').style.display = 'none';

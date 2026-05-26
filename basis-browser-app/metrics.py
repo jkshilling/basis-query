@@ -1204,9 +1204,20 @@ def awaiting_transmittal(session="34"):
     The 15-day gubernatorial clock does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v2", max_age=300)
     if cached is not None:
         return cached
+
+    # Enrichment: pull sponsor + subjects from the extended bill feed.
+    # fetch_all_bills() is already cached for 10 min so the cost here
+    # is one cache hit per chamber on warm requests.
+    meta = {}
+    for chamber in ("H", "S"):
+        for b in fetch_all_bills(chamber, session,
+                                  queries=["Sponsors", "Subjects"]):
+            meta[b["billnumber"]] = b
+
+    today = datetime.now().date()
 
     bills = []
     resolutions_substantive = []
@@ -1224,22 +1235,48 @@ def awaiting_transmittal(session="34"):
                 or "CHAPTER" in su or "VETOED" in su):
             continue
 
-        # Most recent action for the "Last Action" column
+        # Most recent action (drives the "days awaiting" countdown) and
+        # the third-reading dates that mark each chamber's passage.
         last_date = ""
         last_text = ""
+        third_reading_dates = []  # action code 022
         for c, a, jd, t in actions:
             if jd > last_date:
                 last_date = jd
                 last_text = t
+            if c == "022":
+                third_reading_dates.append(jd)
+        third_reading_dates.sort()
+        # The second chamber's passage date = the later 022. If only one
+        # 022 exists (resolution that only needs one chamber), use it.
+        passed_both_date = (
+            third_reading_dates[-1] if third_reading_dates else ""
+        )
+
+        days_awaiting = None
+        if last_date:
+            try:
+                d = datetime.strptime(last_date, "%Y-%m-%d").date()
+                days_awaiting = (today - d).days
+            except ValueError:
+                pass
+
+        m = meta.get(compact_billnumber(bn), {})
+        sponsor = m.get("prime_sponsor") or ""
+        subjects = m.get("subjects") or []
 
         entry = {
             "billnumber": compact_billnumber(bn),
-            "title": truncate(title, 70),
+            "title": truncate(title, 80),
             "origin": origin,
             "status": status,
             "last_date": format_status_date(last_date),
             "last_action_text": last_text,
             "type": prefix,
+            "sponsor": sponsor,
+            "subjects": subjects[:5],
+            "passed_both_date": format_status_date(passed_both_date),
+            "days_awaiting": days_awaiting,
         }
 
         if prefix in ("HB", "SB"):
@@ -1249,7 +1286,10 @@ def awaiting_transmittal(session="34"):
         else:
             resolutions_substantive.append(entry)
 
-    for lst in (bills, resolutions_substantive, resolutions_procedural):
+    # Bills sorted by days_awaiting desc (longest waiting first — that's
+    # the signal you want to surface first when scanning for held bills).
+    bills.sort(key=lambda b: -(b["days_awaiting"] or 0))
+    for lst in (resolutions_substantive, resolutions_procedural):
         lst.sort(key=lambda b: b["last_date"], reverse=True)
 
     result = {
@@ -1262,7 +1302,7 @@ def awaiting_transmittal(session="34"):
             "resolutions_procedural": len(resolutions_procedural),
         },
     }
-    _cache.put("awaiting_transmittal", result)
+    _cache.put("awaiting_transmittal_v2", result)
     return result
 
 
