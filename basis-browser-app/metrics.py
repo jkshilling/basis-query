@@ -1238,7 +1238,7 @@ def awaiting_transmittal(session="34"):
     The 15-day gubernatorial clock does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v4", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v5", max_age=300)
     if cached is not None:
         return cached
 
@@ -1281,11 +1281,17 @@ def awaiting_transmittal(session="34"):
         passage_dates = sorted(jd for c, _, jd, _ in actions if c == "020")
         passed_both_date = passage_dates[-1] if passage_dates else ""
 
-        days_awaiting = None
-        if last_date:
+        # "Days since passage" — clock starts the moment the bill was
+        # fully passed (second chamber's 020 floor vote), not when the
+        # AWAITING-TRANSMITTAL housekeeping line was logged 1-2 days
+        # later. This is the honest count of how long the bill has
+        # been sitting fully passed without being handed to the
+        # governor. The 15-day gubernatorial clock has NOT started.
+        days_since_passage = None
+        if passed_both_date:
             try:
-                d = datetime.strptime(last_date, "%Y-%m-%d").date()
-                days_awaiting = (today - d).days
+                d = datetime.strptime(passed_both_date, "%Y-%m-%d").date()
+                days_since_passage = (today - d).days
             except ValueError:
                 pass
 
@@ -1304,7 +1310,7 @@ def awaiting_transmittal(session="34"):
             "sponsor": sponsor,
             "subjects": subjects[:5],
             "passed_both_date": format_status_date(passed_both_date),
-            "days_awaiting": days_awaiting,
+            "days_since_passage": days_since_passage,
         }
 
         if prefix in ("HB", "SB"):
@@ -1314,9 +1320,9 @@ def awaiting_transmittal(session="34"):
         else:
             resolutions_substantive.append(entry)
 
-    # Bills sorted by days_awaiting desc (longest waiting first — that's
-    # the signal you want to surface first when scanning for held bills).
-    bills.sort(key=lambda b: -(b["days_awaiting"] or 0))
+    # Bills sorted by days_since_passage desc (longest sitting first —
+    # that's the signal you want when scanning for held bills).
+    bills.sort(key=lambda b: -(b["days_since_passage"] or 0))
     for lst in (resolutions_substantive, resolutions_procedural):
         lst.sort(key=lambda b: b["last_date"], reverse=True)
 
@@ -1330,7 +1336,7 @@ def awaiting_transmittal(session="34"):
             "resolutions_procedural": len(resolutions_procedural),
         },
     }
-    _cache.put("awaiting_transmittal_v4", result)
+    _cache.put("awaiting_transmittal_v5", result)
     return result
 
 

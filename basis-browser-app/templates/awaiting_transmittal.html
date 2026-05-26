@@ -119,7 +119,7 @@
 
         <section>
             <h2>Bills <span id="bills-count"></span></h2>
-            <p class="chart-note">HB/SB — substantive legislation headed to the governor for signature, veto, or auto-law. Sorted longest-waiting first.</p>
+            <p class="chart-note">HB/SB — substantive legislation headed to the governor for signature, veto, or auto-law. The badge shows days since the bill was fully passed (second chamber's floor vote). The governor's 15-day clock has <em>not</em> started; it begins only on transmittal.</p>
             <div id="bills-cards" class="at-cards"></div>
         </section>
 
@@ -164,7 +164,7 @@
         }
         var html = "";
         rows.forEach(function(b) {
-            var d = b.days_awaiting;
+            var d = b.days_since_passage;
             var dClass = daysClass(d);
             var dTxt = d == null ? "—" : d;
             html += '<div class="at-card origin-' + esc(b.origin) + '">';
@@ -182,7 +182,7 @@
             html += '</div>';
             html += '<div class="at-meta">';
             html +=   '<span class="at-days ' + dClass + '">' + dTxt + '</span>';
-            html +=   '<span class="at-days-label">days waiting</span>';
+            html +=   '<span class="at-days-label">days since passage</span>';
             html += '</div>';
             html += '</div>';
         });
@@ -210,12 +210,12 @@
 
     function renderStrip(d) {
         var b = d.bills;
-        var oldest = b.length ? Math.max.apply(null, b.map(function(x){return x.days_awaiting||0;})) : 0;
+        var oldest = b.length ? Math.max.apply(null, b.map(function(x){return x.days_since_passage||0;})) : 0;
         var totalRes = d.counts.resolutions_substantive + d.counts.resolutions_procedural;
         var s = "";
         s += '<div class="at-stat"><div class="n">' + d.counts.bills + '</div><div class="l">Bills</div></div>';
         s += '<div class="at-stat"><div class="n">' + totalRes + '</div><div class="l">Resolutions</div></div>';
-        s += '<div class="at-stat"><div class="n">' + oldest + '</div><div class="l">Oldest (days)</div></div>';
+        s += '<div class="at-stat"><div class="n">' + oldest + '</div><div class="l">Longest since passage (days)</div></div>';
         document.getElementById("at-strip").innerHTML = s;
     }
 
