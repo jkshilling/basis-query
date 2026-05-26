@@ -287,6 +287,7 @@
     <header>
         <h1>Awaiting Transmittal</h1>
         <p>Passed both chambers, sitting with the origin chamber's secretary/chief clerk awaiting engrossment + transmittal. The gubernatorial clock — <strong>15 days during session, 20 days after adjournment</strong> (Article II §17) — does <em>not</em> start until transmittal.</p>
+        <p id="at-refresh-hint" style="font-size:0.78rem;color:#888;margin:4px 0 0;min-height:1em;"></p>
     </header>
 
     <div id="loading" class="loading">
@@ -447,26 +448,44 @@
         });
         host.innerHTML = html;
 
-        // Wire up lazy-load on first expand.
+        // Wire up lazy-load on first expand. Stale-while-revalidate:
+        // if we have a cached payload in localStorage, render it
+        // immediately; in any case fetch the latest in the background.
         document.querySelectorAll('.at-expand').forEach(function(el) {
             el.addEventListener('toggle', function() {
                 if (!el.open) return;
                 var body = el.querySelector('.at-expand-body');
                 if (body.dataset.loaded === '1') return;
                 var bn = el.dataset.billnumber;
-                body.innerHTML = '<p class="loading-inline">Loading roll call&hellip;</p>';
+                var key = DETAIL_KEY_PREFIX + bn;
+
+                var cachedDetail = lsGet(key);
+                var renderedFromCache = false;
+                if (cachedDetail && cachedDetail.data) {
+                    body.innerHTML = renderDecisionDetail(cachedDetail.data);
+                    body.dataset.loaded = '1';
+                    renderedFromCache = true;
+                } else {
+                    body.innerHTML = '<p class="loading-inline">Loading roll call\u2026</p>';
+                }
+
                 fetch('/api/bill/' + encodeURIComponent(bn) + '/decision-detail')
                     .then(r => r.json())
                     .then(function(resp) {
                         if (resp.error) {
-                            body.innerHTML = '<p class="error">' + esc(resp.error) + '</p>';
+                            if (!renderedFromCache) {
+                                body.innerHTML = '<p class="error">' + esc(resp.error) + '</p>';
+                            }
                             return;
                         }
                         body.innerHTML = renderDecisionDetail(resp.data);
                         body.dataset.loaded = '1';
+                        lsSet(key, { data: resp.data, timestamp: Date.now() });
                     })
                     .catch(function(err) {
-                        body.innerHTML = '<p class="error">Failed: ' + esc(String(err)) + '</p>';
+                        if (!renderedFromCache) {
+                            body.innerHTML = '<p class="error">Failed: ' + esc(String(err)) + '</p>';
+                        }
                     });
             });
         });
@@ -582,33 +601,94 @@
         document.getElementById("at-strip").innerHTML = s;
     }
 
+    // localStorage stale-while-revalidate cache for this page only.
+    // Bills here have passed and are sitting in transmittal limbo; the
+    // data is essentially static during engrossment. Render from cache
+    // instantly on revisit, refresh quietly in the background.
+    // Versioned keys (_v1) so schema changes can be flushed by bumping.
+    var LIST_KEY = 'at_list_v1';
+    var DETAIL_KEY_PREFIX = 'at_detail_v1:';
+
+    function lsGet(key) {
+        try {
+            var raw = localStorage.getItem(key);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) { return null; }
+    }
+    function lsSet(key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); }
+        catch (e) { /* quota / private-mode — silent */ }
+    }
+    function formatAgo(ms) {
+        if (!ms) return '';
+        var s = Math.round((Date.now() - ms) / 1000);
+        if (s < 60)   return s + 's ago';
+        if (s < 3600) return Math.round(s / 60) + 'm ago';
+        return Math.round(s / 3600) + 'h ago';
+    }
+    function setRefreshHint(state, ts) {
+        var el = document.getElementById('at-refresh-hint');
+        if (!el) return;
+        if (state === 'cached')      el.textContent = 'Showing cached copy (' + formatAgo(ts) + ') — refreshing in background\u2026';
+        else if (state === 'fresh')  el.textContent = 'Updated just now.';
+        else if (state === 'stale')  el.textContent = 'Last updated ' + formatAgo(ts) + '. Background refresh failed.';
+        else el.textContent = '';
+    }
+
+    function applyResponse(d) {
+        document.getElementById('bills-count').textContent = '(' + d.counts.bills + ')';
+        document.getElementById('rs-count').textContent    = '(' + d.counts.resolutions_substantive + ')';
+        document.getElementById('rp-count').textContent    = '(' + d.counts.resolutions_procedural + ')';
+
+        renderStrip(d);
+        document.getElementById('gov-window-hint').textContent =
+            'If transmitted today, the governor would have ' + d.gov_deadline_if_transmitted_today + ' days to act.';
+        renderBillCards(d.bills);
+        renderResRows('rs-table', d.resolutions_substantive);
+        renderResRows('rp-table', d.resolutions_procedural);
+
+        attachSorting();
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+    }
+
+    // 1) Cached payload → render instantly, no spinner.
+    var cached = lsGet(LIST_KEY);
+    var hadCache = false;
+    if (cached && cached.data) {
+        hadCache = true;
+        applyResponse(cached.data);
+        setRefreshHint('cached', cached.timestamp);
+    }
+
+    // 2) Always refresh in background so new bills appear and stale
+    //    entries get removed. On success, silently re-render.
     fetch('/api/awaiting-transmittal')
         .then(r => r.json())
-        .then(resp => {
+        .then(function(resp) {
             if (resp.error) {
-                document.getElementById('loading').innerHTML = 'Failed: ' + esc(resp.error);
-                document.getElementById('loading').className = 'error';
+                if (!hadCache) {
+                    var l = document.getElementById('loading');
+                    l.textContent = 'Failed: ' + resp.error;
+                    l.className = 'error';
+                } else {
+                    setRefreshHint('stale', cached.timestamp);
+                }
                 return;
             }
-            var d = resp.data;
-            document.getElementById('bills-count').textContent = '(' + d.counts.bills + ')';
-            document.getElementById('rs-count').textContent    = '(' + d.counts.resolutions_substantive + ')';
-            document.getElementById('rp-count').textContent    = '(' + d.counts.resolutions_procedural + ')';
-
-            renderStrip(d);
-            document.getElementById('gov-window-hint').textContent =
-                'If transmitted today, the governor would have ' + d.gov_deadline_if_transmitted_today + ' days to act.';
-            renderBillCards(d.bills);
-            renderResRows('rs-table', d.resolutions_substantive);
-            renderResRows('rp-table', d.resolutions_procedural);
-
-            attachSorting();
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('content').style.display = 'block';
+            applyResponse(resp.data);
+            lsSet(LIST_KEY, { data: resp.data, timestamp: Date.now() });
+            setRefreshHint('fresh', Date.now());
+            setTimeout(function() { setRefreshHint('', 0); }, 4000);
         })
         .catch(function(err) {
-            document.getElementById('loading').innerHTML = 'Failed: ' + err;
-            document.getElementById('loading').className = 'error';
+            if (!hadCache) {
+                var l = document.getElementById('loading');
+                l.textContent = 'Failed: ' + err;
+                l.className = 'error';
+            } else {
+                setRefreshHint('stale', cached.timestamp);
+            }
         });
     </script>
 </body>
