@@ -1637,7 +1637,7 @@ def bill_decision_detail(billnumber, session="34"):
     """Detailed veto-decision view for one bill: full per-legislator
     roll call on final passage in each chamber, plus action timeline
     and fiscal-note bodies. Cached 10 min."""
-    cache_key = f"bill_decision_detail_v3_{session}_{billnumber}"
+    cache_key = f"bill_decision_detail_v4_{session}_{billnumber}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -1706,10 +1706,7 @@ def bill_decision_detail(billnumber, session="34"):
             (c["name"].rsplit(" ", 1)[-1] if c["name"] else ""),
         ))
 
-    # Committee path: ordered list of committees the bill went through
-    # in each chamber, derived from action 002 (committee reports).
-    # Plus key milestone dates.
-    committee_path = {"H": [], "S": []}
+    # Key milestone dates per bill.
     milestones = {
         "introduced": "",
         "first_committee_report": "",
@@ -1723,26 +1720,6 @@ def bill_decision_detail(billnumber, session="34"):
         if bn == billnumber:
             actions_for_bill = list(actions)
             break
-
-    # Build committee path via 002 (committee report) actions per chamber.
-    # BASIS doesn't always return actions in chronological order, so we
-    # collect (date, committee, formatted_date) tuples then sort.
-    cmte_seen = {"H": {}, "S": {}}  # ch -> {committee_code: earliest_jd}
-    for c, a, jd, t in actions_for_bill:
-        if c == "002" and a in ("H", "S") and t:
-            # Text format like "FIN RPT 3DP 4NR" — committee code first.
-            cmte = (t.split()[0] if t.strip() else "").strip()
-            if not cmte:
-                continue
-            prev = cmte_seen[a].get(cmte)
-            if prev is None or jd < prev:
-                cmte_seen[a][cmte] = jd
-    for ch in ("H", "S"):
-        ordered = sorted(cmte_seen[ch].items(), key=lambda kv: kv[1])
-        committee_path[ch] = [
-            {"code": code, "date": format_status_date_full(jd)}
-            for code, jd in ordered
-        ]
 
     # Milestone scan
     for c, a, jd, t in actions_for_bill:
@@ -1801,7 +1778,6 @@ def bill_decision_detail(billnumber, session="34"):
         "cosponsors": cosponsors,
         "long_title": long_title,
         "version_letter": version_letter,
-        "committee_path": committee_path,
         "milestones": milestones_display,
         "days_intro_to_first_committee": days_intro_to_first_cmte,
         "days_intro_to_passage": days_intro_to_passage,
