@@ -652,6 +652,57 @@
 
         /* Stat strip */
         .at-strip { display: flex; gap: 12px; margin: 10px 0 20px; flex-wrap: wrap; }
+        /* Wider tile for recommendation-distribution metrics. The
+           stacked bar + legend need more horizontal room than a
+           single number-on-top tile. */
+        .at-stat-wide {
+            flex: 1 1 280px;
+            min-width: 240px;
+            max-width: 360px;
+        }
+        .at-stat-rec-bar {
+            display: flex;
+            width: 100%;
+            height: 10px;
+            border-radius: 3px;
+            margin: 8px 0 6px;
+            overflow: hidden;
+            background: #f2f4f7;
+        }
+        .at-stat-rec-seg {
+            display: block;
+            height: 100%;
+        }
+        .at-stat-rec-seg.SIGN    { background: #1e8449; }
+        .at-stat-rec-seg.VETO    { background: #c0392b; }
+        .at-stat-rec-seg.LWOS    { background: #f39c12; }
+        .at-stat-rec-seg.SPLIT   { background: #8e7cad; }
+        .at-stat-rec-seg.unknown { background: #b0b8c0; }
+        .at-stat-rec-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 10px;
+            font-size: 0.78rem;
+            color: #4a5560;
+            font-variant-numeric: tabular-nums;
+        }
+        .at-stat-rec-legend .seg {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 3px;
+        }
+        .at-stat-rec-legend .swatch {
+            display: inline-block;
+            width: 9px; height: 9px;
+            border-radius: 2px;
+            position: relative;
+            top: 1px;
+        }
+        .at-stat-rec-legend .swatch.SIGN    { background: #1e8449; }
+        .at-stat-rec-legend .swatch.VETO    { background: #c0392b; }
+        .at-stat-rec-legend .swatch.LWOS    { background: #f39c12; }
+        .at-stat-rec-legend .swatch.SPLIT   { background: #8e7cad; }
+        .at-stat-rec-legend .swatch.unknown { background: #b0b8c0; }
         .at-stat {
             background: #fff;
             border: 1px solid #d6dbe1;
@@ -1631,20 +1682,69 @@
         document.getElementById(tableId).innerHTML = html;
     }
 
+    // Tally GLO / DEPT recommendations across the HB/SB universe
+    // (resolutions don't get blue sheets so they don't have rec
+    // distributions worth aggregating). Returns ordered count map.
+    function tallyRecs(bills, key) {
+        var counts = { SIGN: 0, VETO: 0, LWOS: 0, SPLIT: 0, unknown: 0 };
+        bills.forEach(function(b) {
+            var rec = ((b[key] || {}).rec || '').toUpperCase();
+            if (counts.hasOwnProperty(rec)) counts[rec]++;
+            else counts.unknown++;
+        });
+        return counts;
+    }
+
+    // Render one recommendation-distribution tile: a wider stat
+    // tile with a stacked colored bar + a legend below showing the
+    // counts. Segments only render for non-zero categories.
+    function renderRecTile(label, counts) {
+        var order = ['SIGN', 'VETO', 'LWOS', 'SPLIT', 'unknown'];
+        var total = order.reduce(function(s, k) { return s + counts[k]; }, 0);
+        if (total === 0) return '';
+        var bar = '<div class="at-stat-rec-bar">';
+        order.forEach(function(k) {
+            if (counts[k] > 0) {
+                bar += '<span class="at-stat-rec-seg ' + k + '" style="flex:' + counts[k] + '" title="' +
+                       counts[k] + ' ' + k + '"></span>';
+            }
+        });
+        bar += '</div>';
+        var legend = '<div class="at-stat-rec-legend">';
+        order.forEach(function(k) {
+            if (counts[k] > 0) {
+                legend += '<span class="seg"><span class="swatch ' + k + '"></span>' +
+                          counts[k] + ' ' + (k === 'unknown' ? '?' : k) + '</span>';
+            }
+        });
+        legend += '</div>';
+        return '<div class="at-stat at-stat-wide">' +
+               '<div class="l">' + esc(label) + '</div>' +
+               bar + legend + '</div>';
+    }
+
     function renderStrip(d) {
-        var b = d.bills;
-        var oldest = b.length ? Math.max.apply(null, b.map(function(x){return x.days_since_passage||0;})) : 0;
+        var b = d.bills || [];
+        var atGovBills = d.at_gov_bills || [];
+        // Aggregate recommendations across every HB/SB bill on the
+        // page (both Awaiting and At-Governor). Resolutions are
+        // excluded — they don't get blue sheets, so no rec data.
+        var allHbSb = b.concat(atGovBills);
+        var gloCounts = tallyRecs(allHbSb, 'glo_recommendation');
+        var deptCounts = tallyRecs(allHbSb, 'dept_recommendation');
+
         var totalRes = d.counts.resolutions_substantive + d.counts.resolutions_procedural;
         var atGov = (d.counts.at_gov_bills || 0) + (d.counts.at_gov_resolutions || 0);
         // Minimum days-left across everything at-governor (most urgent
         // deadline approaching). null means no transmittal date found.
-        var atGovItems = (d.at_gov_bills || []).concat(d.at_gov_resolutions || []);
+        var atGovItems = atGovBills.concat(d.at_gov_resolutions || []);
         var minLeft = null;
         atGovItems.forEach(function(x) {
             if (x.governor_days_left == null) return;
             if (minLeft == null || x.governor_days_left < minLeft) minLeft = x.governor_days_left;
         });
         var s = "";
+        // Top row: counts. Bottom row: rec distributions.
         if (atGov) {
             s += '<div class="at-stat"><div class="n">' + atGov + '</div><div class="l">At Governor</div></div>';
             if (minLeft != null) {
@@ -1653,7 +1753,9 @@
         }
         s += '<div class="at-stat"><div class="n">' + d.counts.bills + '</div><div class="l">Bills awaiting</div></div>';
         s += '<div class="at-stat"><div class="n">' + totalRes + '</div><div class="l">Resolutions awaiting</div></div>';
-        s += '<div class="at-stat"><div class="n">' + oldest + '</div><div class="l">Longest awaiting (days)</div></div>';
+        // Recommendation distribution tiles.
+        s += renderRecTile('GLO recommendations (HB/SB)', gloCounts);
+        s += renderRecTile('DEPT recommendations (HB/SB)', deptCounts);
         document.getElementById("at-strip").innerHTML = s;
     }
 
@@ -1732,7 +1834,7 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v39';
+    var LIST_KEY = 'at_list_v40';
     var DETAIL_KEY_PREFIX = 'at_detail_v41:';
 
     function lsGet(key) {
