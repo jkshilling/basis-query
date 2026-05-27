@@ -320,12 +320,16 @@ def _scan():
             or _extract_agency_from_content(fn)
             or "?"
         )
+        # Date is still extracted for dedup keying within a bill (same
+        # agency dropped same sheet twice on different days = two
+        # distinct sheets) but NOT shown in the chip label — user
+        # explicitly asked for agency-only chips.
         date = (
             _extract_date(fn)
             or _extract_date_from_content(fn)
             or _mtime_date(fn)
         )
-        label = f"{agency} · {date}" if date else agency
+        label = agency
         # Index the same file under EVERY bill it references. Agency
         # blue sheets sometimes cover multiple bills (e.g.
         # "UA Blue Sheet HB 10 and HB 176.pdf" → both HB 10 and HB 176).
