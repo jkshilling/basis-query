@@ -345,12 +345,51 @@
             white-space: nowrap;
         }
         .at-extlink:hover { text-decoration: underline; }
-        .at-bluesheet { margin-left: 12px; font-size: 0.74rem; }
-        .at-bluesheet.has { color: #1e8449; font-weight: 600; }
-        .at-bluesheet.missing { color: #b0b8c0; font-style: italic; cursor: help; }
-        .at-legal { margin-left: 12px; font-size: 0.74rem; }
-        .at-legal.has { color: #6c3483; font-weight: 600; }
-        .at-legal.missing { color: #b0b8c0; font-style: italic; cursor: help; }
+        /* Attachments rows — one labeled row per document type. */
+        .at-attach { margin-top: 8px; font-size: 0.82rem; }
+        .at-attach-row {
+            margin-top: 4px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 5px;
+        }
+        .at-attach-lbl {
+            font-size: 0.72rem;
+            color: #6e7681;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-right: 6px;
+            white-space: nowrap;
+            font-weight: 600;
+        }
+        .at-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 10px;
+            font-size: 0.82rem;
+            line-height: 1.3;
+            border-radius: 13px;
+            text-decoration: none;
+            border: 1px solid #d8dde3;
+            white-space: nowrap;
+            max-width: 320px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .at-chip:hover { text-decoration: underline; }
+        .at-chip.bluesheet { background: #e8f8f0; border-color: #b7e1c8; color: #1e6e3a; }
+        .at-chip.bluesheet:hover { background: #d1efde; }
+        .at-chip.legal { background: #f3eaf7; border-color: #d8c4e3; color: #6c3483; }
+        .at-chip.legal:hover { background: #e6d2ef; }
+        .at-chip.missing {
+            color: #95a5a6;
+            font-style: italic;
+            background: #fafbfc;
+            border-style: dashed;
+            cursor: help;
+        }
 
         /* Stat strip */
         .at-strip { display: flex; gap: 12px; margin: 10px 0 20px; flex-wrap: wrap; }
@@ -632,46 +671,51 @@
                 html += '</div>';
             }
 
-            // External links: akleg + (when we have one) the curated
-            // blue-sheet PDF. Blue-sheet indicator is the second link;
-            // if no blue sheet exists for this bill, we show a muted
-            // "no blue sheet" marker so the absence is visible.
-            var linkRow = '<div class="at-status">';
-            if (b.akleg_url) {
-                linkRow += '<a class="at-extlink" href="' + esc(b.akleg_url) + '" target="_blank" rel="noopener">View on akleg.gov ↗</a>';
-            }
-            // Blue sheets are executive-branch agency analyses; they
-            // only apply to HB/SB. Suppress the section for
-            // resolutions entirely (no chip, no "missing" marker).
+            // Attachments block: akleg link, then labeled rows for
+            // blue sheets and legal analyses. Each chip is a pill
+            // with the parsed label (agency, date, etc.).
             var isBill = (b.type === 'HB' || b.type === 'SB');
             var sheets = b.blue_sheets || [];
+            var legals = b.legal_analyses || [];
+
+            var attach = '<div class="at-attach">';
+            if (b.akleg_url) {
+                attach += '<a class="at-extlink" href="' + esc(b.akleg_url) +
+                    '" target="_blank" rel="noopener">View on akleg.gov ↗</a>';
+            }
+            attach += '</div>';
+
+            // Blue sheets: only render the row if HB/SB (resolutions
+            // don't get them). Either show chips for files on disk,
+            // or a muted "none on file" pill so the gap is visible.
             if (isBill) {
+                attach += '<div class="at-attach-row"><span class="at-attach-lbl">Blue sheets</span>';
                 if (sheets.length) {
                     sheets.forEach(function(s) {
-                        var lab = s.label || 'Blue sheet';
-                        linkRow += '<a class="at-extlink at-bluesheet has" href="/blue-sheet-file/' +
+                        attach += '<a class="at-chip bluesheet" href="/blue-sheet-file/' +
                             encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
-                            esc(s.filename) + '">📄 ' + esc(lab) + ' ↗</a>';
+                            esc(s.filename) + '">📄 ' + esc(s.label) + '</a>';
                     });
                 } else {
-                    linkRow += '<span class="at-bluesheet missing" title="No blue sheet on file for this bill. Drop a PDF in basis-browser-app/blue_sheets/ to add one.">○ No blue sheet</span>';
+                    attach += '<span class="at-chip missing" title="No blue sheet on file. Drop a PDF in basis-browser-app/blue_sheets/.">○ none on file</span>';
                 }
+                attach += '</div>';
             }
-            // Legal analyses (LLS / DOL) — applies to bills AND
-            // resolutions. Same chip pattern, different folder.
-            var legals = b.legal_analyses || [];
+
+            // Legal analyses: applies to bills AND resolutions.
+            attach += '<div class="at-attach-row"><span class="at-attach-lbl">Legal</span>';
             if (legals.length) {
                 legals.forEach(function(s) {
-                    var lab = s.label || 'Legal analysis';
-                    linkRow += '<a class="at-extlink at-legal has" href="/legal-analysis-file/' +
+                    attach += '<a class="at-chip legal" href="/legal-analysis-file/' +
                         encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
-                        esc(s.filename) + '">⚖ ' + esc(lab) + ' ↗</a>';
+                        esc(s.filename) + '">⚖ ' + esc(s.label) + '</a>';
                 });
             } else {
-                linkRow += '<span class="at-legal missing" title="No legal analysis on file. Drop a PDF in basis-browser-app/legal_analyses/ to add one.">○ No legal analysis</span>';
+                attach += '<span class="at-chip missing" title="No legal analysis on file. Drop a PDF in basis-browser-app/legal_analyses/.">○ none on file</span>';
             }
-            linkRow += '</div>';
-            html += linkRow;
+            attach += '</div>';
+
+            html += attach;
 
             html += '</div>';
 
@@ -1008,8 +1052,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v14';
-    var DETAIL_KEY_PREFIX = 'at_detail_v18:';
+    var LIST_KEY = 'at_list_v15';
+    var DETAIL_KEY_PREFIX = 'at_detail_v19:';
 
     function lsGet(key) {
         try {

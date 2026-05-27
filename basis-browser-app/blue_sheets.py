@@ -59,10 +59,11 @@ _AGENCY_PATTERNS = (
     ("DOLWD", r"\bDOLWD\b"),
 )
 
-# Date patterns like 5.18.26, 05-18-26, 5/18/2026
-_DATE_RE = re.compile(
-    r"\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{2,4})\b",
-)
+# Date patterns. Two forms:
+#   ISO:      YYYY-MM-DD   (e.g. 2026-05-14)
+#   American: M-D-YY[YY]   (e.g. 5.18.26, 05-18-26, 5/18/2026)
+_DATE_RE_ISO = re.compile(r"(\d{4})[./\-](\d{1,2})[./\-](\d{1,2})")
+_DATE_RE_AMR = re.compile(r"\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{2,4})\b")
 
 # In-memory cache
 _cache_value = None
@@ -88,21 +89,74 @@ def _extract_agency(filename):
     return ""
 
 
+_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
 def _extract_date(filename):
     """Return a human-readable date string (e.g. 'May 18') if the
-    filename contains an embedded mm/dd/yy or similar pattern."""
-    m = _DATE_RE.search(filename)
-    if not m:
+    filename contains a recognizable date pattern. Tries ISO first
+    (YYYY-MM-DD) then American (M-D-YY)."""
+    # ISO format
+    m = _DATE_RE_ISO.search(filename)
+    if m:
+        try:
+            year, mm, dd = (int(x) for x in m.groups())
+            if 2020 <= year <= 2100 and 1 <= mm <= 12 and 1 <= dd <= 31:
+                return f"{_MONTHS[mm - 1]} {dd}"
+        except (ValueError, IndexError):
+            pass
+    # American format — but skip if the first group looks like a
+    # 4-digit year (would have matched ISO above; only get here if
+    # ISO failed for some reason).
+    m = _DATE_RE_AMR.search(filename)
+    if m:
+        try:
+            mm, dd, yy = (int(x) for x in m.groups())
+            if 1 <= mm <= 12 and 1 <= dd <= 31:
+                return f"{_MONTHS[mm - 1]} {dd}"
+        except (ValueError, IndexError):
+            pass
+    return ""
+
+
+# Boilerplate words to strip when synthesizing a fallback label from
+# an unlabeled filename. Case-insensitive.
+_LABEL_NOISE_RE = re.compile(
+    r"\b(?:blue\s*sheet|BS|sheet|2025|2026|signed|revised|updated|"
+    r"docx|pdf)\b",
+    re.IGNORECASE,
+)
+
+
+def _fallback_label(filename, billnumber):
+    """When agency + date extraction yields nothing, build a short
+    human-readable label from the filename. Strip the extension, the
+    bill-number reference, common boilerplate ('Blue Sheet', '2026',
+    'Revised'), and any extra punctuation. If nothing meaningful
+    remains, return ''."""
+    name = re.sub(r"\.(pdf|docx?)$", "", filename, flags=re.IGNORECASE)
+    # Strip the bill-number reference (with or without leading zeros).
+    bn_prefix, bn_num = billnumber.split()
+    name = re.sub(
+        rf"(?:CS|HCS|SCS)?{bn_prefix}\s*0*{bn_num}\b",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+    # Strip boilerplate words.
+    name = _LABEL_NOISE_RE.sub("", name)
+    # Collapse separators and trim.
+    name = re.sub(r"[-_().]+", " ", name)
+    name = re.sub(r"\s+", " ", name).strip(" -_")
+    # Discard residues that are too short or pure punctuation/digits
+    # (e.g. "for", "1", "-") — they're noise, not information.
+    if len(name) < 4 or name.isdigit():
         return ""
-    try:
-        mm, dd, yy = (int(x) for x in m.groups())
-        if not (1 <= mm <= 12 and 1 <= dd <= 31):
-            return ""
-        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        return f"{months[mm - 1]} {dd}"
-    except (ValueError, IndexError):
-        return ""
+    # Truncate long synthesized labels.
+    if len(name) > 28:
+        name = name[:25].rstrip() + "…"
+    return name
 
 
 def _scan():
@@ -118,9 +172,11 @@ def _scan():
             continue
         agency = _extract_agency(fn)
         date = _extract_date(fn)
-        # Human-friendly label: "DOH · May 12" / "DPS" / "May 18" / ""
         label_parts = [p for p in (agency, date) if p]
         label = " · ".join(label_parts)
+        # If no structured fields extracted, synthesize from filename.
+        if not label:
+            label = _fallback_label(fn, bn) or "Blue sheet"
         out.setdefault(bn, []).append({
             "filename": fn,
             "agency": agency,

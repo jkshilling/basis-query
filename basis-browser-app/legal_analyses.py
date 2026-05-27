@@ -41,9 +41,8 @@ _SOURCE_PATTERNS = (
     ("LAW", r"\bLAW\b"),
 )
 
-_DATE_RE = re.compile(
-    r"\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{2,4})\b",
-)
+_DATE_RE_ISO = re.compile(r"(\d{4})[./\-](\d{1,2})[./\-](\d{1,2})")
+_DATE_RE_AMR = re.compile(r"\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{2,4})\b")
 
 _cache_value = None
 _cache_time = 0.0
@@ -68,19 +67,54 @@ def _extract_source(filename):
     return ""
 
 
+_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
 def _extract_date(filename):
-    m = _DATE_RE.search(filename)
-    if not m:
+    m = _DATE_RE_ISO.search(filename)
+    if m:
+        try:
+            year, mm, dd = (int(x) for x in m.groups())
+            if 2020 <= year <= 2100 and 1 <= mm <= 12 and 1 <= dd <= 31:
+                return f"{_MONTHS[mm - 1]} {dd}"
+        except (ValueError, IndexError):
+            pass
+    m = _DATE_RE_AMR.search(filename)
+    if m:
+        try:
+            mm, dd, yy = (int(x) for x in m.groups())
+            if 1 <= mm <= 12 and 1 <= dd <= 31:
+                return f"{_MONTHS[mm - 1]} {dd}"
+        except (ValueError, IndexError):
+            pass
+    return ""
+
+
+_LABEL_NOISE_RE = re.compile(
+    r"\b(?:legal\s*(?:analysis|memo|review)|memo|review|"
+    r"2025|2026|signed|revised|updated|docx|pdf)\b",
+    re.IGNORECASE,
+)
+
+
+def _fallback_label(filename, billnumber):
+    name = re.sub(r"\.(pdf|docx?)$", "", filename, flags=re.IGNORECASE)
+    bn_prefix, bn_num = billnumber.split()
+    name = re.sub(
+        rf"(?:CS|HCS|SCS)?{bn_prefix}\s*0*{bn_num}\b",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+    name = _LABEL_NOISE_RE.sub("", name)
+    name = re.sub(r"[-_().]+", " ", name)
+    name = re.sub(r"\s+", " ", name).strip(" -_")
+    if len(name) < 4 or name.isdigit():
         return ""
-    try:
-        mm, dd, yy = (int(x) for x in m.groups())
-        if not (1 <= mm <= 12 and 1 <= dd <= 31):
-            return ""
-        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        return f"{months[mm - 1]} {dd}"
-    except (ValueError, IndexError):
-        return ""
+    if len(name) > 28:
+        name = name[:25].rstrip() + "…"
+    return name
 
 
 def _scan():
@@ -95,6 +129,8 @@ def _scan():
         date = _extract_date(fn)
         label_parts = [p for p in (source, date) if p]
         label = " · ".join(label_parts)
+        if not label:
+            label = _fallback_label(fn, bn) or "Legal analysis"
         out.setdefault(bn, []).append({
             "filename": fn,
             "source": source,
