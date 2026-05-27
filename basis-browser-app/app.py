@@ -327,26 +327,37 @@ def _refresh_all():
 
 
 def _build_votes_index_async():
-    """Build the votes index on its own daemon thread. The first build
-    takes 3+ minutes and would otherwise tie up a gunicorn worker; this
-    lets it run independently. Rebuilt hourly to pick up newly-passed
-    bills; the per-bill votes inside the index are HISTORICAL FACT and
-    never change once cast, so consumers read with effectively-
-    unbounded TTL (30d in fetch_bill_votes) and only this daemon's
-    cadence governs how quickly new bills appear."""
+    """Build the votes index ONCE on app startup if it's missing.
+
+    The 34th Legislature's regular session has adjourned — no new
+    bills will pass and no new floor votes will be cast. The
+    universe of votes is now a closed, frozen historical record.
+
+    Behavior:
+      - If the disk cache has an index → return immediately, no API
+        call. Reads serve the disk-loaded copy forever.
+      - If the disk cache is empty (first deploy on a fresh droplet,
+        or someone manually cleared it) → build it once, persist to
+        disk, then exit the thread.
+
+    There is no periodic rebuild loop. To pick up data that wasn't
+    present at session-end (e.g., a special session begins, or the
+    35th Legislature convenes), hit POST /admin/rebuild-votes-index
+    or restart the service after clearing the disk cache key.
+    """
+    from cache import _cache
+    if "all_votes_v2_34" in _cache:
+        log.info("votes_index.build status=skipped (disk cache present, "
+                 "session adjourned — no rebuild needed)")
+        return
     from fetch import fetch_all_votes_index
-    while True:
-        s = time.monotonic()
-        try:
-            fetch_all_votes_index()
-            log.info("votes_index.build elapsed=%.1fs status=ok",
-                     time.monotonic() - s)
-        except Exception as exc:
-            log.warning("votes_index.build status=fail err=%r", exc)
-        # Rebuild hourly — picks up new floor votes during active
-        # session. Reads continue to serve the previous index until
-        # this one finishes; no mid-session "votes disappear" window.
-        time.sleep(REFRESH_INTERVAL)
+    s = time.monotonic()
+    try:
+        fetch_all_votes_index()
+        log.info("votes_index.build elapsed=%.1fs status=ok (one-shot)",
+                 time.monotonic() - s)
+    except Exception as exc:
+        log.warning("votes_index.build status=fail err=%r", exc)
 
 
 def _invalidate_top_level_caches():
