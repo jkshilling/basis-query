@@ -66,7 +66,7 @@ _CACHE: dict | None = None
 
 # Bump this when you change the prompt below — it gets folded into
 # the cache key so every cached summary regenerates automatically.
-_SYSTEM_PROMPT_VERSION = "v3-tight-2para"
+_SYSTEM_PROMPT_VERSION = "v4-no-meta"
 
 _SYSTEM_PROMPT = """You are writing a neutral, factual summary of what an Alaska bill \
 DOES. The summary appears on a veto-decision-support dashboard alongside other UI \
@@ -106,10 +106,12 @@ Hard constraints — these are NOT optional:
 - DO NOT mention what any department, agency, or person recommends, supports, opposes, \
   or thinks about the bill. The dashboard already displays recommendations \
   separately via colored indicators on each chip.
-- DO NOT meta-comment about the blue sheets themselves. No phrases like "the blue \
-  sheet does not say", "according to the available analysis", "as described in the \
-  documents", "no fiscal implications are disclosed", or similar. Either state facts \
-  about the bill or leave them out.
+- DO NOT meta-comment about the blue sheets or source materials. No phrases like \
+  "the blue sheet does not say", "according to the available analysis", "as \
+  described in the documents", "no fiscal implications are disclosed", "no delayed \
+  effective date is specified in the available bill materials", "is not addressed", \
+  "is silent on", "the source materials do not", or any variant. If a fact isn't in \
+  the source, simply omit it — do not announce its absence.
 - DO NOT describe the bill as "a compromise", "negotiated", "controversial", or any \
   other characterization. Stick to provisions.
 - Do not invent facts."""
