@@ -637,8 +637,17 @@
             if (b.akleg_url) {
                 linkRow += '<a class="at-extlink" href="' + esc(b.akleg_url) + '" target="_blank" rel="noopener">View on akleg.gov ↗</a>';
             }
-            if (b.has_blue_sheet) {
-                linkRow += '<a class="at-extlink at-bluesheet has" href="/blue-sheet/' + encodeURIComponent(b.billnumber) + '" target="_blank" rel="noopener">📄 Blue sheet ↗</a>';
+            // One chip per blue sheet on file (multiple agencies often
+            // each submit one). When the filename embeds an agency
+            // (DOH, DPS, DCCED…) and/or date, show those.
+            var sheets = b.blue_sheets || [];
+            if (sheets.length) {
+                sheets.forEach(function(s) {
+                    var lab = s.label || 'Blue sheet';
+                    linkRow += '<a class="at-extlink at-bluesheet has" href="/blue-sheet-file/' +
+                        encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
+                        esc(s.filename) + '">📄 ' + esc(lab) + ' ↗</a>';
+                });
             } else {
                 linkRow += '<span class="at-bluesheet missing" title="No blue sheet on file for this bill. Drop a PDF in basis-browser-app/blue_sheets/ to add one.">○ No blue sheet</span>';
             }
@@ -980,8 +989,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v12';
-    var DETAIL_KEY_PREFIX = 'at_detail_v16:';
+    var LIST_KEY = 'at_list_v13';
+    var DETAIL_KEY_PREFIX = 'at_detail_v17:';
 
     function lsGet(key) {
         try {

@@ -1386,7 +1386,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v23", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v24", max_age=300)
     if cached is not None:
         return cached
 
@@ -1750,9 +1750,11 @@ def awaiting_transmittal(session="34"):
             "cosponsor_by_party": cosponsor_by_party,
             "subjects": subjects[:5],
             "akleg_url": akleg_url,
-            # Blue sheet — present if we have a curated PDF on disk
-            # for this bill. Path is served by /blue-sheet/<bn>.
-            "has_blue_sheet": _bluesheet_index.get(compact_billnumber(bn)) is not None,
+            # Blue sheets — list of curated agency analyses on disk
+            # for this bill. Each entry: {filename, agency, date,
+            # label}. Empty list = no sheets on file. Multiple agencies
+            # often file separate sheets on the same bill.
+            "blue_sheets": _bluesheet_index.get(compact_billnumber(bn), []),
             "passed_both_date": format_status_date(passed_both_date),
             "days_since_passage": days_since_passage,
             # Vote tallies and veto-override math
@@ -1826,7 +1828,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v23", result)
+    _cache.put("awaiting_transmittal_v24", result)
     return result
 
 

@@ -105,7 +105,7 @@ def _invalidate_top_level_caches():
     keys_to_clear = [
         "hb_in_senate", "sb_in_house", "dashboard_stats", "action_code_counts",
         "bill_progress", "all_actions", "all_actions_v5", "governor_bills",
-        "awaiting_transmittal_v23", "pipeline_v3_20",
+        "awaiting_transmittal_v24", "pipeline_v3_20",
     ]
     # Also clear any activity_feed_X entries and today's floor calendar
     # (so refreshes pick up newly-calendared bills).
@@ -305,20 +305,21 @@ def api_bill_decision_detail(billnumber):
         return jsonify({"data": None, "error": str(exc)})
 
 
-@app.route("/blue-sheet/<path:billnumber>")
-def serve_blue_sheet(billnumber):
-    """Serve the blue-sheet PDF for a bill if one exists in
-    blue_sheets/. Returns 404 otherwise."""
+@app.route("/blue-sheet-file/<path:filename>")
+def serve_blue_sheet_file(filename):
+    """Serve a specific blue-sheet file by filename. Multiple sheets
+    can exist for one bill (separate agencies submit separate
+    analyses), so the URL is file-keyed, not bill-keyed. abs_path
+    prevents path traversal."""
     from flask import send_file, abort
     import blue_sheets as bs_mod
-    fn = bs_mod.filename_for(billnumber)
-    if not fn:
-        abort(404)
-    path = bs_mod.abs_path(fn)
+    path = bs_mod.abs_path(filename)
     if not path:
         abort(404)
-    return send_file(path, mimetype="application/pdf",
-                     download_name=fn, as_attachment=False)
+    mime = ("application/pdf" if path.lower().endswith(".pdf")
+            else "application/octet-stream")
+    return send_file(path, mimetype=mime,
+                     download_name=filename, as_attachment=False)
 
 
 @app.route("/api/session-countdown")
