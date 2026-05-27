@@ -66,7 +66,7 @@ _CACHE: dict | None = None
 
 # Bump this when you change the prompt below — it gets folded into
 # the cache key so every cached summary regenerates automatically.
-_SYSTEM_PROMPT_VERSION = "v4-no-meta"
+_SYSTEM_PROMPT_VERSION = "v5-subject-bodies"
 
 _SYSTEM_PROMPT = """You are writing a neutral, factual summary of what an Alaska bill \
 DOES. The summary appears on a veto-decision-support dashboard alongside other UI \
@@ -99,10 +99,24 @@ Format — these are NOT optional:
 
 Hard constraints — these are NOT optional:
 
-- DO NOT name any department or agency (no "DOH", "DCCED", "DFCS", "Department of \
-  Health", "Department of Family and Community Services", etc.) anywhere in the \
-  summary. Use neutral descriptors like "the department", "the state", or specific \
-  bodies like "the State Board of Education" when those appear in the bill text itself.
+- DO NOT name any executive-branch department or division (no "DOH", "DCCED", \
+  "DFCS", "Department of Health", "Department of Fish and Game", "Department of \
+  Family and Community Services", etc.) anywhere in the summary. Use neutral \
+  descriptors instead — "the department", "the state agency", or paraphrased \
+  language like "the state's fish and game authority" when context demands it.
+  \
+  EXCEPTION: when the bill's substantive content directly amends or restructures \
+  a specific named body (the body IS the subject of the legislation), you may \
+  name that body. Examples that ARE OK:
+    - "AIDEA" (Alaska Industrial Development and Export Authority) in a bill \
+      amending AIDEA's statutory purpose
+    - "the Permanent Fund Corporation" in a PFD-investment bill
+    - "the State Board of Education" in a curriculum bill that gives it new duties
+    - "the Alaska Invasive Species Council" in a bill creating that council
+  These are bodies the bill *acts on*, not bodies reviewing the bill. The test \
+  is: does the bill text itself name this body to establish, amend, or assign \
+  duties to it? If yes, naming is fine. If the body is mentioned only as a \
+  reviewer or implementer of a broader policy, use a neutral descriptor.
 - DO NOT mention what any department, agency, or person recommends, supports, opposes, \
   or thinks about the bill. The dashboard already displays recommendations \
   separately via colored indicators on each chip.
