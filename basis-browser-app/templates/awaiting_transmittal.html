@@ -1187,17 +1187,15 @@
         var h = '';
 
         // Neutral Summary — hand-authored description of what the
-        // bill does, with the sponsor-statement PDF still linked for
-        // users who want the advocacy framing.
+        // bill does. Sponsor statements (the sponsor's advocacy
+        // framing) are intentionally NOT linked here: this is a
+        // veto-decision-support tool, and advocacy material from
+        // the bill's champion isn't input the Governor's office
+        // should be weighing against department blue-sheet analysis.
         var ns = d.neutral_summary;
-        var ss = d.sponsor_statement;
         if (ns && ns.summary) {
             h += '<div class="at-section">';
-            h += '<div class="at-section-h">Summary';
-            if (ss && ss.url) {
-                h += ' <a class="at-section-link" href="' + esc(ss.url) + '" target="_blank" rel="noopener">Sponsor statement (PDF) ↗</a>';
-            }
-            h += '</div>';
+            h += '<div class="at-section-h">Summary</div>';
             var paras = ns.summary.split(/\n\s*\n/).map(function(p) {
                 return '<p>' + esc(p.trim()).replace(/\n/g, ' ') + '</p>';
             }).join('');
@@ -1430,7 +1428,7 @@
     });
 
     var LIST_KEY = 'at_list_v31';
-    var DETAIL_KEY_PREFIX = 'at_detail_v35:';
+    var DETAIL_KEY_PREFIX = 'at_detail_v36:';
 
     function lsGet(key) {
         try {

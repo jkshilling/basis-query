@@ -20,7 +20,7 @@ from fetch import (
     fetch_all_bills, fetch_hearing_schedule, fetch_hearing_counts,
     fetch_committee_reports, scan_all_actions, count_actions_by_year,
     fetch_bill_detail, fetch_floor_calendar, is_procedural_resolution,
-    fetch_members, fetch_bill_votes, fetch_sponsor_statement,
+    fetch_members, fetch_bill_votes,
     fetch_passed_bills, committee_chairs,
 )
 from bill_summaries import get_bill_summary
@@ -1961,7 +1961,7 @@ def bill_decision_detail(billnumber, session="34"):
     """Detailed veto-decision view for one bill: full per-legislator
     roll call on final passage in each chamber, plus action timeline
     and fiscal-note bodies. Cached 10 min."""
-    cache_key = f"bill_decision_detail_v8_{session}_{billnumber}"
+    cache_key = f"bill_decision_detail_v9_{session}_{billnumber}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -2123,20 +2123,13 @@ def bill_decision_detail(billnumber, session="34"):
                     "impact":   pdf.get("impact", ""),
                 })
 
-    # Sponsor-statement PDF URL: read from the BASIS Sponsors
-    # expansion (already cached via fetch_all_bills) instead of
-    # scraping the akleg HTML and downloading the PDF on every
-    # detail load. Saves ~1.5s per cold expander click.
-    ss_url = ""
-    if bill_meta:
-        ss_url = bill_meta.get("sponsor_statement_url") or ""
-    if not ss_url:
-        # Same chamber-flip lookup we already do for FN PDFs — bill_meta
-        # only carries Sponsors+Versions+Subjects; in that case it's
-        # already covered. But on rebuilds where we miss bill_meta, try
-        # the FN-keyed cache too.
-        pass
-    sponsor_statement = {"url": ss_url, "label": "Sponsor statement", "text": ""}
+    # Sponsor statements are intentionally NOT surfaced in this UI.
+    # They're advocacy documents written by the bill's sponsor to
+    # sell the legislation. Mixing them with neutral analysis would
+    # undercut the editorial premise of a veto-decision-support tool.
+    # The hand-authored neutral_summary, plus the substantive
+    # blue-sheet content (with each agency's explicit recommendation),
+    # provide the analytical perspective we want to surface.
 
     result = {
         "billnumber": billnumber,
@@ -2150,10 +2143,6 @@ def bill_decision_detail(billnumber, session="34"):
         # Hand-authored neutral summary (None if not yet written for
         # this bill — template falls back to Legal Description only).
         "neutral_summary": get_bill_summary(billnumber, session),
-        # Sponsor-statement URL pulled from BASIS XML, not scraped.
-        # Used only for the "↗ Sponsor statement" link next to the
-        # neutral summary — body text not surfaced inline.
-        "sponsor_statement": sponsor_statement,
         "milestones": milestones_display,
         "days_intro_to_first_committee": days_intro_to_first_cmte,
         "days_intro_to_passage": days_intro_to_passage,
