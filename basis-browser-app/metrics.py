@@ -1386,7 +1386,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v26", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v27", max_age=300)
     if cached is not None:
         return cached
 
@@ -1420,9 +1420,10 @@ def awaiting_transmittal(session="34"):
     bills = []
     resolutions_substantive = []
     resolutions_procedural = []
-    # AT GOVERNOR: transmitted, 15/20-day clock IS running
+    # AT GOVERNOR: transmitted, 15/20-day clock IS running.
+    # Bills only — resolutions aren't vetoed even when transmitted,
+    # so they go to the resolutions buckets above regardless of state.
     at_gov_bills = []
-    at_gov_resolutions = []
 
     # Build a lookup from billnumber → (origin, title, status, actions)
     actions_by_bill = {}
@@ -1787,15 +1788,13 @@ def awaiting_transmittal(session="34"):
                                if return_by_date else ""),
         }
 
-        # Route to bucket. At-governor wins routing over bill-vs-resolution
-        # split because the urgency dominates the UX.
-        if is_at_gov:
-            if prefix in ("HB", "SB"):
-                at_gov_bills.append(entry)
-            else:
-                at_gov_resolutions.append(entry)
-        elif prefix in ("HB", "SB"):
-            bills.append(entry)
+        # Route to bucket. Resolutions don't get vetoed — even when
+        # transmitted to the governor, they're ceremonial/informational
+        # (memorials to Congress, constitutional amendment proposals,
+        # internal procedural concurrent resolutions). They belong with
+        # the other resolutions, not in the urgency-countdown section.
+        if prefix in ("HB", "SB"):
+            (at_gov_bills if is_at_gov else bills).append(entry)
         elif is_procedural_resolution(bn, title):
             resolutions_procedural.append(entry)
         else:
@@ -1812,28 +1811,28 @@ def awaiting_transmittal(session="34"):
         d = b.get("governor_days_left")
         return d if d is not None else 9999
     at_gov_bills.sort(key=_atgov_sort_key)
-    at_gov_resolutions.sort(key=_atgov_sort_key)
 
     result = {
         # Awaiting transmittal — passed, clock NOT started
         "bills": bills,
         "resolutions_substantive": resolutions_substantive,
         "resolutions_procedural": resolutions_procedural,
-        # At governor — transmitted, clock IS running
+        # At governor — transmitted, clock IS running (bills only).
+        # Empty list emitted for backward compat with the template.
         "at_gov_bills": at_gov_bills,
-        "at_gov_resolutions": at_gov_resolutions,
+        "at_gov_resolutions": [],
         "counts": {
             "bills": len(bills),
             "resolutions_substantive": len(resolutions_substantive),
             "resolutions_procedural": len(resolutions_procedural),
             "at_gov_bills": len(at_gov_bills),
-            "at_gov_resolutions": len(at_gov_resolutions),
+            "at_gov_resolutions": 0,
         },
         # Which gov window kicks in if any of these are transmitted
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v26", result)
+    _cache.put("awaiting_transmittal_v27", result)
     return result
 
 
