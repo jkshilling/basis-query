@@ -890,7 +890,7 @@
     </nav>
     <header>
         <h1>Pending Governor Action</h1>
-        <p>Bills past both chambers. <strong>At Governor</strong>: transmitted, veto clock running (15 days in-session / 20 post-adjournment; Art. II §17). <strong>Awaiting Transmittal</strong>: passed but still with the origin chamber's secretary; clock not started.</p>
+        <p>Every bill past both chambers — at the Governor's desk (clock running) or awaiting transmittal (clock paused).</p>
         <p style="font-size:0.78rem;color:#888;margin:4px 0 0;min-height:1em;"><span id="at-refresh-hint"></span> <button type="button" id="at-refresh-btn" style="background:none;border:none;color:#888;text-decoration:underline;cursor:pointer;font-size:inherit;padding:0;font-family:inherit">Refresh now</button></p>
     </header>
 
@@ -2104,7 +2104,7 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v47';
+    var LIST_KEY = 'at_list_v48';
     var DETAIL_KEY_PREFIX = 'at_detail_v46:';
 
     function lsGet(key) {
