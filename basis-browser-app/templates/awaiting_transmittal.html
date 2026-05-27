@@ -515,6 +515,25 @@
         .at-glo.unknown { background: #f2f4f7; border-color: #b0b8c0; color: #6e7681; }
         .at-glo.overridden::after { content: " *"; font-weight: 700; }
 
+        /* Empty-state indicator for HB/SB bills with no blue sheet on
+           file. Pairs visually with the GLO chip: same size and
+           rounded-rect shape, but a muted warning color (amber, not
+           red — this is a process gap, not a critical error). */
+        .at-no-analysis {
+            display: inline-block;
+            margin-top: 6px;
+            padding: 3px 9px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            border-radius: 4px;
+            border: 1px dashed #e0a96d;
+            background: #fef5e7;
+            color: #885a00;
+            cursor: help;
+        }
+
         /* Bill description block — LLM-synthesized neutral summary
            across every department's blue sheet. */
         .at-desc {
@@ -1036,10 +1055,12 @@
             html +=   '<span class="at-days ' + dClass + '">' + dTxt + '</span>';
             html +=   '<span class="at-days-label">' + esc(dLabel) + '</span>';
             // At-gov: transmittal + due-back dates as secondary lines.
+            // Both written as adjective phrases for parallel structure
+            // (was: "transmitted X / due back Y" — verb / noun mismatch).
             if (mode === "at_gov" && b.transmit_date) {
-                html += '<span class="at-meta-sub">transmitted ' + esc(b.transmit_date) + '</span>';
+                html += '<span class="at-meta-sub">Transmitted ' + esc(b.transmit_date) + '</span>';
                 if (b.return_by_date) {
-                    html += '<span class="at-meta-sub">due back ' + esc(b.return_by_date) + '</span>';
+                    html += '<span class="at-meta-sub">Due back ' + esc(b.return_by_date) + '</span>';
                 }
             }
 
@@ -1057,6 +1078,17 @@
                              (glo.source ? '\n(' + glo.source + ')' : '');
                 html += '<div><span class="at-glo ' + gloCls + '" title="' +
                     esc(gloTip) + '">GLO: ' + esc(gloLbl) + '</span></div>';
+            }
+            // Empty-state indicator: HB/SB bills with no departmental
+            // blue sheet on file. Pair with the GLO chip so the user
+            // can see that the GLO best-guess (if any) is on thin
+            // evidence. Resolutions are excluded — they don't get
+            // blue sheets, so absence isn't a gap.
+            if (isBill && (b.blue_sheets || []).length === 0) {
+                html += '<div><span class="at-no-analysis" ' +
+                    'title="No departmental blue sheet has been filed for this bill yet. ' +
+                    'GLO recommendations (if any) are based on political signals alone.">' +
+                    '⚠ No analysis</span></div>';
             }
 
             // Mini vote-breakdown bars. Each segment's flex value is
@@ -1437,7 +1469,7 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v33';
+    var LIST_KEY = 'at_list_v34';
     var DETAIL_KEY_PREFIX = 'at_detail_v38:';
 
     function lsGet(key) {
