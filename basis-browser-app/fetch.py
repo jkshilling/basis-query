@@ -877,14 +877,18 @@ def fetch_bill_votes(billnumber, session="34"):
     handler. The build is performed by _build_votes_index_async on its
     own daemon thread; once warm, results appear on the next refresh.
 
-    TTL is 24h (not 1h): votes are immutable once cast, the index
-    only grows as new bills get floor votes, and the build is
-    expensive (~3 min). Forcing an hourly rebuild caused symptom
-    where every refresh that crossed the 60-min mark dropped the
-    party-color breakdown bars from every bill on the page until
-    the daemon finished its next build."""
+    TTL is effectively unbounded (30 days). Roll-call votes on bills
+    that have already passed both chambers are HISTORICAL FACT — they
+    never change. The only reason the index needs to grow is to pick
+    up newly-passed bills; that's the job of the background daemon,
+    which rebuilds on app startup and on the periodic refresh cycle.
+    Read-side max_age should never reject a cached entry as stale,
+    because there is no "stale" state for immutable data — only
+    "missing entries". Setting max_age=30d means the consumer always
+    gets whatever the daemon last produced; the daemon's own cadence
+    is what determines freshness for new bills."""
     cache_key = f"all_votes_v2_{session}"
-    idx = _cache.get(cache_key, max_age=24 * 3600)
+    idx = _cache.get(cache_key, max_age=30 * 24 * 3600)
     if idx is None:
         # Don't block the request handler. Empty roll call is preferable
         # to a 3-minute hang; the daemon is building in the background.

@@ -329,8 +329,11 @@ def _refresh_all():
 def _build_votes_index_async():
     """Build the votes index on its own daemon thread. The first build
     takes 3+ minutes and would otherwise tie up a gunicorn worker; this
-    lets it run independently. Repeated hourly so the index stays
-    reasonably fresh."""
+    lets it run independently. Rebuilt hourly to pick up newly-passed
+    bills; the per-bill votes inside the index are HISTORICAL FACT and
+    never change once cast, so consumers read with effectively-
+    unbounded TTL (30d in fetch_bill_votes) and only this daemon's
+    cadence governs how quickly new bills appear."""
     from fetch import fetch_all_votes_index
     while True:
         s = time.monotonic()
@@ -340,7 +343,9 @@ def _build_votes_index_async():
                      time.monotonic() - s)
         except Exception as exc:
             log.warning("votes_index.build status=fail err=%r", exc)
-        # Index has a 1-hour TTL inside fetch; rebuild before that.
+        # Rebuild hourly — picks up new floor votes during active
+        # session. Reads continue to serve the previous index until
+        # this one finishes; no mid-session "votes disappear" window.
         time.sleep(REFRESH_INTERVAL)
 
 
