@@ -78,6 +78,34 @@ def _refresh_all():
             except Exception as exc:
                 log.warning("refresh.step name=%s status=fail err=%r", name, exc)
 
+    # Stage 3: pre-warm bill_decision_detail for every awaiting bill,
+    # so the first user click on any expander is instant. Each call is
+    # a few ms (all underlying caches are now warm from stages 1+2);
+    # total cost is ~1-2 s for ~120 bills. Sequential because the
+    # caches it builds get reused — parallel would race on shared
+    # cache writes.
+    s = time.monotonic()
+    detail_count = 0
+    try:
+        at_data = awaiting_transmittal()
+        all_bills = (at_data.get("bills", []) + at_data.get("at_gov_bills", []) +
+                     at_data.get("resolutions_substantive", []) +
+                     at_data.get("resolutions_procedural", []))
+        for entry in all_bills:
+            bn = entry.get("billnumber") or ""
+            if not bn:
+                continue
+            try:
+                bill_decision_detail(bn)
+                detail_count += 1
+            except Exception as exc:
+                log.warning("refresh.detail name=%s err=%r", bn, exc)
+        log.info("refresh.step name=bill_details count=%d elapsed=%.1fs status=ok",
+                 detail_count, time.monotonic() - s)
+    except Exception as exc:
+        log.warning("refresh.step name=bill_details elapsed=%.1fs status=fail err=%r",
+                    time.monotonic() - s, exc)
+
     log.info("refresh.complete total_elapsed=%.1fs", time.monotonic() - t0)
 
 
