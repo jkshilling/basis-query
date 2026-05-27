@@ -59,6 +59,78 @@ _cache_value = None
 _cache_time = 0.0
 _CACHE_TTL = 60.0
 
+# Per-file DOL-review extraction cache, keyed by (filename, mtime).
+_dol_cache = {}
+
+
+def _read_docx_text(filename):
+    """Pull plain text out of a DOCX in the briefing_packets folder.
+    Returns empty string on any failure."""
+    import zipfile
+    path = os.path.join(_DIR, filename)
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with zipfile.ZipFile(path) as zf:
+            with zf.open("word/document.xml") as f:
+                raw = f.read().decode("utf-8", errors="replace")
+        return re.sub(r"<[^>]+>", " ", raw)
+    except (KeyError, zipfile.BadZipFile, OSError):
+        return ""
+
+
+# Briefing packets carry a "DEPARTMENT OF LAW BILL REVIEW" section
+# (all 27 packets we audited had one). Extract that section text so
+# the dashboard can surface DOL's legal review as a first-class
+# signal alongside blue sheets and legal_analyses files.
+#
+# Header format in DOCX-flattened text is loose — "DEPARTMENT" and
+# "OF LAW BILL REVIEW" can be separated by big runs of whitespace
+# (from collapsed multi-cell table layout). Use \s+ everywhere.
+# The section ends at the next ALL-CAPS section header (typical
+# pattern in these packets: "PROS:", "CONS:", "FISCAL ANALYSIS:",
+# "SECTIONAL ANALYSIS:", "ADMINISTRATION POSITION:", etc.) or at
+# the end of the document.
+_DOL_RE = re.compile(
+    r"DEPARTMENT\s+OF\s+LAW\s+BILL\s+REVIEW\s*:?\s*"
+    r"(.*?)"
+    r"(?="
+    r"(?:[A-Z][A-Z ,&]{4,40}?):"  # next ALL-CAPS heading with colon
+    r"|\Z)",
+    re.DOTALL,
+)
+
+
+def _extract_dol_review(filename):
+    """Return the body text of the 'DEPARTMENT OF LAW BILL REVIEW'
+    section from one packet, or '' if not present / unparseable.
+    Caches per (filename, mtime)."""
+    path = os.path.join(_DIR, filename)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    key = (filename, mtime)
+    if key in _dol_cache:
+        return _dol_cache[key]
+
+    text = _read_docx_text(filename) if filename.lower().endswith(".docx") else ""
+    out = ""
+    if text:
+        m = _DOL_RE.search(text)
+        if m:
+            body = m.group(1).strip()
+            # Collapse multi-space runs (DOCX flattening artifact).
+            body = re.sub(r"[ \t]+", " ", body)
+            body = re.sub(r"\s*\n\s*", "\n", body).strip()
+            # Trim runaway captures (shouldn't happen with the
+            # next-heading boundary but defense-in-depth).
+            if len(body) > 4000:
+                body = body[:3950].rsplit(" ", 1)[0] + "…"
+            out = body
+    _dol_cache[key] = out
+    return out
+
 
 def _extract_billnumbers(filename):
     """Find every bill reference in the filename; dedupe in order."""
@@ -135,11 +207,15 @@ def _scan():
         # dict for dedup keying within a bill, but NOT shown in the
         # chip label — user wants uniform chip text across packets.
         label = "Brief"
+        # Department of Law bill-review text (every packet we've seen
+        # contains one). Cached per file.
+        dol_text = _extract_dol_review(fn)
         for bn in bns:
             out.setdefault(bn, []).append({
-                "filename": fn,
-                "date":     date,
-                "label":    label,
+                "filename":   fn,
+                "date":       date,
+                "label":      label,
+                "dol_review": dol_text,
             })
     # Dedupe within each bill by date (rare — typically one packet per bill).
     for bn, lst in out.items():
