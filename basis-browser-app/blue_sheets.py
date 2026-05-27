@@ -89,6 +89,89 @@ def _extract_agency(filename):
     return ""
 
 
+# Cache extracted agency-from-content per-file to avoid re-cracking
+# PDFs on every page load. Keyed by (filename, mtime).
+_content_agency_cache = {}
+
+
+def _extract_agency_from_content(filename):
+    """Open the file and look for an agency code in its first-page
+    text. Used when the filename doesn't reveal the department —
+    sheets usually show e.g. 'DEPARTMENT OF ADMINISTRATION (DOA)' in
+    the header. Falls back to '' on any failure (missing pypdf, OCR-
+    only PDF, weird DOCX, etc.)."""
+    path = os.path.join(_DIR, filename)
+    if not os.path.isfile(path):
+        return ""
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    key = (filename, mtime)
+    if key in _content_agency_cache:
+        return _content_agency_cache[key]
+
+    text = ""
+    try:
+        if filename.lower().endswith(".pdf"):
+            import pypdf
+            reader = pypdf.PdfReader(path)
+            # First page only — agency name lives in the header. PDF
+            # text extraction is the slowest part of this pipeline, so
+            # we want the minimum.
+            if reader.pages:
+                text = reader.pages[0].extract_text() or ""
+        elif filename.lower().endswith((".docx", ".doc")):
+            # DOCX is a zip with XML inside; extract /word/document.xml
+            # and pull text without a heavy dep.
+            import zipfile, re as _re
+            try:
+                with zipfile.ZipFile(path) as zf:
+                    with zf.open("word/document.xml") as f:
+                        raw = f.read().decode("utf-8", errors="replace")
+                # Strip XML tags
+                text = _re.sub(r"<[^>]+>", " ", raw)
+            except (KeyError, zipfile.BadZipFile):
+                pass
+    except Exception:
+        # Don't let an unreadable file break the whole index.
+        pass
+
+    found = ""
+    if text:
+        # Match the same agency tokens, plus their long names where
+        # the abbreviation might not appear (e.g. "DEPARTMENT OF
+        # ADMINISTRATION" — DOA — sometimes spelled out).
+        upper = text.upper()
+        for label, _ in _AGENCY_PATTERNS:
+            if re.search(rf"\b{label}\b", upper):
+                found = label
+                break
+        # Long-name fallback table.
+        if not found:
+            long_names = (
+                ("DOA",   r"DEPARTMENT\s+OF\s+ADMINISTRATION"),
+                ("DOC",   r"DEPARTMENT\s+OF\s+CORRECTIONS"),
+                ("DEC",   r"DEPARTMENT\s+OF\s+ENVIRONMENTAL\s+CONSERVATION"),
+                ("DCCED", r"DEPARTMENT\s+OF\s+COMMERCE"),
+                ("DOH",   r"DEPARTMENT\s+OF\s+HEALTH"),
+                ("DFCS",  r"DIVISION\s+OF\s+FAMILY\s+AND\s+COMMUNITY\s+SERVICES"),
+                ("DPS",   r"DEPARTMENT\s+OF\s+PUBLIC\s+SAFETY"),
+                ("DMV",   r"DIVISION\s+OF\s+MOTOR\s+VEHICLES"),
+                ("DOR",   r"DEPARTMENT\s+OF\s+REVENUE"),
+                ("DNR",   r"DEPARTMENT\s+OF\s+NATURAL\s+RESOURCES"),
+                ("DOL",   r"DEPARTMENT\s+OF\s+LABOR"),
+                ("DOLWD", r"DEPARTMENT\s+OF\s+LABOR\s+AND\s+WORKFORCE"),
+            )
+            for label, pat in long_names:
+                if re.search(pat, upper):
+                    found = label
+                    break
+
+    _content_agency_cache[key] = found
+    return found
+
+
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -170,7 +253,7 @@ def _scan():
         bn = _extract_billnumber(fn)
         if not bn:
             continue
-        agency = _extract_agency(fn)
+        agency = _extract_agency(fn) or _extract_agency_from_content(fn)
         date = _extract_date(fn)
         label_parts = [p for p in (agency, date) if p]
         label = " · ".join(label_parts)

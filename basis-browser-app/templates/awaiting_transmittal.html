@@ -28,17 +28,6 @@
         .at-card .at-title { font-weight: 600; font-size: 1.02rem; margin-bottom: 4px; color: #1a2530; }
         .at-card .at-sub { font-size: 0.88rem; color: #5b6770; }
         .at-card .at-sub strong { color: #2c3e50; }
-        .at-card .at-tags { margin-top: 6px; }
-        .at-card .at-tags .tag {
-            display: inline-block;
-            font-size: 0.72rem;
-            padding: 2px 7px;
-            background: #eef2f6;
-            color: #4a5560;
-            border-radius: 10px;
-            margin-right: 4px;
-            margin-top: 3px;
-        }
         .at-card .at-status { font-size: 0.78rem; color: #6e7681; margin-top: 4px; font-style: italic; }
         .at-card .at-meta { text-align: right; font-size: 0.85rem; white-space: nowrap; }
         .at-card .at-days {
@@ -345,23 +334,36 @@
             white-space: nowrap;
         }
         .at-extlink:hover { text-decoration: underline; }
-        /* Attachments rows — one labeled row per document type. */
-        .at-attach { margin-top: 8px; font-size: 0.82rem; }
+        /* Attachments box — bordered container around deliverables
+           (akleg link + blue sheets + legal analyses). Visually
+           separated from the card content above. */
+        .at-attach-box {
+            margin-top: 10px;
+            padding: 10px 14px;
+            background: #f7f9fb;
+            border: 1px solid #d6dbe1;
+            border-radius: 4px;
+        }
+        .at-attach { font-size: 0.82rem; }
         .at-attach-row {
-            margin-top: 4px;
+            margin-top: 6px;
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             gap: 5px;
         }
+        .at-attach-row:first-child { margin-top: 0; }
+        /* Fixed-width labels so chip-start columns align row-to-row. */
         .at-attach-lbl {
+            display: inline-block;
+            width: 90px;
             font-size: 0.72rem;
             color: #6e7681;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            margin-right: 6px;
             white-space: nowrap;
             font-weight: 600;
+            flex-shrink: 0;
         }
         .at-chip {
             display: inline-flex;
@@ -631,14 +633,19 @@
                 html += voteChip('Senate', b.senate_vote, b.senate_breakdown);
                 if (b.house_vote && b.senate_vote) {
                     var cls = b.veto_proof ? 'at-combined veto-proof' : 'at-combined';
-                    // Bare combined-yeas: ✓ when veto-proof, otherwise
-                    // a small "(N short)" hint. The override threshold
-                    // is in the section caption, not on every card.
+                    // AK has 40 House + 20 Senate = 60 total. Anything
+                    // above 60 is a rendering bug — clamp + warn so it
+                    // can't silently print nonsense.
+                    var combined = b.combined_yeas;
+                    if (combined > 60) {
+                        if (window.console) console.warn('combined_yeas > 60 for ' + b.billnumber + ': ' + combined);
+                        combined = 60;
+                    }
                     if (b.veto_proof) {
-                        html += '<span class="' + cls + '">Combined ' + b.combined_yeas + ' yeas</span>';
+                        html += '<span class="' + cls + '">Combined ' + combined + ' yeas</span>';
                     } else {
-                        var shortBy = (b.override_threshold || 0) - (b.combined_yeas || 0);
-                        html += '<span class="' + cls + '">Combined ' + b.combined_yeas + ' yeas <span class="at-short">(' + shortBy + ' short)</span></span>';
+                        var shortBy = (b.override_threshold || 0) - combined;
+                        html += '<span class="' + cls + '">Combined ' + combined + ' yeas <span class="at-short">(' + shortBy + ' short)</span></span>';
                     }
                 }
                 html += '</div>';
@@ -664,12 +671,7 @@
                 html += '<div class="at-detail-row">' + detailParts.join('') + '</div>';
             }
 
-            // Subjects
-            if (b.subjects && b.subjects.length) {
-                html += '<div class="at-tags">';
-                b.subjects.forEach(function(sj) { html += '<span class="tag">' + esc(sj) + '</span>'; });
-                html += '</div>';
-            }
+            // Subject tags removed per user — short title is descriptive.
 
             // Attachments block: akleg link, then labeled rows for
             // blue sheets and legal analyses. Each chip is a pill
@@ -678,12 +680,14 @@
             var sheets = b.blue_sheets || [];
             var legals = b.legal_analyses || [];
 
-            var attach = '<div class="at-attach">';
+            var attach = '<div class="at-attach-box">';
             if (b.akleg_url) {
+                attach += '<div class="at-attach-row">';
+                attach += '<span class="at-attach-lbl">Source</span>';
                 attach += '<a class="at-extlink" href="' + esc(b.akleg_url) +
                     '" target="_blank" rel="noopener">View on akleg.gov ↗</a>';
+                attach += '</div>';
             }
-            attach += '</div>';
 
             // Blue sheets: only render the row if HB/SB (resolutions
             // don't get them). Either show chips for files on disk,
@@ -715,6 +719,7 @@
             }
             attach += '</div>';
 
+            attach += '</div>';  // close at-attach-box
             html += attach;
 
             html += '</div>';
@@ -1052,8 +1057,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v16';
-    var DETAIL_KEY_PREFIX = 'at_detail_v20:';
+    var LIST_KEY = 'at_list_v17';
+    var DETAIL_KEY_PREFIX = 'at_detail_v21:';
 
     function lsGet(key) {
         try {

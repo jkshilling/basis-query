@@ -67,6 +67,65 @@ def _extract_source(filename):
     return ""
 
 
+_content_source_cache = {}
+
+
+def _extract_source_from_content(filename):
+    """Open the file and look for LLS / DOL / AG markers in first
+    page text. Falls back gracefully on failure."""
+    import os as _os
+    path = _os.path.join(_DIR, filename)
+    if not _os.path.isfile(path):
+        return ""
+    try:
+        mtime = _os.path.getmtime(path)
+    except OSError:
+        return ""
+    key = (filename, mtime)
+    if key in _content_source_cache:
+        return _content_source_cache[key]
+
+    text = ""
+    try:
+        if filename.lower().endswith(".pdf"):
+            import pypdf
+            reader = pypdf.PdfReader(path)
+            if reader.pages:
+                text = reader.pages[0].extract_text() or ""
+        elif filename.lower().endswith((".docx", ".doc")):
+            import zipfile
+            try:
+                with zipfile.ZipFile(path) as zf:
+                    with zf.open("word/document.xml") as f:
+                        raw = f.read().decode("utf-8", errors="replace")
+                text = re.sub(r"<[^>]+>", " ", raw)
+            except (KeyError, zipfile.BadZipFile):
+                pass
+    except Exception:
+        pass
+
+    found = ""
+    if text:
+        upper = text.upper()
+        for label, _ in _SOURCE_PATTERNS:
+            if re.search(rf"\b{label}\b", upper):
+                found = label
+                break
+        if not found:
+            long_names = (
+                ("LLS", r"LEGISLATIVE\s+LEGAL\s+SERVICES"),
+                ("DOL", r"DEPARTMENT\s+OF\s+LAW"),
+                ("AG",  r"ATTORNEY\s+GENERAL"),
+            )
+            for label, pat in long_names:
+                if re.search(pat, upper):
+                    found = label
+                    break
+
+    _content_source_cache[key] = found
+    return found
+
+
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -125,7 +184,7 @@ def _scan():
         bn = _extract_billnumber(fn)
         if not bn:
             continue
-        source = _extract_source(fn)
+        source = _extract_source(fn) or _extract_source_from_content(fn)
         date = _extract_date(fn)
         label_parts = [p for p in (source, date) if p]
         label = " · ".join(label_parts)
