@@ -726,11 +726,11 @@
                     var lbl = count + ' ' + word;
                     fnHtml += '<span class="at-fn-pill ' + cat + '">' + lbl + '</span>';
                 };
-                addPill('zero', fs.zero, fs.zero === 1 ? 'zero' : 'zero');
-                addPill('indeterminate', fs.indeterminate,
-                    fs.indeterminate === 1 ? 'indeterminate' : 'indeterminate');
-                addPill('amount', fs.amount,
-                    fs.amount === 1 ? 'has amount' : 'have amounts');
+                // Parallel structure: noun / noun / noun.
+                // 'zero' (no cost), 'indeterminate' (unknown), 'nonzero' (has cost).
+                addPill('zero', fs.zero, 'zero');
+                addPill('indeterminate', fs.indeterminate, 'indeterminate');
+                addPill('amount', fs.amount, 'nonzero');
                 fnHtml += '</div>';
                 html += '<div class="at-detail-row">' + fnHtml + '</div>';
             }
@@ -1169,8 +1169,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v21';
-    var DETAIL_KEY_PREFIX = 'at_detail_v25:';
+    var LIST_KEY = 'at_list_v22';
+    var DETAIL_KEY_PREFIX = 'at_detail_v26:';
 
     function lsGet(key) {
         try {
