@@ -37,6 +37,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -176,18 +177,25 @@ def _load_cache() -> dict:
             if not (isinstance(s, str) and s.lstrip().startswith("{")
                     and '"executive_summary"' in s):
                 continue
+            exec_s = ""
+            full_s = ""
             try:
                 p = json.loads(s, strict=False)
                 exec_s = str(p.get("executive_summary", "")).strip()
                 full_s = str(p.get("summary", "")).strip()
-                if exec_s and full_s:
-                    entry["executive_summary"] = exec_s
-                    entry["summary"] = full_s
-                    dirty = True
-                    log.info("summarizer.cache_self_healed bn=%s",
-                             entry.get("billnumber", "?"))
             except json.JSONDecodeError:
-                pass
+                # Fallback to the regex extractor for unescaped-inner-quote
+                # responses that strict=False still can't parse.
+                heur = _heuristic_extract_two_fields(s)
+                if heur:
+                    exec_s = heur.get("executive_summary", "")
+                    full_s = heur.get("summary", "")
+            if exec_s and full_s:
+                entry["executive_summary"] = exec_s
+                entry["summary"] = full_s
+                dirty = True
+                log.info("summarizer.cache_self_healed bn=%s",
+                         entry.get("billnumber", "?"))
         if dirty:
             # Persist the repair so the next process boot doesn't redo it.
             tmp = _CACHE_PATH + ".tmp"
@@ -230,6 +238,46 @@ def _forgiving_json_loads(text: str):
         # inside the "summary" value as literal newlines instead of
         # the JSON-required \n escape.
         return json.loads(text, strict=False)
+
+
+# Regex pattern that extracts {"executive_summary": "...", "summary": "..."}
+# from a response even when there are unescaped double quotes inside the
+# string values. The LLM emits this exact two-field shape per our prompt,
+# so we can lean on its structure rather than fighting raw JSON. Used as a
+# last-resort recovery when both strict and strict=False parses fail.
+#
+# Strategy: lock onto the structural delimiters that are stable (the field
+# names and the closing brace), then everything between is the value
+# even if it contains stray ".
+_TWO_FIELD_RE = re.compile(
+    r'^\s*\{\s*'
+    r'"executive_summary"\s*:\s*"(?P<exec>.*?)"\s*,\s*'
+    r'"summary"\s*:\s*"(?P<summary>.*)"\s*'
+    r'\}\s*$',
+    re.DOTALL,
+)
+
+
+def _heuristic_extract_two_fields(text: str) -> dict | None:
+    """Last-resort recovery when JSON parsing fails on either strict or
+    strict=False. Targets the specific output shape our summarizer prompt
+    requests: a top-level object with exactly two string fields
+    ('executive_summary' and 'summary'). When the LLM emits unescaped
+    inner quotes ('The bill defines "specie" narrowly...'), strict JSON
+    parsing fails on the second quote — but structurally we can still
+    recover both values by anchoring on the field names + outer braces.
+
+    Returns the dict, or None if even the structural shape doesn't match.
+    """
+    m = _TWO_FIELD_RE.match(text.strip())
+    if not m:
+        return None
+    return {
+        "executive_summary": m.group("exec").strip(),
+        # Inner quotes survive verbatim — they're presentational, not JSON
+        # delimiters. The downstream renderer escapes them for HTML.
+        "summary": m.group("summary").strip(),
+    }
 
 
 def _read_api_key() -> str:
@@ -419,11 +467,25 @@ def summarize_bill(billnumber: str, blue_sheets: list,
         exec_summary = str(parsed.get("executive_summary", "")).strip()
         full_summary = str(parsed.get("summary", "")).strip()
     except json.JSONDecodeError:
-        # Fallback: treat the whole response as the summary, leave exec
-        # summary empty so the template extracts from the first sentence.
-        log.warning("summarizer.json_parse_failed bn=%s raw=%r", bn, raw_text[:300])
-        exec_summary = ""
-        full_summary = raw_text
+        # Last-resort regex recovery before bailing. The LLM occasionally
+        # emits unescaped double quotes inside string values
+        # ('The bill defines "specie" narrowly...'); strict=False
+        # doesn't help, but the two-field structure is still recoverable
+        # by anchoring on the field names + braces.
+        heur = _heuristic_extract_two_fields(raw_text)
+        if heur and heur.get("summary"):
+            log.warning("summarizer.json_parse_recovered bn=%s "
+                        "(used regex extractor)", bn)
+            exec_summary = heur.get("executive_summary", "")
+            full_summary = heur.get("summary", "")
+        else:
+            # True fallback: treat the whole response as the summary,
+            # leave exec summary empty so the template extracts from
+            # the first sentence.
+            log.warning("summarizer.json_parse_failed bn=%s raw=%r",
+                        bn, raw_text[:300])
+            exec_summary = ""
+            full_summary = raw_text
 
     if not full_summary:
         log.warning("summarizer.empty_summary bn=%s", bn)
