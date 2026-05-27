@@ -1717,9 +1717,10 @@
                 } else if (glo.source === 'veto-proof') {
                     h += '<span class="at-rat-src">Veto-proof passage</span>';
                 }
-                if (glo.overridden) {
-                    h += '<span class="at-rat-src at-rat-override">manually overridden</span>';
-                }
+                // No 'manually overridden' label — the '*' suffix on
+                // the GLO chip (CSS '.overridden::after') already
+                // marks it, and the rationale text below speaks for
+                // itself.
                 h += '</div>';
                 // Precedence:
                 //   1. Manual override note ALWAYS wins. The user
@@ -2141,8 +2142,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v50';
-    var DETAIL_KEY_PREFIX = 'at_detail_v49:';
+    var LIST_KEY = 'at_list_v51';
+    var DETAIL_KEY_PREFIX = 'at_detail_v50:';
 
     function lsGet(key) {
         try {
