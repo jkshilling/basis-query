@@ -1409,7 +1409,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v40", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v41", max_age=300)
     if cached is not None:
         return cached
 
@@ -1982,10 +1982,14 @@ def awaiting_transmittal(session="34"):
             # SIGN/VETO/LWOS checkboxes from the blue-sheet PDFs,
             # without GLO's political-signal overlay.
             "dept_recommendation": dept_rec,
-            # User-set workflow flag, persisted server-side. Cycles
-            # through ""/needs-research/reviewed/decided via the
-            # POST /api/bill/<bn>/flag endpoint.
-            "flag_state": (_flag_map.get(compact_billnumber(bn)) or {}).get("state", ""),
+            # User-set flags, persisted server-side. Three independent
+            # dimensions per bill (workflow / gov_pref / followup).
+            # Each cycles through its own states via the
+            # POST /api/bill/<bn>/flag endpoint with a 'dimension' body.
+            "flag_state":   (_flag_map.get(compact_billnumber(bn)) or {}).get("workflow", ""),
+            "flag_workflow":(_flag_map.get(compact_billnumber(bn)) or {}).get("workflow", ""),
+            "flag_gov_pref":(_flag_map.get(compact_billnumber(bn)) or {}).get("gov_pref", ""),
+            "flag_followup":(_flag_map.get(compact_billnumber(bn)) or {}).get("followup", ""),
             # LLM-synthesized neutral summary across all blue sheets.
             # None until the background prefetch generates one;
             # template falls back to the static hand-authored dict.
@@ -2047,7 +2051,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v40", result)
+    _cache.put("awaiting_transmittal_v41", result)
     return result
 
 

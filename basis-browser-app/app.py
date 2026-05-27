@@ -180,7 +180,7 @@ def _refresh_all():
         # NEXT page render picks up the new llm_summary fields.
         try:
             from cache import _cache as _c
-            _c.pop("awaiting_transmittal_v40", None)
+            _c.pop("awaiting_transmittal_v41", None)
             awaiting_transmittal()
         except Exception:
             pass
@@ -344,7 +344,7 @@ def _invalidate_top_level_caches():
     keys_to_clear = [
         "hb_in_senate", "sb_in_house", "dashboard_stats", "action_code_counts",
         "bill_progress", "all_actions", "all_actions_v5", "governor_bills",
-        "awaiting_transmittal_v40", "pipeline_v3_20",
+        "awaiting_transmittal_v41", "pipeline_v3_20",
     ]
     # Also clear any activity_feed_X entries and today's floor calendar
     # (so refreshes pick up newly-calendared bills).
@@ -546,24 +546,29 @@ def api_bill_decision_detail(billnumber):
 
 @app.route("/api/bill/<path:billnumber>/flag", methods=["POST"])
 def api_bill_flag(billnumber):
-    """Set or cycle a bill's workflow flag.
+    """Set or cycle a bill's workflow flag (multi-dimensional).
 
-    Body (optional): {"state": "<state>"} — set explicit state.
-                      Pass empty string to clear.
-    No body: cycle to next state in the rotation
-             ("" → needs-research → reviewed → decided → "").
+    Body: {"dimension": "<workflow|gov_pref|followup>",
+           "state":     "<explicit state>"  (optional — omit to cycle)}
 
-    Returns: {"state": <new_state>, "billnumber": <bn>, "error": null}
+    Defaults dimension to 'workflow' for backward compatibility with
+    older clients.
+
+    Returns: {dimension, state, billnumber, error}
     """
     import bill_flags
     try:
         payload = request.get_json(silent=True) or {}
+        dimension = payload.get("dimension", "workflow")
         if "state" in payload:
-            new = bill_flags.set_flag(billnumber, payload["state"])
+            new = bill_flags.set_flag(billnumber, dimension, payload["state"])
         else:
-            new = bill_flags.cycle_flag(billnumber)
+            new = bill_flags.cycle_flag(billnumber, dimension)
         return jsonify({
-            "billnumber": billnumber, "state": new, "error": None,
+            "billnumber": billnumber,
+            "dimension":  dimension,
+            "state":      new,
+            "error":      None,
         })
     except ValueError as exc:
         return jsonify({
