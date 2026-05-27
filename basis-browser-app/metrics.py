@@ -1386,7 +1386,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v18", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v19", max_age=300)
     if cached is not None:
         return cached
 
@@ -1630,6 +1630,26 @@ def awaiting_transmittal(session="34"):
                     gov_days_left = gov_deadline - days_at_governor
                 except ValueError:
                     pass
+        # Stale at-gov filter: if the gubernatorial deadline lapsed
+        # more than a week ago, the bill has almost certainly been
+        # disposed (signed, became-law-without-signature, or vetoed)
+        # but akleg's status field hasn't been updated. Don't show
+        # these — they're noise, not active decisions. Example: SR 4
+        # transmitted Feb 13 2026, 87 days past deadline, status
+        # still 'TRANSM TO GOVERNOR'.
+        if (is_at_gov and gov_days_left is not None
+                and gov_days_left < -7):
+            continue
+        # Stale awaiting filter: anything in the awaiting bucket whose
+        # most recent meaningful action is more than 60 days old is
+        # almost certainly stuck or the legislature is dead. Drop.
+        if is_awaiting and last_date:
+            try:
+                last_d = datetime.strptime(last_date, "%Y-%m-%d").date()
+                if (today - last_d).days > 60:
+                    continue
+            except ValueError:
+                pass
 
         entry = {
             "billnumber": compact_billnumber(bn),
@@ -1714,7 +1734,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v18", result)
+    _cache.put("awaiting_transmittal_v19", result)
     return result
 
 
