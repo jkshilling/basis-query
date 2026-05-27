@@ -1667,6 +1667,26 @@ def awaiting_transmittal(session="34"):
         except Exception:
             pass
 
+        # Compute veto_proof inline FIRST so glo_recs.guess() below
+        # has the correct value for THIS bill. The full veto-override
+        # math block lives further down (kept there because it ALSO
+        # gets recomputed from authoritative roll-call data when the
+        # votes index is warm), but we need the action-text-derived
+        # answer NOW for GLO routing. Previously glo_recs.guess() was
+        # called with `veto_proof` referencing the *prior* iteration's
+        # value (or NameError on the first iteration), which produced
+        # empty GLO recs for bills like HB 50, HB 14, SB 252 whose
+        # veto-proof status would otherwise have triggered the
+        # "veto-proof → SIGN" heuristic branch.
+        _h_y_pre = (house_vote or {}).get("yeas", 0)
+        _s_y_pre = (senate_vote or {}).get("yeas", 0)
+        _is_approps_pre = (title or "").upper().startswith("APPROP:")
+        _thr_pre = (AK_OVERRIDE_THRESHOLD_APPROPS if _is_approps_pre
+                    else AK_OVERRIDE_THRESHOLD_STANDARD)
+        veto_proof = (house_vote is not None
+                      and senate_vote is not None
+                      and (_h_y_pre + _s_y_pre) >= _thr_pre)
+
         # GLO (Governor's Legislative Office) recommendation. Computed
         # from departmental blue-sheet recommendations + a few political
         # signals (Governor's own bill, veto-proof passage). Manual
