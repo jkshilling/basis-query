@@ -118,6 +118,7 @@ def _refresh_all():
     try:
         import bill_summarizer as _summ
         import blue_sheets as _bs
+        import briefing_packets as _bp_stage4
         from fetch import fetch_all_bills
         # Index meta dicts by billnumber for fast lookup.
         meta_by_bn = {}
@@ -131,18 +132,23 @@ def _refresh_all():
             if not bn:
                 continue
             sheets = _bs.sheets_for(bn)
-            # Skip bills with no blue-sheet content (LLM has nothing
-            # substantive to synthesize). The hand-authored fallback
-            # dict in bill_summaries.py covers these when needed.
-            if not any(s.get("description") for s in sheets):
+            packets = _bp_stage4.packets_for(bn)
+            # Skip when neither blue sheets NOR briefing packets carry
+            # substantive text. Previously we required a blue-sheet
+            # description, which dropped bills like HB 176 whose blue
+            # sheet is image-only (UA) but whose briefing packet has
+            # 6KB of content.
+            has_sheet_text   = any(s.get("description") for s in sheets)
+            has_packet_text  = any(p.get("body_text") for p in packets)
+            if not (has_sheet_text or has_packet_text):
                 continue
             meta = meta_by_bn.get(bn)
             # Was it already cached?
-            if _summ.get_cached(bn, sheets, meta):
+            if _summ.get_cached(bn, sheets, meta, packets):
                 summ_cached += 1
                 continue
             try:
-                if _summ.summarize_bill(bn, sheets, meta):
+                if _summ.summarize_bill(bn, sheets, meta, packets):
                     summ_made += 1
             except Exception as exc:
                 log.warning("refresh.summary name=%s err=%r", bn, exc)

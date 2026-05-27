@@ -1024,13 +1024,14 @@
                         chamberWord + ' ' + esc(cmteName) + ' Committee';
                     var chairList = b.committee_chairs || [];
                     if (chairList.length) {
-                        // "chair Stutes (R-5)" or "co-chairs Foster (D-39),
-                        // Josephson (D-15)" if >1.
+                        // "chair Stutes (R)" or "co-chairs Foster (D),
+                        // Josephson (D)" if >1. District number/letter
+                        // dropped per user direction — party alone
+                        // carries the relevant political signal.
                         var noun = chairList.length === 1 ? 'chair' : 'co-chairs';
                         var nameStrs = chairList.map(function(c) {
                             var last = c.name.split(' ').slice(-1)[0];
-                            var meta = c.party ? c.party + (c.district ? '-' + c.district : '') : '';
-                            return esc(last) + (meta ? ' (' + meta + ')' : '');
+                            return esc(last) + (c.party ? ' (' + esc(c.party) + ')' : '');
                         });
                         html += ' <span class="at-sub-meta">(' + noun + ' ' +
                             nameStrs.join(', ') + ')</span>';
@@ -1902,8 +1903,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v41';
-    var DETAIL_KEY_PREFIX = 'at_detail_v42:';
+    var LIST_KEY = 'at_list_v42';
+    var DETAIL_KEY_PREFIX = 'at_detail_v43:';
 
     function lsGet(key) {
         try {

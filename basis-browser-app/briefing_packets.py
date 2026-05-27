@@ -234,12 +234,21 @@ def _scan():
         # Department of Law bill-review text (every packet we've seen
         # contains one). Cached per file.
         dol_text = _extract_dol_review(fn)
+        # Full normalized body — fed to the LLM summarizer as
+        # supplementary context when blue sheets are sparse or
+        # image-only. Truncated to keep token cost predictable.
+        full_text = ""
+        if fn.lower().endswith(".docx"):
+            full_text = _normalize_ws(_read_docx_text(fn) or "")
+            if len(full_text) > 6000:
+                full_text = full_text[:5980].rsplit(" ", 1)[0] + "…"
         for bn in bns:
             out.setdefault(bn, []).append({
                 "filename":   fn,
                 "date":       date,
                 "label":      label,
                 "dol_review": dol_text,
+                "body_text":  full_text,
             })
     # Dedupe within each bill by date (rare — typically one packet per bill).
     for bn, lst in out.items():

@@ -1655,6 +1655,7 @@ def awaiting_transmittal(session="34"):
                 compact_billnumber(bn),
                 _bluesheet_index.get(compact_billnumber(bn), []),
                 m_meta,
+                _briefing_index.get(compact_billnumber(bn), []),
             )
             if cached_summ:
                 llm_summary = {

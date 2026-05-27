@@ -66,7 +66,7 @@ _CACHE: dict | None = None
 
 # Bump this when you change the prompt below — it gets folded into
 # the cache key so every cached summary regenerates automatically.
-_SYSTEM_PROMPT_VERSION = "v5-subject-bodies"
+_SYSTEM_PROMPT_VERSION = "v6-incl-briefings"
 
 _SYSTEM_PROMPT = """You are writing a neutral, factual summary of what an Alaska bill \
 DOES. The summary appears on a veto-decision-support dashboard alongside other UI \
@@ -177,7 +177,8 @@ def _read_api_key() -> str:
 # Input hashing and prompt assembly
 # --------------------------------------------------------------------------
 
-def _input_hash(billnumber: str, blue_sheets: list, bill_meta: dict | None) -> str:
+def _input_hash(billnumber: str, blue_sheets: list, bill_meta: dict | None,
+                briefing_packets: list = None) -> str:
     # Include the system-prompt version so editing the prompt
     # transparently invalidates every cached summary (no manual
     # cache-clear needed).
@@ -189,6 +190,11 @@ def _input_hash(billnumber: str, blue_sheets: list, bill_meta: dict | None) -> s
             s.get("recommendation", ""),
             s.get("description", ""),
         ]))
+    # Briefing-packet body text gets folded into the input hash too,
+    # so edits to the briefing-packet content invalidate the cached
+    # summary even when blue sheets are unchanged.
+    for p in sorted(briefing_packets or [], key=lambda x: x.get("filename", "")):
+        parts.append("BP|" + (p.get("body_text") or ""))
     if bill_meta:
         parts.append(bill_meta.get("latest_version_title") or "")
         parts.append(bill_meta.get("short_title") or "")
@@ -197,7 +203,8 @@ def _input_hash(billnumber: str, blue_sheets: list, bill_meta: dict | None) -> s
 
 
 def _build_user_message(billnumber: str, blue_sheets: list,
-                        bill_meta: dict | None) -> str:
+                        bill_meta: dict | None,
+                        briefing_packets: list = None) -> str:
     lines = []
     lines.append(f"Bill: {billnumber}")
     if bill_meta:
@@ -206,15 +213,27 @@ def _build_user_message(billnumber: str, blue_sheets: list,
         if bill_meta.get("short_title"):
             lines.append(f"Short title: {bill_meta['short_title']}")
     lines.append("")
-    if not blue_sheets:
-        lines.append("(No departmental blue sheets on file yet.)")
-    else:
+    if blue_sheets:
         for s in blue_sheets:
             agency = s.get("agency") or "(unknown department)"
             rec = s.get("recommendation") or "no recommendation"
             desc = s.get("description") or "(no analytical text extracted from this sheet)"
             lines.append(f"=== {agency} blue sheet — recommends: {rec} ===")
             lines.append(desc.strip())
+            lines.append("")
+    else:
+        lines.append("(No departmental blue sheets on file yet.)")
+        lines.append("")
+    # Briefing packets — supplementary substantive content. For bills
+    # whose blue sheet is image-only or sparse (UA, JLB, etc.), this
+    # may be the only text the LLM has to work with.
+    if briefing_packets:
+        for p in briefing_packets:
+            body = (p.get("body_text") or "").strip()
+            if not body:
+                continue
+            lines.append(f"=== Briefing packet ({p.get('filename','')}) ===")
+            lines.append(body)
             lines.append("")
     return "\n".join(lines).strip()
 
@@ -225,22 +244,26 @@ def _build_user_message(billnumber: str, blue_sheets: list,
 
 def summarize_bill(billnumber: str, blue_sheets: list,
                    bill_meta: dict | None = None,
+                   briefing_packets: list | None = None,
                    *, force: bool = False, timeout: float = 60.0) -> dict | None:
     """Return a neutral synthesized summary for one bill. None on
     failure (API down, key missing, etc.).
 
     Args:
-        billnumber:   e.g. "HB 110"
-        blue_sheets:  list from blue_sheets.sheets_for(bn)
-        bill_meta:    optional dict from fetch_all_bills (latest_version_title etc.)
-        force:        bypass the disk cache; re-summarize even if hash matches
-        timeout:      socket timeout for the API call
+        billnumber:        e.g. "HB 110"
+        blue_sheets:       list from blue_sheets.sheets_for(bn)
+        bill_meta:         optional dict from fetch_all_bills
+        briefing_packets:  list from briefing_packets.packets_for(bn)
+                           — supplies substantive context when blue
+                           sheets are sparse or image-only
+        force:             bypass disk cache; re-summarize even if hash matches
+        timeout:           socket timeout for the API call
     """
     bn = (billnumber or "").strip()
     if not bn:
         return None
 
-    h = _input_hash(bn, blue_sheets, bill_meta)
+    h = _input_hash(bn, blue_sheets, bill_meta, briefing_packets)
     cache = _load_cache()
     if not force and h in cache:
         return cache[h]
@@ -250,7 +273,7 @@ def summarize_bill(billnumber: str, blue_sheets: list,
         log.warning("summarizer.no_api_key paths=%s", _KEY_PATHS)
         return None
 
-    user_msg = _build_user_message(bn, blue_sheets, bill_meta)
+    user_msg = _build_user_message(bn, blue_sheets, bill_meta, briefing_packets)
     body = {
         "model": _MODEL,
         "max_tokens": 600,  # ~250 words target + buffer
@@ -314,7 +337,8 @@ def summarize_bill(billnumber: str, blue_sheets: list,
 
 
 def get_cached(billnumber: str, blue_sheets: list,
-               bill_meta: dict | None = None) -> dict | None:
+               bill_meta: dict | None = None,
+               briefing_packets: list | None = None) -> dict | None:
     """Return the cached summary without ever contacting the API.
     Used by hot paths (per-request handlers) that should never block
     on network. Returns None if no summary is cached for this exact
@@ -322,7 +346,7 @@ def get_cached(billnumber: str, blue_sheets: list,
     bn = (billnumber or "").strip()
     if not bn:
         return None
-    h = _input_hash(bn, blue_sheets, bill_meta)
+    h = _input_hash(bn, blue_sheets, bill_meta, briefing_packets)
     return _load_cache().get(h)
 
 
