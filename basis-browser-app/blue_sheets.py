@@ -43,8 +43,11 @@ _EXT_RE = re.compile(r"\.(pdf|docx?)$", re.IGNORECASE)
 # are simply not labeled.
 _AGENCY_PATTERNS = (
     ("DCCED", r"\bDCCED\b"),
-    ("DFCS",  r"\bDFCS\b"),
+    ("DOLWD", r"\bDOLWD\b"),
     ("AIDEA", r"\bAIDEA\b"),
+    ("DMVA",  r"\bDMVA\b"),
+    ("DFCS",  r"\bDFCS\b"),
+    ("DEED",  r"\bDEED\b"),
     ("AMCO",  r"\bAMCO\b"),
     ("ARRC",  r"\bARRC\b"),
     ("DOH",   r"\bDOH\b"),
@@ -56,7 +59,8 @@ _AGENCY_PATTERNS = (
     ("DEC",   r"\bDEC\b"),
     ("DNR",   r"\bDNR\b"),
     ("DOL",   r"\bDOL\b"),
-    ("DOLWD", r"\bDOLWD\b"),
+    ("DFG",   r"\bDFG\b"),
+    ("UA",    r"\bUA\b"),
 )
 
 # Date patterns. Two forms:
@@ -72,6 +76,8 @@ _CACHE_TTL = 60.0
 
 
 def _extract_billnumber(filename):
+    """Single-bill extractor — used for the simple case where a file
+    relates to exactly one bill. Returns the first match or None."""
     if not _EXT_RE.search(filename):
         return None
     m = _BILL_RE.search(filename)
@@ -80,6 +86,23 @@ def _extract_billnumber(filename):
     prefix = m.group(1).upper()
     number = str(int(m.group(2)))
     return f"{prefix} {number}"
+
+
+def _extract_billnumbers(filename):
+    """Multi-bill extractor — finds every bill reference in a single
+    filename and de-dupes. Used so that a sheet titled e.g.
+    'UA Blue Sheet HB 10 and HB 176.pdf' indexes under BOTH HB 10
+    and HB 176."""
+    if not _EXT_RE.search(filename):
+        return []
+    seen = []
+    for m in _BILL_RE.finditer(filename):
+        prefix = m.group(1).upper()
+        number = str(int(m.group(2)))
+        bn = f"{prefix} {number}"
+        if bn not in seen:
+            seen.append(bn)
+    return seen
 
 
 def _extract_agency(filename):
@@ -154,6 +177,7 @@ def _extract_agency_from_content(filename):
                 ("DOC",   r"DEPARTMENT\s+OF\s+CORRECTIONS"),
                 ("DEC",   r"DEPARTMENT\s+OF\s+ENVIRONMENTAL\s+CONSERVATION"),
                 ("DCCED", r"DEPARTMENT\s+OF\s+COMMERCE"),
+                ("DEED",  r"DEPARTMENT\s+OF\s+EDUCATION"),
                 ("DOH",   r"DEPARTMENT\s+OF\s+HEALTH"),
                 ("DFCS",  r"DIVISION\s+OF\s+FAMILY\s+AND\s+COMMUNITY\s+SERVICES"),
                 ("DPS",   r"DEPARTMENT\s+OF\s+PUBLIC\s+SAFETY"),
@@ -162,6 +186,9 @@ def _extract_agency_from_content(filename):
                 ("DNR",   r"DEPARTMENT\s+OF\s+NATURAL\s+RESOURCES"),
                 ("DOL",   r"DEPARTMENT\s+OF\s+LABOR"),
                 ("DOLWD", r"DEPARTMENT\s+OF\s+LABOR\s+AND\s+WORKFORCE"),
+                ("DFG",   r"DEPARTMENT\s+OF\s+FISH\s+AND\s+GAME"),
+                ("DMVA",  r"DEPARTMENT\s+OF\s+MILITARY"),
+                ("UA",    r"UNIVERSITY\s+OF\s+ALASKA"),
             )
             for label, pat in long_names:
                 if re.search(pat, upper):
@@ -250,22 +277,25 @@ def _scan():
     if not os.path.isdir(_DIR):
         return out
     for fn in sorted(os.listdir(_DIR)):
-        bn = _extract_billnumber(fn)
-        if not bn:
+        bns = _extract_billnumbers(fn)
+        if not bns:
             continue
         agency = _extract_agency(fn) or _extract_agency_from_content(fn)
         date = _extract_date(fn)
-        label_parts = [p for p in (agency, date) if p]
-        label = " · ".join(label_parts)
-        # If no structured fields extracted, synthesize from filename.
-        if not label:
-            label = _fallback_label(fn, bn) or "Blue sheet"
-        out.setdefault(bn, []).append({
-            "filename": fn,
-            "agency": agency,
-            "date": date,
-            "label": label,
-        })
+        # Index the same file under EVERY bill it references. Agency
+        # blue sheets sometimes cover multiple bills (e.g.
+        # "UA Blue Sheet HB 10 and HB 176.pdf" → both HB 10 and HB 176).
+        for bn in bns:
+            label_parts = [p for p in (agency, date) if p]
+            label = " · ".join(label_parts)
+            if not label:
+                label = _fallback_label(fn, bn) or "Blue sheet"
+            out.setdefault(bn, []).append({
+                "filename": fn,
+                "agency": agency,
+                "date": date,
+                "label": label,
+            })
     # De-dup within each bill: if two entries have identical (agency,
     # date) keep only the first by sorted filename. Catches the
     # "HB23 (1).docx" downloaded-twice case.
