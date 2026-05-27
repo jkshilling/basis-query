@@ -1409,7 +1409,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v41", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v42", max_age=300)
     if cached is not None:
         return cached
 
@@ -2051,7 +2051,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v41", result)
+    _cache.put("awaiting_transmittal_v42", result)
     return result
 
 

@@ -21,9 +21,148 @@ from __future__ import annotations
 
 # {billnumber: "SIGN" | "VETO" | "LWOS"}  or
 # {billnumber: {"rec": "SIGN", "note": "Why I disagreed with the guess"}}
+#
+# The following overrides reflect a political audit through the lens
+# of a frustrated GLO Director under a Republican governor whose own
+# priorities (besides appropriations) were largely sidelined by a
+# Dem-led bipartisan coalition. The strategy distinguishes two
+# levers the Governor actually has:
+#
+#   VETO  — only reserved for bills that are NOT veto-proof, where
+#           the Governor can actually kill the bill. Used here for
+#           new taxes and anti-business restrictions that aren't
+#           veto-proof.
+#
+#   LWOS  — for veto-proof Dem-priority bills the Governor disagrees
+#           with but where an override is automatic. LWOS lets the
+#           bill become law without his signature, signaling
+#           disagreement without forcing the override-vote theater.
+#
 GLO_OVERRIDES: dict[str, str | dict] = {
-    # Example:
-    # "HB 110": {"rec": "SIGN", "note": "Federal funding tied to passage"},
+
+    # ── SIGN → VETO (non-veto-proof, real veto opportunity) ───────
+    "SB 24": {
+        "rec": "VETO",
+        "note": ("New e-cigarette tax; not veto-proof (39 combined yeas). "
+                 "Vetoing aligns with no-new-taxes orthodoxy and signals "
+                 "consistent fiscal-conservative posture."),
+    },
+    "HB 280": {
+        "rec": "VETO",
+        "note": ("Tax-apportionment bill; not veto-proof (39 combined "
+                 "yeas). Real opportunity to kill a tax change the "
+                 "administration didn't request."),
+    },
+
+    # ── LWOS → VETO (genuine kill, not veto-proof) ────────────────
+    "HB 25": {
+        "rec": "VETO",
+        "note": ("Disposable food-service-ware restriction; not "
+                 "veto-proof (38 combined yeas). Anti-business "
+                 "restriction the administration can kill outright."),
+    },
+
+    # ── SIGN → LWOS (veto-proof Dem priorities the Gov doesn't own)
+    "HB 16": {
+        "rec": "LWOS",
+        "note": ("Dem-priority campaign-finance restriction. R "
+                 "governors rarely endorse new contribution limits; "
+                 "LWOS signals disagreement without forcing override "
+                 "theater."),
+    },
+    "HB 23": {
+        "rec": "LWOS",
+        "note": ("Restores a state Civil Rights Commission the "
+                 "administration previously declined to fund. LWOS "
+                 "distances the Governor from a Dem-priority "
+                 "infrastructure decision he didn't drive."),
+    },
+    "HB 110": {
+        "rec": "LWOS",
+        "note": ("Expands interstate licensure compacts and state "
+                 "social-work regulatory infrastructure. Bipartisan "
+                 "support but Dem-sponsored; LWOS signals caution on "
+                 "scope-of-government expansion."),
+    },
+    "HB 173": {
+        "rec": "LWOS",
+        "note": ("Interstate compacts for OT/PT/audiology + scope-of-"
+                 "practice changes. Adds regulatory infrastructure; "
+                 "LWOS expresses business-friendly skepticism."),
+    },
+    "HB 176": {
+        "rec": "LWOS",
+        "note": ("University of Alaska itself opposed this bill in "
+                 "its own internal briefing (Hutchison email). LWOS "
+                 "defers to UA's objection without provoking an "
+                 "override vote."),
+    },
+    "HB 195": {
+        "rec": "LWOS",
+        "note": ("Pharmacist scope-of-practice expansion; D-sponsored. "
+                 "LWOS expresses caution about expanding non-physician "
+                 "prescriptive authority."),
+    },
+    "HB 298": {
+        "rec": "LWOS",
+        "note": ("Legislators rewriting their own ethics-committee "
+                 "rules. Not the Governor's place to endorse a "
+                 "co-equal branch's internal procedural reform; LWOS."),
+    },
+    "HB 302": {
+        "rec": "LWOS",
+        "note": ("Expands unemployment-insurance benefits. R "
+                 "governors don't ordinarily expand UI; LWOS signals "
+                 "fiscal-conservative disagreement."),
+    },
+    "SB 21": {
+        "rec": "LWOS",
+        "note": ("Creates a new state-administered savings program "
+                 "and PFD investment account — government expansion "
+                 "the administration didn't request. LWOS signals "
+                 "small-government caution."),
+    },
+    "SB 41": {
+        "rec": "LWOS",
+        "note": ("New mental-health-education curriculum mandate on "
+                 "local school boards. R governors typically resist "
+                 "state curriculum mandates; LWOS signals "
+                 "local-control posture."),
+    },
+    "SB 79": {
+        "rec": "LWOS",
+        "note": ("New employer regulations on payroll-card practices "
+                 "(free withdrawals, FDIC insurance, fee bans). "
+                 "Labor regulation the administration didn't drive; "
+                 "LWOS signals business-friendly disagreement."),
+    },
+    "SB 167": {
+        "rec": "LWOS",
+        "note": ("Expands PFD eligibility for overturned-conviction "
+                 "claimants; Dem-priority. LWOS signals "
+                 "fiscal-conservative disagreement on PFD expansion."),
+    },
+    "SB 178": {
+        "rec": "LWOS",
+        "note": ("Expands Early Intervention Services entitlement "
+                 "(~$60M projected fiscal cost). LWOS signals "
+                 "fiscal-conservative caution on entitlement growth."),
+    },
+    "SB 272": {
+        "rec": "LWOS",
+        "note": ("New statewide health-information-exchange "
+                 "infrastructure. LWOS signals caution on building "
+                 "state-run health data systems."),
+    },
+
+    # ── LWOS → VETO (escalate from passive to active opposition) ──
+    "SB 143": {
+        "rec": "VETO",
+        "note": ("School-board terms / training / city-council reforms "
+                 "are local-governance intrusions. Veto signals "
+                 "commitment to local-control principles even though "
+                 "the bill is veto-proof."),
+    },
 }
 
 
