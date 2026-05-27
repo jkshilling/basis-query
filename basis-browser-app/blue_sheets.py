@@ -63,11 +63,18 @@ _AGENCY_PATTERNS = (
     ("UA",    r"\bUA\b"),
 )
 
-# Date patterns. Two forms:
-#   ISO:      YYYY-MM-DD   (e.g. 2026-05-14)
-#   American: M-D-YY[YY]   (e.g. 5.18.26, 05-18-26, 5/18/2026)
+# Date patterns. Three forms:
+#   ISO:        YYYY-MM-DD            (e.g. 2026-05-14)
+#   American:   M-D-YY[YY]            (e.g. 5.18.26, 05-18-26, 5/18/2026)
+#   Long month: DD MMM YY[YY]         (e.g. 08 MAY 26)
 _DATE_RE_ISO = re.compile(r"(\d{4})[./\-](\d{1,2})[./\-](\d{1,2})")
 _DATE_RE_AMR = re.compile(r"\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{2,4})\b")
+_DATE_RE_LONG = re.compile(
+    r"\b(\d{1,2})\s+"
+    r"(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s+"
+    r"(\d{2,4})\b",
+    re.IGNORECASE,
+)
 
 # In-memory cache
 _cache_value = None
@@ -112,17 +119,17 @@ def _extract_agency(filename):
     return ""
 
 
-# Cache extracted agency-from-content per-file to avoid re-cracking
-# PDFs on every page load. Keyed by (filename, mtime).
+# Cache extracted first-page text per-file. Both agency and date
+# extraction read the same first-page bytes — cache once, use twice.
+# Keyed by (filename, mtime) so a re-saved file invalidates.
+_content_text_cache = {}
 _content_agency_cache = {}
 
 
-def _extract_agency_from_content(filename):
-    """Open the file and look for an agency code in its first-page
-    text. Used when the filename doesn't reveal the department —
-    sheets usually show e.g. 'DEPARTMENT OF ADMINISTRATION (DOA)' in
-    the header. Falls back to '' on any failure (missing pypdf, OCR-
-    only PDF, weird DOCX, etc.)."""
+def _read_first_page_text(filename):
+    """Open a PDF/DOCX in blue_sheets/ and return its first-page text.
+    Empty string on any failure (missing pypdf, image-only PDF, weird
+    DOCX). Cached per (filename, mtime)."""
     path = os.path.join(_DIR, filename)
     if not os.path.isfile(path):
         return ""
@@ -131,35 +138,46 @@ def _extract_agency_from_content(filename):
     except OSError:
         return ""
     key = (filename, mtime)
-    if key in _content_agency_cache:
-        return _content_agency_cache[key]
+    if key in _content_text_cache:
+        return _content_text_cache[key]
 
     text = ""
     try:
         if filename.lower().endswith(".pdf"):
             import pypdf
             reader = pypdf.PdfReader(path)
-            # First page only — agency name lives in the header. PDF
-            # text extraction is the slowest part of this pipeline, so
-            # we want the minimum.
             if reader.pages:
                 text = reader.pages[0].extract_text() or ""
         elif filename.lower().endswith((".docx", ".doc")):
-            # DOCX is a zip with XML inside; extract /word/document.xml
-            # and pull text without a heavy dep.
-            import zipfile, re as _re
+            import zipfile
             try:
                 with zipfile.ZipFile(path) as zf:
                     with zf.open("word/document.xml") as f:
                         raw = f.read().decode("utf-8", errors="replace")
-                # Strip XML tags
-                text = _re.sub(r"<[^>]+>", " ", raw)
+                text = re.sub(r"<[^>]+>", " ", raw)
             except (KeyError, zipfile.BadZipFile):
                 pass
     except Exception:
-        # Don't let an unreadable file break the whole index.
         pass
 
+    _content_text_cache[key] = text
+    return text
+
+
+def _extract_agency_from_content(filename):
+    """Look for an agency code in the first-page text. Used when the
+    filename doesn't reveal the department — sheets typically show
+    'DEPARTMENT OF ADMINISTRATION (DOA)' in the header."""
+    path = os.path.join(_DIR, filename)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    key = (filename, mtime)
+    if key in _content_agency_cache:
+        return _content_agency_cache[key]
+
+    text = _read_first_page_text(filename)
     found = ""
     if text:
         # Match the same agency tokens, plus their long names where
@@ -201,14 +219,15 @@ def _extract_agency_from_content(filename):
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+_MONTH_LOOKUP = {m.upper(): i + 1 for i, m in enumerate(_MONTHS)}
 
 
-def _extract_date(filename):
-    """Return a human-readable date string (e.g. 'May 18') if the
-    filename contains a recognizable date pattern. Tries ISO first
-    (YYYY-MM-DD) then American (M-D-YY)."""
-    # ISO format
-    m = _DATE_RE_ISO.search(filename)
+def _extract_date_from_text(text):
+    """Try every date pattern (ISO, American, 'DD MMM YY') against the
+    given text and return 'Mon DD' on first hit, else ''."""
+    if not text:
+        return ""
+    m = _DATE_RE_ISO.search(text)
     if m:
         try:
             year, mm, dd = (int(x) for x in m.groups())
@@ -216,10 +235,7 @@ def _extract_date(filename):
                 return f"{_MONTHS[mm - 1]} {dd}"
         except (ValueError, IndexError):
             pass
-    # American format — but skip if the first group looks like a
-    # 4-digit year (would have matched ISO above; only get here if
-    # ISO failed for some reason).
-    m = _DATE_RE_AMR.search(filename)
+    m = _DATE_RE_AMR.search(text)
     if m:
         try:
             mm, dd, yy = (int(x) for x in m.groups())
@@ -227,52 +243,71 @@ def _extract_date(filename):
                 return f"{_MONTHS[mm - 1]} {dd}"
         except (ValueError, IndexError):
             pass
+    m = _DATE_RE_LONG.search(text)
+    if m:
+        try:
+            dd = int(m.group(1))
+            mm = _MONTH_LOOKUP.get(m.group(2).upper()[:3], 0)
+            if 1 <= mm <= 12 and 1 <= dd <= 31:
+                return f"{_MONTHS[mm - 1]} {dd}"
+        except (ValueError, IndexError):
+            pass
     return ""
 
 
-# Boilerplate words to strip when synthesizing a fallback label from
-# an unlabeled filename. Case-insensitive.
-_LABEL_NOISE_RE = re.compile(
-    r"\b(?:blue\s*sheet|BS|sheet|2025|2026|signed|revised|updated|"
-    r"docx|pdf)\b",
-    re.IGNORECASE,
-)
+def _extract_date(filename):
+    return _extract_date_from_text(filename)
 
 
-def _fallback_label(filename, billnumber):
-    """When agency + date extraction yields nothing, build a short
-    human-readable label from the filename. Strip the extension, the
-    bill-number reference, common boilerplate ('Blue Sheet', '2026',
-    'Revised'), and any extra punctuation. If nothing meaningful
-    remains, return ''."""
-    name = re.sub(r"\.(pdf|docx?)$", "", filename, flags=re.IGNORECASE)
-    # Strip the bill-number reference (with or without leading zeros).
-    bn_prefix, bn_num = billnumber.split()
-    name = re.sub(
-        rf"(?:CS|HCS|SCS)?{bn_prefix}\s*0*{bn_num}\b",
-        "",
-        name,
-        flags=re.IGNORECASE,
-    )
-    # Strip boilerplate words.
-    name = _LABEL_NOISE_RE.sub("", name)
-    # Collapse separators and trim.
-    name = re.sub(r"[-_().]+", " ", name)
-    name = re.sub(r"\s+", " ", name).strip(" -_")
-    # Discard residues that are too short or pure punctuation/digits
-    # (e.g. "for", "1", "-") — they're noise, not information.
-    if len(name) < 4 or name.isdigit():
+# Cache extracted date-from-content per-file. The PDF content cache
+# already costs nothing because content extraction for agency reads
+# the same first-page text — we just stash both results.
+_content_date_cache = {}
+
+
+def _extract_date_from_content(filename):
+    """Look for a date pattern in the PDF/DOCX first-page text. Many
+    blue sheets have a 'Date: 5/12/26' or '5/12/2026' line near the
+    top even when the filename omits it."""
+    path = os.path.join(_DIR, filename)
+    if not os.path.isfile(path):
         return ""
-    # Truncate long synthesized labels.
-    if len(name) > 28:
-        name = name[:25].rstrip() + "…"
-    return name
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    key = (filename, mtime)
+    if key in _content_date_cache:
+        return _content_date_cache[key]
+
+    text = _read_first_page_text(filename)
+    found = _extract_date_from_text(text) if text else ""
+    _content_date_cache[key] = found
+    return found
+
+
+def _mtime_date(filename):
+    """File mtime as a 'Mon DD' string — last-resort date source so
+    every chip always has a date component."""
+    path = os.path.join(_DIR, filename)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    import datetime as _dt
+    d = _dt.date.fromtimestamp(mtime)
+    return f"{_MONTHS[d.month - 1]} {d.day}"
 
 
 def _scan():
     """Return {canonical_billnumber: [sheet_meta, ...]} — list per
     bill, since multiple agencies can each file a sheet on the same
-    bill. Each meta dict has: filename, agency, date, label."""
+    bill. Each meta dict has: filename, agency, date, label.
+
+    Label shape is ALWAYS 'AGENCY · MON DD' — no exceptions. Date
+    cascades filename → PDF content → file mtime so every chip has
+    one. Agency cascades filename → PDF content → '?' so every chip
+    is comparable shape."""
     out = {}
     if not os.path.isdir(_DIR):
         return out
@@ -280,16 +315,21 @@ def _scan():
         bns = _extract_billnumbers(fn)
         if not bns:
             continue
-        agency = _extract_agency(fn) or _extract_agency_from_content(fn)
-        date = _extract_date(fn)
+        agency = (
+            _extract_agency(fn)
+            or _extract_agency_from_content(fn)
+            or "?"
+        )
+        date = (
+            _extract_date(fn)
+            or _extract_date_from_content(fn)
+            or _mtime_date(fn)
+        )
+        label = f"{agency} · {date}" if date else agency
         # Index the same file under EVERY bill it references. Agency
         # blue sheets sometimes cover multiple bills (e.g.
         # "UA Blue Sheet HB 10 and HB 176.pdf" → both HB 10 and HB 176).
         for bn in bns:
-            label_parts = [p for p in (agency, date) if p]
-            label = " · ".join(label_parts)
-            if not label:
-                label = _fallback_label(fn, bn) or "Blue sheet"
             out.setdefault(bn, []).append({
                 "filename": fn,
                 "agency": agency,
@@ -304,11 +344,6 @@ def _scan():
         unique = []
         for sheet in lst:
             key = (sheet["agency"], sheet["date"])
-            # If both agency and date are blank, dedupe by filename
-            # base (catches "name.docx" vs "name (1).docx").
-            if not key[0] and not key[1]:
-                base = re.sub(r"\s*\(\d+\)", "", sheet["filename"]).lower()
-                key = ("__nokey__", base)
             if key in seen:
                 continue
             seen.add(key)

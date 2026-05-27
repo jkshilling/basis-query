@@ -770,7 +770,7 @@
                     });
                 }
                 if (legals.length) {
-                    attach += '<span class="at-attach-lbl">Legal</span>';
+                    attach += '<span class="at-attach-lbl">Legal analyses</span>';
                     legals.forEach(function(s) {
                         attach += '<a class="at-chip legal" href="/legal-analysis-file/' +
                             encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
@@ -1160,8 +1160,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v26';
-    var DETAIL_KEY_PREFIX = 'at_detail_v30:';
+    var LIST_KEY = 'at_list_v27';
+    var DETAIL_KEY_PREFIX = 'at_detail_v31:';
 
     function lsGet(key) {
         try {

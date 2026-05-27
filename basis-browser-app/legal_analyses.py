@@ -7,10 +7,9 @@ branch agency analyses on bills only), legal analyses apply to
 both bills AND resolutions — especially HJRs/SJRs with
 constitutional questions.
 
-Filename matching is the same forgiving regex used for blue sheets:
-the first bill prefix + digits anywhere in the name wins, optionally
-preceded by a CS/HCS/SCS committee-substitute marker. Leading zeros
-stripped.
+Label shape is ALWAYS 'SOURCE · MON DD' for chip rendering, just
+like blue sheets. Date cascades filename → PDF content → file
+mtime; source cascades filename → PDF content → '?'.
 """
 
 import os
@@ -43,10 +42,25 @@ _SOURCE_PATTERNS = (
 
 _DATE_RE_ISO = re.compile(r"(\d{4})[./\-](\d{1,2})[./\-](\d{1,2})")
 _DATE_RE_AMR = re.compile(r"\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{2,4})\b")
+_DATE_RE_LONG = re.compile(
+    r"\b(\d{1,2})\s+"
+    r"(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s+"
+    r"(\d{2,4})\b",
+    re.IGNORECASE,
+)
+
+_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+_MONTH_LOOKUP = {m.upper(): i + 1 for i, m in enumerate(_MONTHS)}
 
 _cache_value = None
 _cache_time = 0.0
 _CACHE_TTL = 60.0
+
+# Per-file content caches keyed by (filename, mtime).
+_content_text_cache = {}
+_content_source_cache = {}
+_content_date_cache = {}
 
 
 def _extract_billnumber(filename):
@@ -67,23 +81,18 @@ def _extract_source(filename):
     return ""
 
 
-_content_source_cache = {}
-
-
-def _extract_source_from_content(filename):
-    """Open the file and look for LLS / DOL / AG markers in first
-    page text. Falls back gracefully on failure."""
-    import os as _os
-    path = _os.path.join(_DIR, filename)
-    if not _os.path.isfile(path):
+def _read_first_page_text(filename):
+    """First-page text of a PDF/DOCX. Cached per (filename, mtime)."""
+    path = os.path.join(_DIR, filename)
+    if not os.path.isfile(path):
         return ""
     try:
-        mtime = _os.path.getmtime(path)
+        mtime = os.path.getmtime(path)
     except OSError:
         return ""
     key = (filename, mtime)
-    if key in _content_source_cache:
-        return _content_source_cache[key]
+    if key in _content_text_cache:
+        return _content_text_cache[key]
 
     text = ""
     try:
@@ -104,6 +113,21 @@ def _extract_source_from_content(filename):
     except Exception:
         pass
 
+    _content_text_cache[key] = text
+    return text
+
+
+def _extract_source_from_content(filename):
+    path = os.path.join(_DIR, filename)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    key = (filename, mtime)
+    if key in _content_source_cache:
+        return _content_source_cache[key]
+
+    text = _read_first_page_text(filename)
     found = ""
     if text:
         upper = text.upper()
@@ -126,12 +150,10 @@ def _extract_source_from_content(filename):
     return found
 
 
-_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-
-def _extract_date(filename):
-    m = _DATE_RE_ISO.search(filename)
+def _extract_date_from_text(text):
+    if not text:
+        return ""
+    m = _DATE_RE_ISO.search(text)
     if m:
         try:
             year, mm, dd = (int(x) for x in m.groups())
@@ -139,7 +161,7 @@ def _extract_date(filename):
                 return f"{_MONTHS[mm - 1]} {dd}"
         except (ValueError, IndexError):
             pass
-    m = _DATE_RE_AMR.search(filename)
+    m = _DATE_RE_AMR.search(text)
     if m:
         try:
             mm, dd, yy = (int(x) for x in m.groups())
@@ -147,33 +169,47 @@ def _extract_date(filename):
                 return f"{_MONTHS[mm - 1]} {dd}"
         except (ValueError, IndexError):
             pass
+    m = _DATE_RE_LONG.search(text)
+    if m:
+        try:
+            dd = int(m.group(1))
+            mm = _MONTH_LOOKUP.get(m.group(2).upper()[:3], 0)
+            if 1 <= mm <= 12 and 1 <= dd <= 31:
+                return f"{_MONTHS[mm - 1]} {dd}"
+        except (ValueError, IndexError):
+            pass
     return ""
 
 
-_LABEL_NOISE_RE = re.compile(
-    r"\b(?:legal\s*(?:analysis|memo|review)|memo|review|"
-    r"2025|2026|signed|revised|updated|docx|pdf)\b",
-    re.IGNORECASE,
-)
+def _extract_date(filename):
+    return _extract_date_from_text(filename)
 
 
-def _fallback_label(filename, billnumber):
-    name = re.sub(r"\.(pdf|docx?)$", "", filename, flags=re.IGNORECASE)
-    bn_prefix, bn_num = billnumber.split()
-    name = re.sub(
-        rf"(?:CS|HCS|SCS)?{bn_prefix}\s*0*{bn_num}\b",
-        "",
-        name,
-        flags=re.IGNORECASE,
-    )
-    name = _LABEL_NOISE_RE.sub("", name)
-    name = re.sub(r"[-_().]+", " ", name)
-    name = re.sub(r"\s+", " ", name).strip(" -_")
-    if len(name) < 4 or name.isdigit():
+def _extract_date_from_content(filename):
+    path = os.path.join(_DIR, filename)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
         return ""
-    if len(name) > 28:
-        name = name[:25].rstrip() + "…"
-    return name
+    key = (filename, mtime)
+    if key in _content_date_cache:
+        return _content_date_cache[key]
+
+    text = _read_first_page_text(filename)
+    found = _extract_date_from_text(text) if text else ""
+    _content_date_cache[key] = found
+    return found
+
+
+def _mtime_date(filename):
+    path = os.path.join(_DIR, filename)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    import datetime as _dt
+    d = _dt.date.fromtimestamp(mtime)
+    return f"{_MONTHS[d.month - 1]} {d.day}"
 
 
 def _scan():
@@ -184,12 +220,17 @@ def _scan():
         bn = _extract_billnumber(fn)
         if not bn:
             continue
-        source = _extract_source(fn) or _extract_source_from_content(fn)
-        date = _extract_date(fn)
-        label_parts = [p for p in (source, date) if p]
-        label = " · ".join(label_parts)
-        if not label:
-            label = _fallback_label(fn, bn) or "Legal analysis"
+        source = (
+            _extract_source(fn)
+            or _extract_source_from_content(fn)
+            or "?"
+        )
+        date = (
+            _extract_date(fn)
+            or _extract_date_from_content(fn)
+            or _mtime_date(fn)
+        )
+        label = f"{source} · {date}" if date else source
         out.setdefault(bn, []).append({
             "filename": fn,
             "source": source,
@@ -202,9 +243,6 @@ def _scan():
         unique = []
         for sheet in lst:
             key = (sheet["source"], sheet["date"])
-            if not key[0] and not key[1]:
-                base = re.sub(r"\s*\(\d+\)", "", sheet["filename"]).lower()
-                key = ("__nokey__", base)
             if key in seen:
                 continue
             seen.add(key)
