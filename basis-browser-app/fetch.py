@@ -875,9 +875,16 @@ def fetch_bill_votes(billnumber, session="34"):
     NON-BLOCKING: if the index isn't already cached, returns an empty
     list rather than triggering a 3-minute build inside the request
     handler. The build is performed by _build_votes_index_async on its
-    own daemon thread; once warm, results appear on the next refresh."""
+    own daemon thread; once warm, results appear on the next refresh.
+
+    TTL is 24h (not 1h): votes are immutable once cast, the index
+    only grows as new bills get floor votes, and the build is
+    expensive (~3 min). Forcing an hourly rebuild caused symptom
+    where every refresh that crossed the 60-min mark dropped the
+    party-color breakdown bars from every bill on the page until
+    the daemon finished its next build."""
     cache_key = f"all_votes_v2_{session}"
-    idx = _cache.get(cache_key, max_age=3600)
+    idx = _cache.get(cache_key, max_age=24 * 3600)
     if idx is None:
         # Don't block the request handler. Empty roll call is preferable
         # to a 3-minute hang; the daemon is building in the background.

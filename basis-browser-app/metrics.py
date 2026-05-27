@@ -1428,7 +1428,7 @@ def awaiting_transmittal(session="34"):
     # Non-blocking probe of the votes index: if it's been built (warm),
     # we enrich vote chips with party breakdowns; if not, the page still
     # loads with totals-only and breakdowns appear after the index warms.
-    votes_idx = _cache.get("all_votes_v2_" + session, max_age=3600) or {}
+    votes_idx = _cache.get("all_votes_v2_" + session, max_age=24 * 3600) or {}
 
     # Blue-sheet index: agency analyses dropped in blue_sheets/.
     # Applies to HB/SB only — resolutions don't get blue sheets.
