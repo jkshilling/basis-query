@@ -66,69 +66,61 @@ _CACHE: dict | None = None
 
 # Bump this when you change the prompt below — it gets folded into
 # the cache key so every cached summary regenerates automatically.
-_SYSTEM_PROMPT_VERSION = "v6-incl-briefings"
+_SYSTEM_PROMPT_VERSION = "v7-json-execsumm"
 
-_SYSTEM_PROMPT = """You are writing a neutral, factual summary of what an Alaska bill \
-DOES. The summary appears on a veto-decision-support dashboard alongside other UI \
-elements that already convey department positions; your job is solely to describe the \
-substantive content of the bill itself.
+_SYSTEM_PROMPT = """You are writing analysis for a veto-decision-support dashboard \
+about Alaska bills. For each bill, return a JSON object with TWO fields:
 
-You will be given the bill's BASIS metadata followed by every department's blue-sheet \
-analysis. Use them as factual source material about the bill's provisions. Your \
-summary must:
+{
+  "executive_summary": "<one tight sentence, 12-22 words, in active voice, saying \
+WHAT THE BILL DOES. Plain English. No filler openers. No 'Enacted under X', no \
+'This bill', no 'Under this legislation'. Start with the bill number as the \
+subject and a strong verb. Example: 'HB 36 creates a new treatment foster home \
+license category and requires judicial review of foster-child psychiatric \
+hospitalizations within 7 days of admission.'>",
 
-- Describe what the bill does. Which statutes change, which programs are created or \
-  modified, what new requirements / rights / obligations are established.
-- Stay neutral. Do not advocate or editorialize about whether the policy is good or \
-  bad.
-- Use direct, declarative English. Avoid the passive "may be" / "is intended to" / \
-  "would seek to" register common in agency writing.
+  "summary": "<two paragraphs, 150-250 words total, describing what the bill does \
+in more depth. Same rules as the executive_summary plus the paragraph structure \
+below.>"
+}
 
-Format — these are NOT optional:
+INPUT: the bill's BASIS metadata, then any departmental blue-sheet analyses, then \
+any briefing-packet body text. Use them as factual source material. Cite specific \
+statute numbers (e.g. AS 14.30.360) when they appear.
 
-- Write EXACTLY TWO paragraphs. No more, no fewer.
-- Paragraph 1: a tight overview, 2-3 sentences capturing the bill's core change \
-  including any specific statute cited (e.g. AS 14.30.360). This is a real \
-  paragraph — not a one-sentence orphan.
-- Paragraph 2: the mechanics — what specifically changes, what new requirements / \
-  programs / oversight are created, who must do what, key delayed effective dates if \
-  any. 4-6 sentences.
-- Total length 150-250 words; hard maximum 300.
+FORMAT for the "summary" field:
+
+- EXACTLY TWO paragraphs separated by a blank line. No more, no fewer.
+- Paragraph 1: 2-3 sentences capturing the bill's core change.
+- Paragraph 2: the mechanics — what statutes change, what programs are created or \
+  modified, who must do what, key delayed effective dates. 4-6 sentences.
 - No heading, no bullets, no inline lists. Flowing prose only.
-- Do not begin with "This bill" — vary openings.
 
-Hard constraints — these are NOT optional:
+HARD CONSTRAINTS for BOTH fields — these are NOT optional:
 
+- DO NOT open with bureaucratic filler: NO "Enacted under", "Under this \
+  legislation", "Pursuant to", "By means of", "Through changes to", "This bill", \
+  "The bill", "This legislation", or "The legislation". Lead with the bill number \
+  + a verb that describes the action.
 - DO NOT name any executive-branch department or division (no "DOH", "DCCED", \
-  "DFCS", "Department of Health", "Department of Fish and Game", "Department of \
-  Family and Community Services", etc.) anywhere in the summary. Use neutral \
-  descriptors instead — "the department", "the state agency", or paraphrased \
-  language like "the state's fish and game authority" when context demands it.
-  \
-  EXCEPTION: when the bill's substantive content directly amends or restructures \
-  a specific named body (the body IS the subject of the legislation), you may \
-  name that body. Examples that ARE OK:
-    - "AIDEA" (Alaska Industrial Development and Export Authority) in a bill \
-      amending AIDEA's statutory purpose
-    - "the Permanent Fund Corporation" in a PFD-investment bill
-    - "the State Board of Education" in a curriculum bill that gives it new duties
-    - "the Alaska Invasive Species Council" in a bill creating that council
-  These are bodies the bill *acts on*, not bodies reviewing the bill. The test \
-  is: does the bill text itself name this body to establish, amend, or assign \
-  duties to it? If yes, naming is fine. If the body is mentioned only as a \
-  reviewer or implementer of a broader policy, use a neutral descriptor.
-- DO NOT mention what any department, agency, or person recommends, supports, opposes, \
-  or thinks about the bill. The dashboard already displays recommendations \
-  separately via colored indicators on each chip.
-- DO NOT meta-comment about the blue sheets or source materials. No phrases like \
-  "the blue sheet does not say", "according to the available analysis", "as \
-  described in the documents", "no fiscal implications are disclosed", "no delayed \
-  effective date is specified in the available bill materials", "is not addressed", \
-  "is silent on", "the source materials do not", or any variant. If a fact isn't in \
-  the source, simply omit it — do not announce its absence.
-- DO NOT describe the bill as "a compromise", "negotiated", "controversial", or any \
-  other characterization. Stick to provisions.
-- Do not invent facts."""
+  "DFCS", "Department of Health", "Department of Fish and Game", etc.). Use \
+  neutral descriptors — "the department", "the state agency", or paraphrased \
+  language like "the state's fish and game authority". \
+  EXCEPTION: when the bill DIRECTLY amends or restructures a specific named body \
+  (AIDEA in an AIDEA bill, Permanent Fund Corporation in a PFD bill, the State \
+  Board of Education in a curriculum bill, the Alaska Invasive Species Council in \
+  a bill creating it), you may name that body. The test: does the bill text \
+  itself name this body to establish, amend, or assign duties to it?
+- DO NOT mention what any department/agency/person recommends, supports, or \
+  opposes. The dashboard displays recommendations elsewhere.
+- DO NOT meta-comment about the source materials. No "the blue sheet does not \
+  say", "no fiscal implications are disclosed", "is silent on", etc. If a fact \
+  isn't in the source, omit it — don't announce its absence.
+- DO NOT characterize the bill as "a compromise", "negotiated", "controversial", \
+  etc. Stick to provisions.
+- Do not invent facts.
+
+Return ONLY the JSON object. No markdown fence. No preamble."""
 
 
 # --------------------------------------------------------------------------
@@ -312,24 +304,48 @@ def summarize_bill(billnumber: str, blue_sheets: list,
         return None
 
     content = resp.get("content") or []
-    summary_text = ""
+    raw_text = ""
     for chunk in content:
         if chunk.get("type") == "text":
-            summary_text += chunk.get("text", "")
-    summary_text = summary_text.strip()
-    if not summary_text:
+            raw_text += chunk.get("text", "")
+    raw_text = raw_text.strip()
+    if not raw_text:
         log.warning("summarizer.empty_response bn=%s resp=%r", bn, str(resp)[:200])
+        return None
+
+    # Strip a markdown fence if the model added one despite instructions.
+    if raw_text.startswith("```"):
+        raw_text = raw_text.lstrip("`").lstrip()
+        if raw_text.lower().startswith("json"):
+            raw_text = raw_text[4:].lstrip()
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3].rstrip()
+
+    try:
+        parsed = json.loads(raw_text)
+        exec_summary = str(parsed.get("executive_summary", "")).strip()
+        full_summary = str(parsed.get("summary", "")).strip()
+    except json.JSONDecodeError:
+        # Fallback: treat the whole response as the summary, leave exec
+        # summary empty so the template extracts from the first sentence.
+        log.warning("summarizer.json_parse_failed bn=%s raw=%r", bn, raw_text[:300])
+        exec_summary = ""
+        full_summary = raw_text
+
+    if not full_summary:
+        log.warning("summarizer.empty_summary bn=%s", bn)
         return None
 
     usage = resp.get("usage") or {}
     out = {
-        "summary":      summary_text,
-        "model":        _MODEL,
-        "generated_at": int(time.time()),
-        "input_hash":   h,
-        "billnumber":   bn,
-        "input_tokens": usage.get("input_tokens", 0),
-        "output_tokens": usage.get("output_tokens", 0),
+        "executive_summary": exec_summary,
+        "summary":           full_summary,
+        "model":             _MODEL,
+        "generated_at":      int(time.time()),
+        "input_hash":        h,
+        "billnumber":        bn,
+        "input_tokens":      usage.get("input_tokens", 0),
+        "output_tokens":     usage.get("output_tokens", 0),
     }
     cache[h] = out
     _save_cache()

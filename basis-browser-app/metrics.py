@@ -1659,9 +1659,10 @@ def awaiting_transmittal(session="34"):
             )
             if cached_summ:
                 llm_summary = {
-                    "summary":      cached_summ["summary"],
-                    "model":        cached_summ["model"],
-                    "generated_at": cached_summ["generated_at"],
+                    "executive_summary": cached_summ.get("executive_summary", ""),
+                    "summary":           cached_summ["summary"],
+                    "model":             cached_summ["model"],
+                    "generated_at":      cached_summ["generated_at"],
                 }
         except Exception:
             pass
