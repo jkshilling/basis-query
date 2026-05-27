@@ -1409,7 +1409,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v37", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v38", max_age=300)
     if cached is not None:
         return cached
 
@@ -1678,6 +1678,53 @@ def awaiting_transmittal(session="34"):
         except Exception:
             glo_rec = {"rec": "", "source": "", "note": "", "overridden": False}
 
+        # Departmental-recommendation rollup. Mirrors the GLO chip
+        # shape so the user sees both the GLO best-guess AND a
+        # one-glance summary of where the agencies actually landed.
+        # Possible values for 'rec':
+        #   SIGN  — every department on file recommends SIGN
+        #   VETO  — every department recommends VETO
+        #   LWOS  — every department recommends LWOS
+        #   SPLIT — departments disagree (breakdown in 'note')
+        #   ?     — has blue sheets but none with parsed recommendations
+        #   ""    — no blue sheets on file (chip omitted in template)
+        dept_recs_list = [
+            (s.get("agency") or "?", (s.get("recommendation") or "").upper())
+            for s in _bluesheet_index.get(compact_billnumber(bn), [])
+        ]
+        dept_with_rec = [(a, r) for a, r in dept_recs_list if r]
+        if not dept_recs_list:
+            dept_rec = {"rec": "", "note": "", "breakdown": []}
+        elif not dept_with_rec:
+            dept_rec = {
+                "rec": "?",
+                "note": ("Blue sheets on file but no SIGN/VETO/LWOS "
+                         "checkbox could be parsed"),
+                "breakdown": dept_recs_list,
+            }
+        else:
+            unique_recs = set(r for _, r in dept_with_rec)
+            if len(unique_recs) == 1:
+                only = next(iter(unique_recs))
+                n = len(dept_with_rec)
+                noun = "department" if n == 1 else "departments"
+                names = ", ".join(a for a, _ in dept_with_rec)
+                dept_rec = {
+                    "rec": only,
+                    "note": f"{n} {noun} ({names}) recommend{'s' if n == 1 else ''} {only}",
+                    "breakdown": dept_with_rec,
+                }
+            else:
+                from collections import Counter
+                c = Counter(r for _, r in dept_with_rec)
+                parts = [f"{n} {r}" for r, n in sorted(c.items())]
+                detail = ", ".join(f"{a}={r}" for a, r in dept_with_rec)
+                dept_rec = {
+                    "rec": "SPLIT",
+                    "note": f"{' / '.join(parts)} — {detail}",
+                    "breakdown": dept_with_rec,
+                }
+
         # Veto-override math: combined yeas across both chambers vs.
         # the 2/3 (40) and 3/4 (45) thresholds. We don't auto-detect
         # appropriations, but expose both numbers so the UI can flag.
@@ -1922,6 +1969,11 @@ def awaiting_transmittal(session="34"):
             # computed from blue-sheet rolls + political signals;
             # overridable per bill via glo_recs.GLO_OVERRIDES.
             "glo_recommendation": glo_rec,
+            # Departmental recommendation rollup — same shape as
+            # glo_recommendation but reflects ONLY the parsed
+            # SIGN/VETO/LWOS checkboxes from the blue-sheet PDFs,
+            # without GLO's political-signal overlay.
+            "dept_recommendation": dept_rec,
             # LLM-synthesized neutral summary across all blue sheets.
             # None until the background prefetch generates one;
             # template falls back to the static hand-authored dict.
@@ -1983,7 +2035,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v37", result)
+    _cache.put("awaiting_transmittal_v38", result)
     return result
 
 
@@ -1993,7 +2045,7 @@ def bill_decision_detail(billnumber, session="34"):
     """Detailed veto-decision view for one bill: full per-legislator
     roll call on final passage in each chamber, plus action timeline
     and fiscal-note bodies. Cached 10 min."""
-    cache_key = f"bill_decision_detail_v9_{session}_{billnumber}"
+    cache_key = f"bill_decision_detail_v10_{session}_{billnumber}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -2163,6 +2215,74 @@ def bill_decision_detail(billnumber, session="34"):
     # blue-sheet content (with each agency's explicit recommendation),
     # provide the analytical perspective we want to surface.
 
+    # GLO + DEPT rationale for the expander section. Same heuristic
+    # as awaiting_transmittal() but computed here so the detail
+    # endpoint is self-contained. Lets the expander explain WHY the
+    # card's GLO chip shows what it shows.
+    glo_payload = {"rec": "", "source": "", "note": "", "overridden": False}
+    dept_payload = {"rec": "", "note": "", "breakdown": []}
+    try:
+        import glo_recs as _glo
+        import blue_sheets as _bs
+        sheets = _bs.sheets_for(billnumber)
+        # Veto-proof check: combined yeas across both chambers vs.
+        # the chamber-appropriate override threshold.
+        ch_y = {ch: sum(1 for v in passage_votes[ch] if v["vote"] == "Y")
+                for ch in ("H", "S")}
+        combined_yeas_here = ch_y["H"] + ch_y["S"]
+        # Detect appropriations from BASIS short title.
+        short = (bill_meta.get("short_title") if bill_meta else "") or ""
+        is_approps = short.upper().startswith("APPROP:")
+        thr = (AK_OVERRIDE_THRESHOLD_APPROPS if is_approps
+               else AK_OVERRIDE_THRESHOLD_STANDARD)
+        veto_proof_here = (
+            ch_y["H"] > 0 and ch_y["S"] > 0 and combined_yeas_here >= thr
+        )
+        glo_payload = _glo.guess(
+            blue_sheets=sheets,
+            requestor=(bill_meta.get("requestor") if bill_meta else "") or "",
+            veto_proof=veto_proof_here,
+            billnumber=billnumber,
+        )
+        # Dept rollup — same logic as awaiting_transmittal.
+        dept_recs_list = [
+            (s.get("agency") or "?", (s.get("recommendation") or "").upper())
+            for s in sheets
+        ]
+        dept_with_rec = [(a, r) for a, r in dept_recs_list if r]
+        if dept_recs_list:
+            if not dept_with_rec:
+                dept_payload = {
+                    "rec": "?",
+                    "note": ("Blue sheets on file but no SIGN/VETO/LWOS "
+                             "checkbox could be parsed"),
+                    "breakdown": dept_recs_list,
+                }
+            else:
+                unique_recs = set(r for _, r in dept_with_rec)
+                if len(unique_recs) == 1:
+                    only = next(iter(unique_recs))
+                    n = len(dept_with_rec)
+                    noun = "department" if n == 1 else "departments"
+                    names = ", ".join(a for a, _ in dept_with_rec)
+                    dept_payload = {
+                        "rec": only,
+                        "note": f"{n} {noun} ({names}) recommend{'s' if n == 1 else ''} {only}",
+                        "breakdown": dept_with_rec,
+                    }
+                else:
+                    from collections import Counter
+                    c = Counter(r for _, r in dept_with_rec)
+                    parts = [f"{n} {r}" for r, n in sorted(c.items())]
+                    detail = ", ".join(f"{a}={r}" for a, r in dept_with_rec)
+                    dept_payload = {
+                        "rec": "SPLIT",
+                        "note": f"{' / '.join(parts)} — {detail}",
+                        "breakdown": dept_with_rec,
+                    }
+    except Exception:
+        pass
+
     result = {
         "billnumber": billnumber,
         "passage_votes": passage_votes,
@@ -2179,6 +2299,9 @@ def bill_decision_detail(billnumber, session="34"):
         "days_intro_to_first_committee": days_intro_to_first_cmte,
         "days_intro_to_passage": days_intro_to_passage,
         "fiscal_notes": fiscal_notes,
+        # GLO + DEPT rationale displayed in the expander.
+        "glo_recommendation": glo_payload,
+        "dept_recommendation": dept_payload,
     }
     _cache.put(cache_key, result)
     return result

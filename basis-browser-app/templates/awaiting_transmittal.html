@@ -513,6 +513,33 @@
         .at-glo.VETO { background: #fde8e8; border-color: #c0392b; color: #922b21; }
         .at-glo.LWOS { background: #fef5e7; border-color: #d68910; color: #885a00; }
         .at-glo.unknown { background: #f2f4f7; border-color: #b0b8c0; color: #6e7681; }
+        /* DEPT chip extra color: SPLIT = grey-purple for mixed signals.
+           '?' (blue sheets present but no parsed recommendation) gets
+           rendered via .unknown which is already styled above. */
+        .at-glo.SPLIT { background: #eee9f3; border-color: #8e7cad; color: #4a3a72; }
+        /* The DEPT chip sits directly below the GLO chip with minimal
+           gap so they read as a pair. */
+        .at-dept { margin-top: 4px; }
+
+        /* GLO Recommendation Rationale section in the expander.
+           Lists the GLO and DEPT chips with their human-readable
+           reasoning beside each. */
+        .at-rationale-list {
+            list-style: none;
+            padding: 0;
+            margin: 6px 0 0;
+        }
+        .at-rationale-list li {
+            margin: 0 0 8px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 8px;
+        }
+        .at-rationale-chip { flex-shrink: 0; }
+        .at-rationale-note { color: #2c3e50; font-size: 0.9rem; line-height: 1.4; }
+        .at-rationale-src { color: #6e7681; font-size: 0.78rem; font-style: italic; }
+        .at-rationale-override { color: #885a00; font-size: 0.85rem; }
         .at-glo.overridden::after { content: " *"; font-weight: 700; }
 
         /* Empty-state indicator for HB/SB bills with no blue sheet on
@@ -1079,6 +1106,21 @@
                 html += '<div><span class="at-glo ' + gloCls + '" title="' +
                     esc(gloTip) + '">GLO: ' + esc(gloLbl) + '</span></div>';
             }
+
+            // DEPT chip — what the agencies themselves recommend,
+            // distinct from the GLO heuristic above. Uses the same
+            // colored-chip style. SPLIT shows when agencies disagree;
+            // the tooltip carries the per-agency breakdown.
+            var dept = b.dept_recommendation;
+            if (dept && dept.rec) {
+                // '?' isn't a valid CSS class — map it to 'unknown'.
+                var deptCls = dept.rec === '?' ? 'unknown' : dept.rec;
+                var deptTip = 'Departmental recommendation rollup: ' + dept.rec +
+                              (dept.note ? '\n' + dept.note : '');
+                html += '<div><span class="at-glo at-dept ' + deptCls +
+                    '" title="' + esc(deptTip) + '">DEPT: ' + esc(dept.rec) +
+                    '</span></div>';
+            }
             // Empty-state indicator: HB/SB bills with no departmental
             // blue sheet on file. Pair with the GLO chip so the user
             // can see that the GLO best-guess (if any) is on thin
@@ -1228,6 +1270,39 @@
     function renderDecisionDetail(d) {
         var h = '';
 
+        // GLO rationale — explains WHY the card's GLO chip shows
+        // what it shows. Computed from blue-sheet recommendations +
+        // political signals (Governor's own bill, veto-proof passage).
+        // Manual overrides in glo_recs.GLO_OVERRIDES always win.
+        var glo = d.glo_recommendation;
+        var dept = d.dept_recommendation;
+        if ((glo && glo.rec) || (dept && dept.rec)) {
+            h += '<div class="at-section at-rationale">';
+            h += '<div class="at-section-h">GLO Recommendation Rationale</div>';
+            h += '<ul class="at-rationale-list">';
+            if (glo && glo.rec) {
+                var gloCls = glo.rec === '?' ? 'unknown' : glo.rec;
+                h += '<li><span class="at-rationale-chip at-glo ' + gloCls + '">' +
+                     'GLO: ' + esc(glo.rec) + '</span>';
+                if (glo.note) h += ' <span class="at-rationale-note">' + esc(glo.note) + '</span>';
+                if (glo.source) {
+                    h += ' <span class="at-rationale-src">(' +
+                         esc(glo.source.replace(/-/g, ' ')) + ')</span>';
+                }
+                if (glo.overridden) h += ' <em class="at-rationale-override">— manual override</em>';
+                h += '</li>';
+            }
+            if (dept && dept.rec) {
+                var deptCls = dept.rec === '?' ? 'unknown' : dept.rec;
+                h += '<li><span class="at-rationale-chip at-glo at-dept ' + deptCls + '">' +
+                     'DEPT: ' + esc(dept.rec) + '</span>';
+                if (dept.note) h += ' <span class="at-rationale-note">' + esc(dept.note) + '</span>';
+                h += '</li>';
+            }
+            h += '</ul>';
+            h += '</div>';
+        }
+
         // Neutral Summary — hand-authored description of what the
         // bill does. Sponsor statements (the sponsor's advocacy
         // framing) are intentionally NOT linked here: this is a
@@ -1245,19 +1320,10 @@
             h += '</div>';
         }
 
-        // Legal description — the "An Act relating to..." title from
-        // the latest adopted version. Precise legal scope; complements
-        // the plain-English sponsor statement above.
-        if (d.long_title) {
-            h += '<div class="at-section">';
-            h += '<div class="at-section-h">Legal Description';
-            if (d.version_letter) {
-                h += ' <span class="at-section-meta">(version ' + esc(d.version_letter) + ')</span>';
-            }
-            h += '</div>';
-            h += '<div class="at-summary">' + esc(d.long_title) + '</div>';
-            h += '</div>';
-        }
+        // Legal description block intentionally removed per user
+        // direction — the LLM synthesis already covers what the bill
+        // does in plain English, and the bureaucratic "An Act
+        // relating to..." legalese was redundant noise alongside it.
 
         // Process timeline: milestone dates + days-between summaries
         if (d.milestones) {
@@ -1469,8 +1535,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v35';
-    var DETAIL_KEY_PREFIX = 'at_detail_v39:';
+    var LIST_KEY = 'at_list_v36';
+    var DETAIL_KEY_PREFIX = 'at_detail_v40:';
 
     function lsGet(key) {
         try {
