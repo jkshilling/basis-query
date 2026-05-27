@@ -334,9 +334,13 @@
             white-space: nowrap;
         }
         .at-extlink:hover { text-decoration: underline; }
-        /* Attachments box — bordered container around deliverables
-           (akleg link + blue sheets + legal analyses). Visually
-           separated from the card content above. */
+        /* akleg.gov passthrough link — sits ABOVE the deliverables
+           box, no border, just a quiet link to the source data. */
+        .at-akleg-row { margin-top: 8px; font-size: 0.82rem; }
+
+        /* Attachments box — bordered container around curated
+           deliverables only (blue sheets + legal analyses). The
+           akleg link is intentionally outside this. */
         .at-attach-box {
             margin-top: 10px;
             padding: 10px 14px;
@@ -680,14 +684,18 @@
             var sheets = b.blue_sheets || [];
             var legals = b.legal_analyses || [];
 
-            var attach = '<div class="at-attach-box">';
+            // akleg link sits OUTSIDE the deliverables box — it's a
+            // passthrough to the legislature's own page, not a
+            // curated deliverable like the blue sheets and legal
+            // analyses below.
+            var attach = '';
             if (b.akleg_url) {
-                attach += '<div class="at-attach-row">';
-                attach += '<span class="at-attach-lbl">Source</span>';
+                attach += '<div class="at-akleg-row">';
                 attach += '<a class="at-extlink" href="' + esc(b.akleg_url) +
                     '" target="_blank" rel="noopener">View on akleg.gov ↗</a>';
                 attach += '</div>';
             }
+            attach += '<div class="at-attach-box">';
 
             // Blue sheets: only render the row if HB/SB (resolutions
             // don't get them). Either show chips for files on disk,
@@ -1057,8 +1065,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v17';
-    var DETAIL_KEY_PREFIX = 'at_detail_v21:';
+    var LIST_KEY = 'at_list_v18';
+    var DETAIL_KEY_PREFIX = 'at_detail_v22:';
 
     function lsGet(key) {
         try {
