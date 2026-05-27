@@ -1409,7 +1409,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v31", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v32", max_age=300)
     if cached is not None:
         return cached
 
@@ -1614,6 +1614,24 @@ def awaiting_transmittal(session="34"):
                 "preparer": pdf.get("preparer", ""),
                 "impact":   pdf.get("impact", ""),
             })
+
+        # Aggregate dollar totals across all parseable FN PDFs.
+        # Downloads + parses each FN once, then caches the parsed
+        # result on disk (fn_amount_index keeps a JSON index keyed
+        # by URL). Safe to call on every awaiting_transmittal() rebuild
+        # — first run on a fresh cache takes a few seconds for the
+        # whole page; subsequent runs are essentially free.
+        try:
+            import fn_amount_index as _fai
+            fiscal_total = _fai.aggregate_bill_total(
+                m_meta.get("fn_pdfs") or []
+            )
+        except Exception:
+            fiscal_total = {
+                "total_dollars": 0.0, "parsed_fns": 0,
+                "zero_fns": 0, "indet_fns": 0, "unparseable": 0,
+                "fy_min": None, "fy_max": None, "per_fn": [],
+            }
 
         # Veto-override math: combined yeas across both chambers vs.
         # the 2/3 (40) and 3/4 (45) thresholds. We don't auto-detect
@@ -1847,6 +1865,10 @@ def awaiting_transmittal(session="34"):
             # Fiscal + effective-date
             "fiscal_notes": fiscal_notes,
             "fiscal_summary": fn_buckets,
+            # Parsed-from-PDF dollar totals across all FNs on this
+            # bill (issue #1). Best-effort; FNs that can't be parsed
+            # are counted but excluded from the total.
+            "fiscal_total": fiscal_total,
             # At-governor flag + clock fields (populated only when at gov)
             "is_at_governor": is_at_gov,
             "transmit_date": format_status_date_full(transmit_date),
@@ -1904,7 +1926,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v31", result)
+    _cache.put("awaiting_transmittal_v32", result)
     return result
 
 

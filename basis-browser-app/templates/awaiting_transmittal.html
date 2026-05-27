@@ -180,6 +180,23 @@
         /* When the pill is also an anchor (lazy-linked to akleg.gov PDF). */
         .at-fn-pill-link { text-decoration: none; cursor: pointer; }
         .at-fn-pill-link:hover { filter: brightness(0.95); text-decoration: underline; }
+        /* Parsed-from-PDF dollar total chip — neutral grey, sits to the
+           right of the zero/indeterminate/nonzero count pills. Tooltip
+           explains parse coverage. */
+        .at-fn-dollars {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 9px;
+            margin-left: 6px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            background: #eef2f6;
+            border: 1px solid #c8d0d8;
+            color: #2c3e50;
+            border-radius: 13px;
+            cursor: help;
+        }
         /* Expanded detail block */
         .at-expand {
             grid-column: 1 / -1;
@@ -791,6 +808,7 @@
             // per non-empty category, with a count. The full per-FN
             // list (with department info) is still in the expander.
             var fs = b.fiscal_summary || {};
+            var ft = b.fiscal_total || {};
             var fnTotal = (fs.zero || 0) + (fs.indeterminate || 0) + (fs.amount || 0);
             if (fnTotal > 0) {
                 var fnHtml = '<div><span class="label">Fiscal</span>';
@@ -804,6 +822,31 @@
                 addPill('zero', fs.zero, 'zero');
                 addPill('indeterminate', fs.indeterminate, 'indeterminate');
                 addPill('amount', fs.amount, 'nonzero');
+                // Dollar total parsed from FN PDFs (issue #1). Only show
+                // when at least one FN was successfully parsed AND total
+                // > 0 — zeroes already conveyed by the 'N zero' pill.
+                if (ft.parsed_fns > 0 && ft.total_dollars > 0) {
+                    var dollars = ft.total_dollars;
+                    var dStr;
+                    if (dollars >= 1e6) {
+                        dStr = '$' + (dollars / 1e6).toFixed(dollars >= 10e6 ? 1 : 2) + 'M';
+                    } else {
+                        dStr = '$' + Math.round(dollars / 1000) + 'K';
+                    }
+                    var fyRange = '';
+                    if (ft.fy_min && ft.fy_max) {
+                        fyRange = ' FY' + ft.fy_min + '–' + ft.fy_max;
+                    }
+                    var tipParts = [
+                        ft.parsed_fns + ' fiscal note' + (ft.parsed_fns === 1 ? '' : 's') + ' parsed',
+                    ];
+                    if (ft.unparseable) tipParts.push(ft.unparseable + ' unparseable');
+                    if (ft.indet_fns) tipParts.push(ft.indet_fns + ' indeterminate');
+                    var tip = 'Total operating + capital + supplemental across ' + fyRange.trim() +
+                              '. ' + tipParts.join(', ') + '.';
+                    fnHtml += '<span class="at-fn-dollars" title="' + esc(tip) + '">≈ ' +
+                        esc(dStr) + esc(fyRange) + '</span>';
+                }
                 fnHtml += '</div>';
                 html += '<div class="at-detail-row">' + fnHtml + '</div>';
             }
@@ -1245,8 +1288,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v28';
-    var DETAIL_KEY_PREFIX = 'at_detail_v32:';
+    var LIST_KEY = 'at_list_v29';
+    var DETAIL_KEY_PREFIX = 'at_detail_v33:';
 
     function lsGet(key) {
         try {
