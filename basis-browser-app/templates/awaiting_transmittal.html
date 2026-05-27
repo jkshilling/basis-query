@@ -648,20 +648,32 @@
             color: #1a2530;
             list-style: none;
             display: flex;
-            justify-content: space-between;
+            /* IMPORTANT: do NOT use justify-content: space-between
+               here. The ::before marker counts as a flex item, so
+               space-between distributes start/center/end — and the
+               title (the middle item) ends up CENTERED, which looked
+               broken next to the right-aligned note. Using
+               margin-right: auto on the title's wrapping span pushes
+               the note to the far right while leaving the title
+               flush against the marker on the left. */
             align-items: center;
+            gap: 8px;
             user-select: none;
         }
         details.at-collapse > summary::-webkit-details-marker { display: none; }
         details.at-collapse > summary::before {
             content: "▸";
-            margin-right: 8px;
             font-size: 0.8rem;
             color: #95a5a6;
             transition: transform 0.15s;
+            flex-shrink: 0;
         }
         details.at-collapse[open] > summary::before { content: "▾"; }
-        details.at-collapse > summary .at-coll-note { font-size: 0.82rem; font-weight: 400; color: #6e7681; margin-left: 8px; }
+        /* Title span: flex-grows to push the note to the right. */
+        details.at-collapse > summary > span:not(.at-coll-note) {
+            margin-right: auto;
+        }
+        details.at-collapse > summary .at-coll-note { font-size: 0.82rem; font-weight: 400; color: #6e7681; }
         details.at-collapse > .at-coll-body { padding: 0 16px 16px; }
         details.at-collapse table { margin-top: 4px; }
     </style>
@@ -1262,9 +1274,15 @@
                 return html;
             }
             if (b.house_vote || b.senate_vote) {
+                // Each chamber gets its own scale (40 for House, 20
+                // for Senate) so both bars fill the same width when
+                // all members voted. Previously both used 40 to make
+                // "House looks twice as long as Senate" — but that
+                // made every Senate bar appear half-empty even when
+                // every senator voted, which confused readers.
                 html += '<div class="at-vb">';
                 html += voteBar('H', b.house_vote, b.house_breakdown, 40);
-                html += voteBar('S', b.senate_vote, b.senate_breakdown, 40);
+                html += voteBar('S', b.senate_vote, b.senate_breakdown, 20);
                 html += '</div>';
             }
 

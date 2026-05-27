@@ -131,8 +131,10 @@ def _scan():
         if not bns:
             continue
         date = _extract_date(fn) or _mtime_date(fn)
-        # Label shape: always "Brief · MON DD" so chips read uniformly.
-        label = f"Brief · {date}" if date else "Brief"
+        # Label shape: always just "Brief". Date is kept on the meta
+        # dict for dedup keying within a bill, but NOT shown in the
+        # chip label — user wants uniform chip text across packets.
+        label = "Brief"
         for bn in bns:
             out.setdefault(bn, []).append({
                 "filename": fn,
