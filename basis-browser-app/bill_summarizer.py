@@ -64,33 +64,42 @@ _CACHE_LOCK = threading.Lock()
 _CACHE: dict | None = None
 
 
-_SYSTEM_PROMPT = """You are an editorial analyst writing for a veto-decision-support \
-dashboard used by the Alaska Governor's Legislative Office (GLO). Your job is to write \
-a neutral, factual summary of an Alaska bill that has passed both chambers and is \
-either awaiting transmittal to the Governor or sitting on his desk.
+# Bump this when you change the prompt below — it gets folded into
+# the cache key so every cached summary regenerates automatically.
+_SYSTEM_PROMPT_VERSION = "v2-substance-only"
+
+_SYSTEM_PROMPT = """You are writing a neutral, factual summary of what an Alaska bill \
+DOES. The summary appears on a veto-decision-support dashboard alongside other UI \
+elements that already convey department positions; your job is solely to describe the \
+substantive content of the bill itself.
 
 You will be given the bill's BASIS metadata followed by every department's blue-sheet \
-analysis. Synthesize across all of them. Your summary must:
+analysis. Use them as factual source material about the bill's provisions. Your \
+summary must:
 
-- Lead with one or two sentences saying what the bill does in plain English. Avoid \
-  bureaucratic phrasing.
-- Describe the substantive changes: which statutes change, which programs are created \
-  or modified, what new requirements or rights are created.
-- When departments disagree, name the agencies and their positions, then explain the \
-  substantive dispute. Do not paper over disagreement.
-- Mention material fiscal implications if disclosed.
-- Stay neutral. Do not advocate for or against signing. Do not editorialize about \
-  whether the bill is good policy.
-- Use direct, declarative English — not the passive "may be" / "is intended to" / \
+- Describe what the bill does. Which statutes change, which programs are created or \
+  modified, what new requirements / rights / obligations are established.
+- Lead with one or two sentences capturing the bill's core change in plain English.
+- Stay neutral. Do not advocate or editorialize about whether the policy is good or \
+  bad.
+- Use direct, declarative English. Avoid the passive "may be" / "is intended to" / \
   "would seek to" register common in agency writing.
 
-Constraints:
-- Length: aim for 2-3 paragraphs, ~150-250 words total. Hard maximum 300 words.
-- No heading, no preamble like "Summary:". Start directly with the substantive content.
-- Do not begin with "This bill" — vary your openings.
-- Do not invent facts. If the blue sheets don't say something, don't claim it.
-- If the blue sheets are absent, sparse, or contradictory, write a shorter summary \
-  reflecting that — better to be terse than to fabricate."""
+Hard constraints — these are NOT optional:
+
+- DO NOT name any department or agency (no "DOH", "DCCED", "DFCS", "Department of \
+  Health", etc.) anywhere in the summary.
+- DO NOT mention what any department, agency, or person recommends, supports, opposes, \
+  or thinks about the bill. The dashboard already displays recommendations \
+  separately via colored indicators on each chip.
+- DO NOT meta-comment about the blue sheets themselves. No phrases like "the blue \
+  sheet does not say", "according to the available analysis", "as described in the \
+  documents", "no fiscal implications are disclosed", or similar. Either state facts \
+  about the bill or leave them out.
+- DO NOT describe the bill as "a compromise", "negotiated", "controversial", or any \
+  other characterization. Stick to provisions.
+- Format / length: 2-3 paragraphs, ~150-250 words. Hard maximum 300 words. No heading. \
+  Do not begin with "This bill" — vary openings. Do not invent facts."""
 
 
 # --------------------------------------------------------------------------
@@ -140,7 +149,10 @@ def _read_api_key() -> str:
 # --------------------------------------------------------------------------
 
 def _input_hash(billnumber: str, blue_sheets: list, bill_meta: dict | None) -> str:
-    parts = [billnumber.strip()]
+    # Include the system-prompt version so editing the prompt
+    # transparently invalidates every cached summary (no manual
+    # cache-clear needed).
+    parts = [_SYSTEM_PROMPT_VERSION, billnumber.strip()]
     # Sort blue sheets deterministically so reorderings don't bust cache.
     for s in sorted(blue_sheets or [], key=lambda x: (x.get("agency", ""), x.get("filename", ""))):
         parts.append("|".join([
