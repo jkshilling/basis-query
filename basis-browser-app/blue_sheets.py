@@ -241,19 +241,27 @@ def _extract_recommendation(filename):
 # ends at the next major heading ("Detailed Sectional Analysis").
 # Fall back to "Action Justification" if "What does this Bill do?"
 # is absent or empty (rare).
+#
+# Newline-tolerant: PDFs sometimes preserve paragraph breaks but
+# DOCX→text via zipfile flattens everything onto one line. Use \s+
+# instead of \n after section headers, and use a non-greedy
+# "look-ahead skip" pattern for the instructional prose Alaska blue
+# sheets put under each heading.
 _DESC_PRIMARY_RE = re.compile(
-    r"What\s+does\s+this\s+Bill\s+do\??\s*\n"
-    r"(?:.*?Does this bill align with the priorities of Governor[^\n]*\n)?"
-    r"(.*?)(?:Detailed\s+Sectional\s+Analysis"
+    r"What\s+does\s+this\s+Bill\s+do\s*\??\s+"
+    r"(?:In\s+addition\s+to\s+providing\s+a\s+succinct.*?priorities\s+of\s+Governor[^\.]*\.?\s+)?"
+    r"(.*?)"
+    r"(?:Detailed\s+Sectional\s+Analysis"
     r"|Companion\s+or\s+Similar\s+Bills"
     r"|Implementation"
-    r"|Fiscal\s+Impact\s+Summary|\Z)",
+    r"|Fiscal\s+Impact\s+Summary"
+    r"|\Z)",
     re.IGNORECASE | re.DOTALL,
 )
 _DESC_FALLBACK_RE = re.compile(
-    r"Action\s+Justification[^\n]*\n"
-    r"(?:Please\s+be\s+specific\.?\s*\n)?"
-    r"(.*?)(?:What\s+does\s+this\s+Bill\s+do|Detailed\s+Sectional\s+Analysis|\Z)",
+    r"Action\s+Justification\s*[–-]?\s*Why\s+do\s+you\s+recommend.*?Please\s+be\s+specific\.?\s+"
+    r"(.*?)"
+    r"(?:What\s+does\s+this\s+Bill\s+do|Detailed\s+Sectional\s+Analysis|\Z)",
     re.IGNORECASE | re.DOTALL,
 )
 
