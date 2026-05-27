@@ -122,8 +122,11 @@ def _extract_agency(filename):
 # Cache extracted first-page text per-file. Both agency and date
 # extraction read the same first-page bytes — cache once, use twice.
 # Keyed by (filename, mtime) so a re-saved file invalidates.
-_content_text_cache = {}
+_content_text_cache = {}             # page 1 only — fast probe
+_content_full_text_cache = {}        # first N pages — for descriptions
 _content_agency_cache = {}
+_content_rec_cache = {}              # extracted SIGN/VETO/LWOS
+_content_desc_cache = {}             # extracted "What does this Bill do?"
 
 
 def _read_first_page_text(filename):
@@ -162,6 +165,153 @@ def _read_first_page_text(filename):
 
     _content_text_cache[key] = text
     return text
+
+
+def _read_full_text(filename, max_pages=4):
+    """Same as _read_first_page_text but joins up to N pages of text.
+    Used for sections that often spill onto page 2 ('What does this
+    Bill do?', 'Detailed Sectional Analysis'). 4 pages is enough for
+    every blue sheet we've seen — they top out at 5 pages, with the
+    last page being signatures."""
+    path = os.path.join(_DIR, filename)
+    if not os.path.isfile(path):
+        return ""
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    key = (filename, mtime, max_pages)
+    if key in _content_full_text_cache:
+        return _content_full_text_cache[key]
+
+    text = ""
+    try:
+        if filename.lower().endswith(".pdf"):
+            import pypdf
+            reader = pypdf.PdfReader(path)
+            chunks = []
+            for p in reader.pages[:max_pages]:
+                chunks.append(p.extract_text() or "")
+            text = "\n".join(chunks)
+        elif filename.lower().endswith((".docx", ".doc")):
+            # DOCX has no page boundaries — return the whole thing.
+            text = _read_first_page_text(filename)
+    except Exception:
+        pass
+
+    _content_full_text_cache[key] = text
+    return text
+
+
+# Page-1 layout puts the recommendation right after "Select one." line
+# with three boxes: SIGN / VETO / LWOS. The checked box is ☒ (U+2612),
+# unchecked is ☐ (U+2610). Some older sheets use "[X]" / "[ ]" instead
+# — we accept both.
+_REC_RE = re.compile(
+    r"(?:☒|\[\s*[xX✓]\s*\])\s*(SIGN|VETO|LWOS)",
+)
+
+
+def _extract_recommendation(filename):
+    """Return 'SIGN' | 'VETO' | 'LWOS' | ''. Looks for the checked
+    box on page 1 of the blue sheet. '' when not found (image-only
+    PDF, malformed sheet, etc.)."""
+    path = os.path.join(_DIR, filename)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    key = (filename, mtime)
+    if key in _content_rec_cache:
+        return _content_rec_cache[key]
+
+    text = _read_first_page_text(filename)
+    found = ""
+    if text:
+        m = _REC_RE.search(text)
+        if m:
+            found = m.group(1).upper()
+    _content_rec_cache[key] = found
+    return found
+
+
+# The "What does this Bill do?" section is the substantive summary —
+# typically 2-5 paragraphs of plain English describing what the
+# legislation actually changes. Starts with the literal heading and
+# ends at the next major heading ("Detailed Sectional Analysis").
+# Fall back to "Action Justification" if "What does this Bill do?"
+# is absent or empty (rare).
+_DESC_PRIMARY_RE = re.compile(
+    r"What\s+does\s+this\s+Bill\s+do\??\s*\n"
+    r"(?:.*?Does this bill align with the priorities of Governor[^\n]*\n)?"
+    r"(.*?)(?:Detailed\s+Sectional\s+Analysis"
+    r"|Companion\s+or\s+Similar\s+Bills"
+    r"|Implementation"
+    r"|Fiscal\s+Impact\s+Summary|\Z)",
+    re.IGNORECASE | re.DOTALL,
+)
+_DESC_FALLBACK_RE = re.compile(
+    r"Action\s+Justification[^\n]*\n"
+    r"(?:Please\s+be\s+specific\.?\s*\n)?"
+    r"(.*?)(?:What\s+does\s+this\s+Bill\s+do|Detailed\s+Sectional\s+Analysis|\Z)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _clean_description_text(raw):
+    """Normalize whitespace; drop the standard footer/header noise that
+    pypdf interleaves between pages (e.g. 'State of Alaska – Office of
+    the Governor — ... — CONFIDENTIAL & DELIBERATIVE Page N of M')."""
+    if not raw:
+        return ""
+    # Strip the cross-page header that interleaves with body text on
+    # multi-page sections. Matches the literal opening lines of every
+    # blue sheet header block.
+    raw = re.sub(
+        r"State of Alaska\s*[–-]\s*Office of the Governor.*?"
+        r"DEPARTMENT REVIEW\s*[–-]\s*PASSED LEGISLATION\s*"
+        r"CONFIDENTIAL\s*&\s*DELIBERATIVE\s*"
+        r"Page\s+\d+\s+of\s+\d+",
+        " ",
+        raw,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    # Collapse runs of whitespace and clean up paragraph breaks.
+    raw = re.sub(r"[ \t]+", " ", raw)
+    raw = re.sub(r"\n{3,}", "\n\n", raw)
+    raw = raw.strip()
+    return raw
+
+
+def _extract_description(filename):
+    """Return the 'What does this Bill do?' body text from a blue
+    sheet (or a fallback section). Truncated to ~1200 chars so very
+    long sectional analyses don't bloat the JSON payload. Empty
+    string on failure."""
+    path = os.path.join(_DIR, filename)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    key = (filename, mtime)
+    if key in _content_desc_cache:
+        return _content_desc_cache[key]
+
+    text = _read_full_text(filename)
+    out = ""
+    if text:
+        m = _DESC_PRIMARY_RE.search(text)
+        if m:
+            out = _clean_description_text(m.group(1))
+        if not out:
+            m = _DESC_FALLBACK_RE.search(text)
+            if m:
+                out = _clean_description_text(m.group(1))
+    # Trim to a manageable size for card display + JSON.
+    if len(out) > 1200:
+        out = out[:1180].rsplit(" ", 1)[0] + "…"
+    _content_desc_cache[key] = out
+    return out
 
 
 def _extract_agency_from_content(filename):
@@ -329,16 +479,24 @@ def _scan():
             or _extract_date_from_content(fn)
             or _mtime_date(fn)
         )
+        # Departmental recommendation (SIGN/VETO/LWOS) + analytical
+        # description, pulled from the PDF body. Both extracted once
+        # per file (mtime-keyed cache) so even with N bills referencing
+        # the same multi-bill sheet, the parse happens once.
+        recommendation = _extract_recommendation(fn)
+        description = _extract_description(fn)
         label = agency
         # Index the same file under EVERY bill it references. Agency
         # blue sheets sometimes cover multiple bills (e.g.
         # "UA Blue Sheet HB 10 and HB 176.pdf" → both HB 10 and HB 176).
         for bn in bns:
             out.setdefault(bn, []).append({
-                "filename": fn,
-                "agency": agency,
-                "date": date,
-                "label": label,
+                "filename":       fn,
+                "agency":         agency,
+                "date":           date,
+                "label":          label,
+                "recommendation": recommendation,
+                "description":    description,
             })
     # De-dup within each bill: if two entries have identical (agency,
     # date) keep only the first by sorted filename. Catches the

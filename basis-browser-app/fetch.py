@@ -656,11 +656,16 @@ def fetch_passed_bills(session="34"):
         pdf_url = (status_m.group(1).strip()
                    if status_m and status_m.group(1) else "")
         status_text = (status_m.group(2) if status_m else "").strip()
+        # HTML-unescape every user-visible string. akleg's listing
+        # leaves entities like '&amp;' / '&apos;' literal in the
+        # source, and we used to pass them through to the template,
+        # which then HTML-escaped them a second time — producing
+        # 'LEGISLATIVE ETHICS CMTE &amp; PROCEEDINGS' in the UI.
         results.append({
             "billnumber": bn,
-            "title": (title_m.group(1).strip() if title_m else ""),
-            "sponsor": (sponsor_m.group(1).strip() if sponsor_m else ""),
-            "status": status_text,
+            "title": _html.unescape(title_m.group(1).strip()) if title_m else "",
+            "sponsor": _html.unescape(sponsor_m.group(1).strip()) if sponsor_m else "",
+            "status": _html.unescape(status_text),
             "date": (date_m.group(1).strip() if date_m else ""),
             "pdf_url": pdf_url,
         })

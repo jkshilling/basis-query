@@ -1409,7 +1409,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v33", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v34", max_age=300)
     if cached is not None:
         return cached
 
@@ -1633,6 +1633,21 @@ def awaiting_transmittal(session="34"):
                 "fy_min": None, "fy_max": None, "per_fn": [],
             }
 
+        # GLO (Governor's Legislative Office) recommendation. Computed
+        # from departmental blue-sheet recommendations + a few political
+        # signals (Governor's own bill, veto-proof passage). Manual
+        # overrides in glo_recs.GLO_OVERRIDES always win.
+        try:
+            import glo_recs as _glo
+            glo_rec = _glo.guess(
+                blue_sheets=_bluesheet_index.get(compact_billnumber(bn), []),
+                requestor=bm.get("requestor") or "",
+                veto_proof=veto_proof,
+                billnumber=compact_billnumber(bn),
+            )
+        except Exception:
+            glo_rec = {"rec": "", "source": "", "note": "", "overridden": False}
+
         # Veto-override math: combined yeas across both chambers vs.
         # the 2/3 (40) and 3/4 (45) thresholds. We don't auto-detect
         # appropriations, but expose both numbers so the UI can flag.
@@ -1846,7 +1861,9 @@ def awaiting_transmittal(session="34"):
             "akleg_url": akleg_url,
             # Blue sheets — list of curated agency analyses on disk.
             # Empty for resolutions (template suppresses the section
-            # when type is not HB/SB).
+            # when type is not HB/SB). Each entry now also carries
+            # recommendation (SIGN/VETO/LWOS) + description extracted
+            # from the PDF body.
             "blue_sheets": _bluesheet_index.get(compact_billnumber(bn), []),
             # Legal analyses — LLS / DOL constitutional/legal reviews.
             # Applies to both bills and resolutions.
@@ -1869,6 +1886,10 @@ def awaiting_transmittal(session="34"):
             # bill (issue #1). Best-effort; FNs that can't be parsed
             # are counted but excluded from the total.
             "fiscal_total": fiscal_total,
+            # GLO (Governor's Legislative Office) recommendation —
+            # computed from blue-sheet rolls + political signals;
+            # overridable per bill via glo_recs.GLO_OVERRIDES.
+            "glo_recommendation": glo_rec,
             # At-governor flag + clock fields (populated only when at gov)
             "is_at_governor": is_at_gov,
             "transmit_date": format_status_date_full(transmit_date),
@@ -1926,7 +1947,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v33", result)
+    _cache.put("awaiting_transmittal_v34", result)
     return result
 
 

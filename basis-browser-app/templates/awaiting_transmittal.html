@@ -478,6 +478,60 @@
             border-style: dashed;
             cursor: help;
         }
+        /* Small recommendation dot prefixed to each blue-sheet chip
+           indicating the department's SIGN/VETO/LWOS pick. */
+        .at-rec-dot {
+            display: inline-block;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            margin-right: 4px;
+            vertical-align: 0;
+        }
+        .at-rec-dot.SIGN { background: #1e8449; }
+        .at-rec-dot.VETO { background: #c0392b; }
+        .at-rec-dot.LWOS { background: #f39c12; }
+        .at-rec-dot.unknown { background: #b0b8c0; }
+
+        /* GLO recommendation chip — sits in column 3 above the vote
+           bars. Color-codes the guess; tooltip explains the source
+           and any override note. */
+        .at-glo {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 4px 10px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            border-radius: 4px;
+            border: 1px solid;
+            cursor: help;
+        }
+        .at-glo.SIGN { background: #e8f8f0; border-color: #1e8449; color: #1e6e3a; }
+        .at-glo.VETO { background: #fde8e8; border-color: #c0392b; color: #922b21; }
+        .at-glo.LWOS { background: #fef5e7; border-color: #d68910; color: #885a00; }
+        .at-glo.unknown { background: #f2f4f7; border-color: #b0b8c0; color: #6e7681; }
+        .at-glo.overridden::after { content: " *"; font-weight: 700; }
+
+        /* Bill description block — auto-extracted from the lead
+           agency's blue sheet ("What does this Bill do?" section). */
+        .at-desc {
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: #fbfcfd;
+            border-left: 3px solid #b0c4de;
+            font-size: 0.86rem;
+            color: #2c3e50;
+            line-height: 1.45;
+        }
+        .at-desc-src {
+            display: block;
+            font-size: 0.7rem;
+            color: #6e7681;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 3px;
+        }
 
         /* Stat strip */
         .at-strip { display: flex; gap: 12px; margin: 10px 0 20px; flex-wrap: wrap; }
@@ -760,6 +814,39 @@
                 }
             }
 
+            // Bill description, sourced from the lead agency's blue
+            // sheet "What does this Bill do?" section. We surface the
+            // first non-empty description we find across all blue
+            // sheets for this bill; the others remain available in
+            // the chip tooltips. Card shows ~500 chars; full text
+            // available by clicking the chip and reading the PDF.
+            var bsList = b.blue_sheets || [];
+            var descAgency = '';
+            var descText = '';
+            for (var i = 0; i < bsList.length; i++) {
+                if (bsList[i].description) {
+                    descText = bsList[i].description;
+                    descAgency = bsList[i].agency || '';
+                    break;
+                }
+            }
+            if (descText) {
+                var truncated = descText;
+                var truncFlag = '';
+                if (descText.length > 520) {
+                    // Truncate at the last word boundary before char 500.
+                    var slice = descText.substring(0, 500);
+                    var lastSpace = slice.lastIndexOf(' ');
+                    truncated = lastSpace > 200 ? slice.substring(0, lastSpace) : slice;
+                    truncFlag = '…';
+                }
+                html += '<div class="at-desc" title="' + esc(descText) + '">';
+                html += '<span class="at-desc-src">From ' + esc(descAgency) +
+                        ' blue sheet</span>';
+                html += esc(truncated) + truncFlag;
+                html += '</div>';
+            }
+
             // Vote tallies — show party breakdown when available
             function partyMini(byParty) {
                 if (!byParty) return '';
@@ -885,9 +972,26 @@
                     attach += '<span class="at-attach-lbl">Blue sheets</span>';
                     if (sheets.length) {
                         sheets.forEach(function(s) {
+                            // Departmental recommendation dot prefixed
+                            // to the chip — green=SIGN, red=VETO,
+                            // yellow=LWOS, grey=unknown.
+                            var rec = (s.recommendation || '').toUpperCase();
+                            var dotCls = rec || 'unknown';
+                            var dotTitle = rec
+                                ? rec + ' recommended'
+                                : 'No recommendation parsed';
+                            var chipTitle = s.filename +
+                                (rec ? ' — ' + rec : '') +
+                                (s.description ? '\n\n' + s.description.substring(0, 280) +
+                                                 (s.description.length > 280 ? '…' : '')
+                                              : '');
                             attach += '<a class="at-chip bluesheet" href="/blue-sheet-file/' +
-                                encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
-                                esc(s.filename) + '">📄 ' + esc(s.label) + '</a>';
+                                encodeURIComponent(s.filename) +
+                                '" target="_blank" rel="noopener" title="' +
+                                esc(chipTitle) + '">' +
+                                '<span class="at-rec-dot ' + dotCls + '" title="' +
+                                esc(dotTitle) + '"></span>📄 ' +
+                                esc(s.label) + '</a>';
                         });
                     } else {
                         attach += '<span class="at-chip missing" title="No blue sheet on file. Drop a PDF in basis-browser-app/blue_sheets/.">none on file</span>';
@@ -914,10 +1018,10 @@
 
             html += '</div>';
 
-            // Column 3: days badge + dates, then a visual party
-            // breakdown for the vote. Both chambers sized on the same
-            // scale (40-wide), so House looks twice as long as Senate
-            // — reflecting the actual chamber sizes.
+            // Column 3: days badge + dates, then GLO recommendation
+            // chip, then visual vote breakdown. Both chamber bars
+            // share the 40-wide scale so House looks twice as long
+            // as Senate — reflecting actual chamber sizes.
             html += '<div class="at-meta">';
             html +=   '<span class="at-days ' + dClass + '">' + dTxt + '</span>';
             html +=   '<span class="at-days-label">' + esc(dLabel) + '</span>';
@@ -927,6 +1031,22 @@
                 if (b.return_by_date) {
                     html += '<span class="at-meta-sub">due back ' + esc(b.return_by_date) + '</span>';
                 }
+            }
+
+            // GLO (Governor's Legislative Office) recommendation —
+            // computed from departmental blue sheets + political
+            // signals; manually overridable per bill via glo_recs.py.
+            // Asterisk (set by .overridden::after CSS) flags overrides.
+            var glo = b.glo_recommendation;
+            if (glo && (glo.rec || glo.note)) {
+                var gloCls = glo.rec || 'unknown';
+                if (glo.overridden) gloCls += ' overridden';
+                var gloLbl = glo.rec || '—';
+                var gloTip = 'GLO recommendation: ' + (glo.rec || 'unknown') +
+                             (glo.note ? '\n' + glo.note : '') +
+                             (glo.source ? '\n(' + glo.source + ')' : '');
+                html += '<div><span class="at-glo ' + gloCls + '" title="' +
+                    esc(gloTip) + '">GLO: ' + esc(gloLbl) + '</span></div>';
             }
 
             // Mini vote-breakdown bars. Each segment's flex value is
@@ -1309,8 +1429,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v30';
-    var DETAIL_KEY_PREFIX = 'at_detail_v34:';
+    var LIST_KEY = 'at_list_v31';
+    var DETAIL_KEY_PREFIX = 'at_detail_v35:';
 
     function lsGet(key) {
         try {
