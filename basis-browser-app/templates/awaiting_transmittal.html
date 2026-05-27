@@ -1721,7 +1721,20 @@
                     h += '<span class="at-rat-src at-rat-override">manually overridden</span>';
                 }
                 h += '</div>';
-                var gloText = (rationale && rationale.glo_rationale) || glo.note || '';
+                // Precedence:
+                //   1. Manual override note ALWAYS wins. The user
+                //      wrote that to explain WHY they're overriding
+                //      the heuristic; the LLM has no idea.
+                //   2. Otherwise, prefer the LLM-synthesized
+                //      glo_rationale (richer phrasing).
+                //   3. Final fallback: the heuristic's note
+                //      (count-based, less interesting).
+                var gloText;
+                if (glo.overridden) {
+                    gloText = glo.note;
+                } else {
+                    gloText = (rationale && rationale.glo_rationale) || glo.note || '';
+                }
                 if (gloText) {
                     h += '<p class="at-rat-body">' + esc(gloText) + '</p>';
                 }
@@ -2129,7 +2142,7 @@
     });
 
     var LIST_KEY = 'at_list_v50';
-    var DETAIL_KEY_PREFIX = 'at_detail_v48:';
+    var DETAIL_KEY_PREFIX = 'at_detail_v49:';
 
     function lsGet(key) {
         try {
