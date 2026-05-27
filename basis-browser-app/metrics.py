@@ -1385,7 +1385,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v14", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v16", max_age=300)
     if cached is not None:
         return cached
 
@@ -1419,31 +1419,58 @@ def awaiting_transmittal(session="34"):
         if prefix not in ("HB", "SB", "HJR", "SJR", "HCR", "SCR"):
             continue
         su = (status or "").upper()
-        # AT GOVERNOR: status indicates the bill has been physically
-        # transmitted to the governor's office. BASIS uses at least
-        # three phrasings; akleg.gov has historically also rendered
-        # "(X) DUE BACK FROM GOVERNOR mm/dd/yy" — covered defensively.
-        is_at_gov = (
-            "TRANSM TO GOVERNOR" in su
-            or "TRANSMITTED TO GOVERNOR" in su
-            or "DUE BACK FROM GOVERNOR" in su
-        )
-        # AWAITING TRANSMITTAL: passed both chambers, sitting with the
-        # origin chamber's secretary. Three known variants:
-        #   "RTN TO (X) GOV NEXT", "AWAIT TRANSMIT GOV",
-        #   "AWAITING TRANSMITTAL TO GOV"
-        is_awaiting = (
-            (
-                "GOV NEXT" in su
-                or "RTN TO" in su
-                or "AWAIT TRANSMIT" in su
-                or "AWAITING TRANSMITTAL" in su
-            )
-            and not is_at_gov
-        )
-        # Skip terminal states regardless of bucket
-        if "CHAPTER" in su or "VETOED" in su:
+        # Skip terminal states. BASIS reliably updates these in status.
+        # "LEGIS RESOLVE N" is the resolutions-equivalent of CHAPTER —
+        # adopted and filed by the Legislative Affairs Agency.
+        if ("CHAPTER" in su or "VETOED" in su or "VETO SUSTAINED" in su
+                or "LEGIS RESOLVE" in su):
             continue
+
+        # Classify by ACTION CODES (authoritative) rather than
+        # StatusText, which BASIS sometimes lags on — e.g. HB 23 and
+        # HB 25 had status "(H) CONCURRED(S) AM" while their most
+        # recent action was already 049 AWAITING TRANSMITTAL TO GOV.
+        #   049 = AWAITING TRANSMITTAL TO GOV
+        #   033 = TRANSMITTED TO GOVERNOR
+        #   034/036/038 = SIGNED / LAW WITHOUT SIG / VETOED (terminal)
+        TERMINAL_CODES = {"034", "036", "038"}
+        latest_at_gov = ""    # most recent 033 date
+        latest_awaiting = ""  # most recent 049 date
+        latest_terminal = ""  # most recent terminal-code date
+        for c, _a, jd, _t in actions:
+            if c == "033" and jd > latest_at_gov:
+                latest_at_gov = jd
+            elif c == "049" and jd > latest_awaiting:
+                latest_awaiting = jd
+            elif c in TERMINAL_CODES and jd > latest_terminal:
+                latest_terminal = jd
+        # Terminal action overrides everything — skip.
+        if latest_terminal and latest_terminal >= max(latest_at_gov, latest_awaiting):
+            continue
+        # At-governor when 033 happened and no later 049 reset it.
+        is_at_gov = bool(latest_at_gov) and latest_at_gov >= latest_awaiting
+        # Awaiting when 049 is the most recent transmittal-related event.
+        is_awaiting = bool(latest_awaiting) and not is_at_gov
+
+        # Defensive fallback to StatusText for the rare bill whose
+        # action stream is missing the canonical code (BASIS data
+        # quality is uneven on older sessions / unusual bill types).
+        if not (is_at_gov or is_awaiting):
+            is_at_gov = (
+                "TRANSM TO GOVERNOR" in su
+                or "TRANSMITTED TO GOVERNOR" in su
+                or "DUE BACK FROM GOVERNOR" in su
+            )
+            is_awaiting = (
+                (
+                    "GOV NEXT" in su
+                    or "RTN TO" in su
+                    or "AWAIT TRANSMIT" in su
+                    or "AWAITING TRANSMITTAL" in su
+                )
+                and not is_at_gov
+            )
+
         # Skip anything not in one of our two buckets
         if not (is_at_gov or is_awaiting):
             continue
@@ -1692,7 +1719,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v14", result)
+    _cache.put("awaiting_transmittal_v16", result)
     return result
 
 
