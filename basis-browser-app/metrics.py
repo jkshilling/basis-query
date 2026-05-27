@@ -2330,6 +2330,23 @@ def bill_decision_detail(billnumber, session="34"):
     except Exception:
         pass
 
+    # Stakeholders — LLM-synthesized concrete-group lists for
+    # beneficiaries / burdened / otherwise affected. Read-only
+    # cache lookup; Stage 8 background prefetch generates these.
+    stakeholders = None
+    try:
+        import bill_summarizer as _summ_sh
+        import blue_sheets as _bs_sh
+        import briefing_packets as _bp_sh
+        stakeholders = _summ_sh.get_cached_stakeholders(
+            billnumber,
+            _bs_sh.sheets_for(billnumber),
+            _bp_sh.packets_for(billnumber),
+            bill_meta,
+        )
+    except Exception:
+        pass
+
     result = {
         "billnumber": billnumber,
         "passage_votes": passage_votes,
@@ -2353,6 +2370,8 @@ def bill_decision_detail(billnumber, session="34"):
         "dol_reviews": dol_reviews,
         # LLM-generated rationales for the GLO + DEPT chips.
         "rationale": rationale,
+        # LLM-synthesized concrete-group stakeholder lists.
+        "stakeholders": stakeholders,
     }
     _cache.put(cache_key, result)
     return result

@@ -560,6 +560,194 @@ def get_cached_rationale(billnumber, blue_sheets, bill_meta,
 
 
 # --------------------------------------------------------------------------
+# Stakeholder synthesis — who benefits / who's burdened / who's otherwise
+# affected. Separate cache + prompt from the bill summary so prompt
+# iteration on one doesn't invalidate the other.
+# --------------------------------------------------------------------------
+
+_STAKEHOLDER_PROMPT_VERSION = "v1"
+
+_STAKEHOLDER_SYSTEM_PROMPT = """You analyze Alaska bills for a veto-decision \
+dashboard. From the source material (blue sheets, briefing packets, DOL review), \
+identify the CONCRETE STAKEHOLDERS this bill affects.
+
+Return JSON with three lists:
+
+{
+  "beneficiaries": ["<concrete group that gains a right, benefit, opportunity, \
+or service>", ...],
+  "burdened":      ["<concrete group that takes on a new obligation, cost, \
+restriction, or risk>", ...],
+  "affected":      ["<concrete group that is otherwise materially affected — \
+regulated, funded, monitored — but not clearly in the benefit or burden bucket>", ...]
+}
+
+RULES — these are NOT optional:
+
+- ONLY list groups DIRECTLY NAMED in the source material. If the blue sheets / \
+  briefing packets don't identify a specific group, do NOT invent one to fill \
+  the slot. Empty lists are fine and expected.
+- Be CONCRETE and SPECIFIC. Good examples: \
+    'Licensed occupational therapists practicing across state lines', \
+    'Set net commercial salmon permit holders in the Cook Inlet ESSN area', \
+    'Foster children admitted for short-term psychiatric care', \
+    'Municipal animal control authorities handling feral cats', \
+    'Commercial trawl vessels in Alaska finfish fisheries'.
+- Bad examples (TOO GENERIC — DO NOT USE): 'all Alaskans', 'the public', \
+  'stakeholders', 'agencies', 'the state'.
+- Each entry is a short noun phrase, 4-15 words. No periods.
+- 0-5 entries per category. Quality over quantity.
+- Do not name executive-branch departments or agencies as stakeholders — \
+  they're reviewers, not stakeholders for this purpose. Exception: when the \
+  bill creates a new obligation/burden on a specific named board/commission \
+  (Alaska Invasive Species Council, AIDEA, etc.), naming that body is OK.
+- Do not editorialize about whether benefits/burdens are good or bad. Just \
+  identify the groups.
+
+Return ONLY the JSON object. No markdown fence. No preamble."""
+
+
+def _stakeholder_input_hash(billnumber, blue_sheets, briefing_packets, bill_meta):
+    parts = [_STAKEHOLDER_PROMPT_VERSION, (billnumber or "").strip()]
+    for s in sorted(blue_sheets or [], key=lambda x: (x.get("agency", ""), x.get("filename", ""))):
+        parts.append("|".join([
+            s.get("agency", ""),
+            s.get("description", ""),
+            s.get("action_justification", ""),
+        ]))
+    for p in sorted(briefing_packets or [], key=lambda x: x.get("filename", "")):
+        parts.append("BP|" + (p.get("body_text") or ""))
+    if bill_meta:
+        parts.append(bill_meta.get("latest_version_title") or "")
+        parts.append(bill_meta.get("short_title") or "")
+    digest = hashlib.sha256("\n---\n".join(parts).encode("utf-8")).hexdigest()
+    return "s:" + digest[:22]
+
+
+def _build_stakeholder_user_message(billnumber, bill_meta, blue_sheets, briefing_packets):
+    lines = [f"Bill: {billnumber}"]
+    if bill_meta:
+        title = bill_meta.get("latest_version_title") or bill_meta.get("short_title")
+        if title:
+            lines.append(f"Title: {title}")
+    lines.append("")
+    if blue_sheets:
+        for s in blue_sheets:
+            agency = s.get("agency") or "?"
+            lines.append(f"=== {agency} blue sheet ===")
+            if s.get("description"):
+                lines.append("What does this bill do: " + s["description"])
+            if s.get("action_justification"):
+                lines.append("Action Justification: " + s["action_justification"])
+            lines.append("")
+    if briefing_packets:
+        for p in briefing_packets:
+            body = (p.get("body_text") or "").strip()
+            if not body:
+                continue
+            lines.append(f"=== Briefing packet ({p.get('filename','')}) ===")
+            lines.append(body)
+            lines.append("")
+    return "\n".join(lines).strip()
+
+
+def synthesize_stakeholders(billnumber, blue_sheets, briefing_packets,
+                             bill_meta=None, *, force=False, timeout=60.0):
+    """Generate the concrete-stakeholder analysis for one bill.
+    Returns dict {beneficiaries, burdened, affected, ...} or None."""
+    bn = (billnumber or "").strip()
+    if not bn:
+        return None
+    h = _stakeholder_input_hash(bn, blue_sheets, briefing_packets, bill_meta)
+    cache = _load_cache()
+    if not force and h in cache:
+        return cache[h]
+
+    api_key = _read_api_key()
+    if not api_key:
+        return None
+
+    user_msg = _build_stakeholder_user_message(
+        bn, bill_meta, blue_sheets, briefing_packets,
+    )
+    body = {
+        "model": _MODEL,
+        "max_tokens": 700,
+        "system": _STAKEHOLDER_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": user_msg}],
+    }
+    req = urllib.request.Request(
+        _API_URL,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": _API_VERSION,
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            resp = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            body_text = e.read().decode("utf-8", errors="replace")[:400]
+        except Exception:
+            body_text = ""
+        log.warning("stakeholders.http_error bn=%s status=%s body=%r",
+                    bn, e.code, body_text)
+        return None
+    except Exception as e:
+        log.warning("stakeholders.error bn=%s err=%r", bn, e)
+        return None
+
+    text = ""
+    for chunk in resp.get("content") or []:
+        if chunk.get("type") == "text":
+            text += chunk.get("text", "")
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.lstrip("`").lstrip()
+        if text.lower().startswith("json"):
+            text = text[4:].lstrip()
+        if text.endswith("```"):
+            text = text[:-3].rstrip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        log.warning("stakeholders.bad_json bn=%s raw=%r", bn, text[:300])
+        return None
+
+    def _clean_list(v):
+        out = []
+        for item in (v or []):
+            s = str(item).strip().rstrip(".")
+            if 3 <= len(s) <= 200:
+                out.append(s)
+        return out[:5]
+
+    out = {
+        "beneficiaries": _clean_list(parsed.get("beneficiaries")),
+        "burdened":      _clean_list(parsed.get("burdened")),
+        "affected":      _clean_list(parsed.get("affected")),
+        "model":         _MODEL,
+        "generated_at":  int(time.time()),
+        "input_hash":    h,
+    }
+    cache[h] = out
+    _save_cache()
+    return out
+
+
+def get_cached_stakeholders(billnumber, blue_sheets, briefing_packets, bill_meta=None):
+    bn = (billnumber or "").strip()
+    if not bn:
+        return None
+    h = _stakeholder_input_hash(bn, blue_sheets, briefing_packets, bill_meta)
+    return _load_cache().get(h)
+
+
+# --------------------------------------------------------------------------
 # Manual CLI: python -m bill_summarizer <BN>
 # --------------------------------------------------------------------------
 

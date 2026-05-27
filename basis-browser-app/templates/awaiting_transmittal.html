@@ -605,6 +605,45 @@
         }
         .at-dept-rationale-list strong { color: #1a2530; }
 
+        /* Stakeholders block: 3 columns, each with a colored title bar.
+           Beneficiaries = green, Burdened = red, Affected = grey. */
+        .at-stakeholders {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            margin-top: 6px;
+        }
+        .at-stake-col {
+            border: 1px solid #d6dbe1;
+            border-radius: 4px;
+            background: #fff;
+            overflow: hidden;
+        }
+        .at-stake-h {
+            padding: 6px 10px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #fff;
+        }
+        .at-stake-col.beneficiaries .at-stake-h { background: #1e8449; }
+        .at-stake-col.burdened      .at-stake-h { background: #c0392b; }
+        .at-stake-col.affected      .at-stake-h { background: #6c7a89; }
+        .at-stake-col ul {
+            margin: 0;
+            padding: 8px 12px 10px 26px;
+            font-size: 0.88rem;
+            line-height: 1.45;
+            color: #2c3e50;
+        }
+        .at-stake-col li { margin-bottom: 4px; }
+        .at-stake-col li:last-child { margin-bottom: 0; }
+        /* Stack to single column on narrower viewports for readability. */
+        @media (max-width: 880px) {
+            .at-stakeholders { grid-template-columns: 1fr; }
+        }
+
         /* DOL Bill Review block in the expander. Each packet's review
            gets its own dol-block with a source-file link header. */
         .at-dol-block {
@@ -1593,6 +1632,30 @@
             h += '</div>';
         }
 
+        // Stakeholders — concrete groups identified from blue sheets
+        // and briefing packets. Three columns: beneficiaries, burdened,
+        // and otherwise affected. Empty categories collapse cleanly.
+        var sh = d.stakeholders;
+        if (sh && ((sh.beneficiaries||[]).length || (sh.burdened||[]).length || (sh.affected||[]).length)) {
+            h += '<div class="at-section">';
+            h += '<div class="at-section-h">Stakeholders</div>';
+            h += '<div class="at-stakeholders">';
+            function stakeCol(title, items, cls) {
+                if (!items || !items.length) return '';
+                var ul = '<ul>';
+                items.forEach(function(item) {
+                    ul += '<li>' + esc(item) + '</li>';
+                });
+                ul += '</ul>';
+                return '<div class="at-stake-col ' + cls + '">' +
+                       '<div class="at-stake-h">' + title + '</div>' + ul + '</div>';
+            }
+            h += stakeCol('Beneficiaries', sh.beneficiaries, 'beneficiaries');
+            h += stakeCol('Burdened',     sh.burdened,      'burdened');
+            h += stakeCol('Affected',     sh.affected,      'affected');
+            h += '</div></div>';
+        }
+
         // Legal description block intentionally removed per user
         // direction — the LLM synthesis already covers what the bill
         // does in plain English, and the bureaucratic "An Act
@@ -1851,7 +1914,7 @@
     });
 
     var LIST_KEY = 'at_list_v45';
-    var DETAIL_KEY_PREFIX = 'at_detail_v44:';
+    var DETAIL_KEY_PREFIX = 'at_detail_v45:';
 
     function lsGet(key) {
         try {

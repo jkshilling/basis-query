@@ -258,6 +258,65 @@ def _refresh_all():
         log.info("refresh.step name=detail_rewarm_rationale elapsed=%.1fs status=ok",
                  time.monotonic() - s)
 
+    # Stage 8: stakeholder analyses (LLM). Concrete-group lists for
+    # who benefits / who's burdened / who's otherwise affected. Same
+    # ~$0.005/bill cost as the rationale stage.
+    s = time.monotonic()
+    sh_made = sh_cached = sh_skipped = 0
+    try:
+        import bill_summarizer as _summ8
+        import blue_sheets as _bs8
+        import briefing_packets as _bp8
+        from fetch import fetch_all_bills
+        meta_by_bn8 = {}
+        for chamber in ("H", "S"):
+            for b in fetch_all_bills(chamber, "34",
+                                      queries=["Sponsors", "Subjects",
+                                               "Versions", "FiscalNotes"]):
+                meta_by_bn8[b.get("billnumber", "")] = b
+        for entry in all_bill_entries:
+            bn = entry.get("billnumber") or ""
+            if not bn:
+                continue
+            sheets = _bs8.sheets_for(bn)
+            packets = _bp8.packets_for(bn)
+            has_sheet_text  = any(s2.get("description") or s2.get("action_justification") for s2 in sheets)
+            has_packet_text = any(p.get("body_text") for p in packets)
+            if not (has_sheet_text or has_packet_text):
+                sh_skipped += 1
+                continue
+            meta = meta_by_bn8.get(bn)
+            if _summ8.get_cached_stakeholders(bn, sheets, packets, meta):
+                sh_cached += 1
+                continue
+            try:
+                if _summ8.synthesize_stakeholders(bn, sheets, packets, meta):
+                    sh_made += 1
+            except Exception as exc:
+                log.warning("refresh.stakeholders name=%s err=%r", bn, exc)
+        log.info("refresh.step name=stakeholders new=%d cached=%d skipped=%d "
+                 "elapsed=%.1fs status=ok",
+                 sh_made, sh_cached, sh_skipped, time.monotonic() - s)
+    except Exception as exc:
+        log.warning("refresh.step name=stakeholders elapsed=%.1fs "
+                    "status=fail err=%r", time.monotonic() - s, exc)
+
+    # Stage 9: re-warm bill_decision_detail after stakeholders cached.
+    if sh_made:
+        s = time.monotonic()
+        for entry in all_bill_entries:
+            bn = entry.get("billnumber") or ""
+            if not bn:
+                continue
+            try:
+                from cache import _cache as _c
+                _c.pop(f"bill_decision_detail_v12_34_{bn}", None)
+                bill_decision_detail(bn)
+            except Exception:
+                pass
+        log.info("refresh.step name=detail_rewarm_stakeholders elapsed=%.1fs status=ok",
+                 time.monotonic() - s)
+
     log.info("refresh.complete total_elapsed=%.1fs", time.monotonic() - t0)
 
 
