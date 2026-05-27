@@ -284,18 +284,36 @@
         }
         .at-expand summary {
             cursor: pointer;
-            font-size: 0.82rem;
+            font-size: 0.85rem;
+            font-weight: 600;
             color: #1a5276;
             user-select: none;
             list-style: none;
             display: inline-flex;
             align-items: center;
-            gap: 4px;
+            gap: 6px;
+            padding: 6px 14px;
+            background: #f2f4f7;
+            border: 1px solid #c8d0d8;
+            border-radius: 4px;
+            transition: background 0.1s ease;
         }
         .at-expand summary::-webkit-details-marker { display: none; }
-        .at-expand summary::before { content: "▸"; font-size: 0.75rem; color: #95a5a6; }
+        .at-expand summary::before {
+            content: "▸";
+            font-size: 0.8rem;
+            color: #5b6770;
+            transition: transform 0.1s ease;
+        }
         .at-expand[open] summary::before { content: "▾"; }
-        .at-expand summary:hover { text-decoration: underline; }
+        .at-expand summary:hover {
+            background: #e7eaee;
+            text-decoration: none;
+        }
+        .at-expand[open] summary {
+            background: #e7eaee;
+            border-color: #b0b8c0;
+        }
         .at-expand-body { margin-top: 12px; }
         .at-expand-body .loading-inline { color: #888; font-style: italic; }
         .at-section { margin-top: 14px; }
@@ -1573,7 +1591,7 @@
 
             // Expander spans the full card row.
             html += '<details class="at-expand" data-billnumber="' + esc(b.billnumber) + '">';
-            html += '<summary>Show full roll call &amp; fiscal notes</summary>';
+            html += '<summary>Full analysis &amp; details</summary>';
             html += '<div class="at-expand-body"></div>';
             html += '</details>';
 
@@ -2086,7 +2104,7 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v46';
+    var LIST_KEY = 'at_list_v47';
     var DETAIL_KEY_PREFIX = 'at_detail_v46:';
 
     function lsGet(key) {
