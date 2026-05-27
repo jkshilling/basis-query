@@ -499,9 +499,23 @@ def _scan():
                 "description":    description,
             })
     # De-dup within each bill: if two entries have identical (agency,
-    # date) keep only the first by sorted filename. Catches the
-    # "HB23 (1).docx" downloaded-twice case.
+    # date) keep only one — and prefer PDF over DOCX when both exist
+    # (PDFs render inline in browsers; DOCX forces a download even
+    # with a proper mimetype). Catches the "HB 249 DOA DMV Blue Sheet
+    # ...{docx,pdf}" pair and the "HB23 (1).docx" duplicate case.
+    def _format_score(fn):
+        # Lower score = preferred. .pdf wins over .docx.
+        return 0 if fn.lower().endswith(".pdf") else 1
     for bn, lst in out.items():
+        # Group by (agency, date) and pick the best filename per group.
+        by_key = {}
+        for sheet in lst:
+            key = (sheet["agency"], sheet["date"])
+            existing = by_key.get(key)
+            if existing is None or _format_score(sheet["filename"]) < _format_score(existing["filename"]):
+                by_key[key] = sheet
+        # Preserve original ordering: walk lst in order, taking each
+        # key's best entry once.
         seen = set()
         unique = []
         for sheet in lst:
@@ -509,7 +523,7 @@ def _scan():
             if key in seen:
                 continue
             seen.add(key)
-            unique.append(sheet)
+            unique.append(by_key[key])
         out[bn] = unique
     return out
 

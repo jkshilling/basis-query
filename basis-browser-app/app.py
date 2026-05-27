@@ -408,18 +408,100 @@ def api_bill_decision_detail(billnumber):
         return jsonify({"data": None, "error": str(exc)})
 
 
+def _docx_to_html(path, filename):
+    """Render a .docx as a minimal HTML page so browsers can display
+    it inline instead of forcing a download. Uses zipfile + the
+    document.xml inside (no external dependency)."""
+    import zipfile
+    import re as _re
+    try:
+        with zipfile.ZipFile(path) as zf:
+            with zf.open("word/document.xml") as f:
+                raw = f.read().decode("utf-8", errors="replace")
+    except (KeyError, zipfile.BadZipFile, OSError):
+        return None
+    # Split into paragraphs at <w:p> boundaries, then strip the
+    # remaining XML tags. Preserves paragraph structure; loses inline
+    # formatting (bold/italic) which is fine for a quick reader view.
+    parts = _re.split(r"<w:p[\s>][^/]*?>", raw)
+    paragraphs = []
+    for chunk in parts:
+        # Strip everything tag-like.
+        text = _re.sub(r"<[^>]+>", "", chunk)
+        text = (text.replace("&amp;", "&")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&quot;", '"')
+                    .replace("&apos;", "'"))
+        text = " ".join(text.split())
+        if text:
+            paragraphs.append(text)
+
+    from html import escape as _h_escape
+    body = "\n".join(f"<p>{_h_escape(p)}</p>" for p in paragraphs)
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{_h_escape(filename)}</title>
+<style>
+  body {{
+    font-family: Georgia, "Times New Roman", serif;
+    max-width: 780px;
+    margin: 40px auto;
+    padding: 0 20px;
+    color: #1a2530;
+    line-height: 1.55;
+  }}
+  header {{
+    border-bottom: 1px solid #d6dbe1;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    color: #5b6770;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 0.85rem;
+  }}
+  header strong {{ color: #1a2530; font-size: 1rem; display: block; }}
+  p {{ margin: 0 0 12px; }}
+</style>
+</head>
+<body>
+  <header>
+    <strong>{_h_escape(filename)}</strong>
+    Rendered from .docx for inline viewing. Original file extracted via document.xml.
+  </header>
+  {body}
+</body>
+</html>"""
+    return html
+
+
+def _serve_inline_doc(path, filename):
+    """Common serve logic for blue-sheet + legal-analysis files. PDFs
+    render natively in browsers. DOCX gets converted to HTML so the
+    browser displays it inline instead of forcing a download."""
+    from flask import send_file, abort, Response
+    if not path:
+        abort(404)
+    if path.lower().endswith(".pdf"):
+        # Inline PDF — modern browsers render with their native viewer.
+        return send_file(path, mimetype="application/pdf",
+                         as_attachment=False)
+    if path.lower().endswith((".docx", ".doc")):
+        html = _docx_to_html(path, filename)
+        if html is None:
+            abort(500, "Could not parse DOCX")
+        return Response(html, mimetype="text/html; charset=utf-8")
+    # Unknown extension — fall through to octet-stream, browser may download.
+    return send_file(path, mimetype="application/octet-stream",
+                     as_attachment=False)
+
+
 @app.route("/legal-analysis-file/<path:filename>")
 def serve_legal_analysis_file(filename):
     """Serve a specific legal-analysis file by filename."""
-    from flask import send_file, abort
     import legal_analyses as la_mod
-    path = la_mod.abs_path(filename)
-    if not path:
-        abort(404)
-    mime = ("application/pdf" if path.lower().endswith(".pdf")
-            else "application/octet-stream")
-    return send_file(path, mimetype=mime,
-                     download_name=filename, as_attachment=False)
+    return _serve_inline_doc(la_mod.abs_path(filename), filename)
 
 
 @app.route("/blue-sheet-file/<path:filename>")
@@ -428,15 +510,8 @@ def serve_blue_sheet_file(filename):
     can exist for one bill (separate agencies submit separate
     analyses), so the URL is file-keyed, not bill-keyed. abs_path
     prevents path traversal."""
-    from flask import send_file, abort
     import blue_sheets as bs_mod
-    path = bs_mod.abs_path(filename)
-    if not path:
-        abort(404)
-    mime = ("application/pdf" if path.lower().endswith(".pdf")
-            else "application/octet-stream")
-    return send_file(path, mimetype=mime,
-                     download_name=filename, as_attachment=False)
+    return _serve_inline_doc(bs_mod.abs_path(filename), filename)
 
 
 @app.route("/api/session-countdown")
