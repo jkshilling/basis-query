@@ -28,6 +28,45 @@
             box-shadow: 0 1px 2px rgba(0,0,0,0.04);
         }
         .at-card.origin-S { border-left-color: #922b21; }
+
+        /* Workflow-flag tints on the card root. Subtle so the
+           content still reads clearly. */
+        .at-card[data-flag-state="needs-research"] {
+            background: #fef9ea;  /* pale yellow */
+        }
+        .at-card[data-flag-state="reviewed"] {
+            background: #ebf6ec;  /* pale green */
+        }
+        .at-card[data-flag-state="decided"] {
+            background: #eef0f2;  /* pale grey */
+        }
+
+        /* Flag-toggle button — bottom of column 3. Compact pill. */
+        .at-flag-btn {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            font-family: inherit;
+            font-weight: 500;
+            background: transparent;
+            border: 1px dashed #b0b8c0;
+            border-radius: 4px;
+            color: #5b6770;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .at-flag-btn:hover { background: rgba(0,0,0,0.04); }
+        .at-flag-btn:disabled { opacity: 0.5; cursor: progress; }
+        .at-flag-btn[data-flag-state="needs-research"] {
+            background: #fef5e7; border: 1px solid #e0a96d; color: #885a00;
+        }
+        .at-flag-btn[data-flag-state="reviewed"] {
+            background: #e8f8f0; border: 1px solid #b7e1c8; color: #1e6e3a;
+        }
+        .at-flag-btn[data-flag-state="decided"] {
+            background: #eef0f2; border: 1px solid #b0b8c0; color: #4a5560;
+        }
         .at-card .at-bn { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 1.05rem; font-weight: 600; white-space: nowrap; }
         .at-card .at-bn a { text-decoration: none; }
         .at-card .at-bn-ext {
@@ -725,6 +764,59 @@
         return "at-days-green";
     }
 
+    // Workflow flag button: visible label + colored icon per state.
+    // States cycle: '' → needs-research → reviewed → decided → ''.
+    function flagButtonLabel(state) {
+        switch (state) {
+            case 'needs-research': return '🟡 Needs research';
+            case 'reviewed':       return '🟢 Reviewed';
+            case 'decided':        return '⚫ Decided';
+            default:               return '⚐ Flag for follow-up';
+        }
+    }
+
+    // Delegated click handler — attached once at page load, fires for
+    // any current or future at-flag-btn (cards re-render after sort /
+    // filter changes, so we can't bind directly to each button).
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest && e.target.closest('.at-flag-btn');
+        if (!btn) return;
+        e.preventDefault();
+        var bn = btn.dataset.billnumber;
+        var current = btn.dataset.flagState || '';
+        var cycle = ['', 'needs-research', 'reviewed', 'decided'];
+        var next = cycle[(cycle.indexOf(current) + 1) % cycle.length];
+        // Optimistic UI: update button + card immediately, revert on
+        // error.
+        var card = btn.closest('.at-card');
+        var prevText = btn.textContent;
+        btn.dataset.flagState = next;
+        btn.textContent = flagButtonLabel(next);
+        if (card) card.dataset.flagState = next;
+        btn.disabled = true;
+        fetch('/api/bill/' + encodeURIComponent(bn) + '/flag', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ state: next }),
+        })
+            .then(function(r) { return r.json(); })
+            .then(function(resp) {
+                if (resp.error) {
+                    btn.dataset.flagState = current;
+                    btn.textContent = prevText;
+                    if (card) card.dataset.flagState = current;
+                    if (window.console) console.warn('flag.set failed', resp.error);
+                }
+            })
+            .catch(function(err) {
+                btn.dataset.flagState = current;
+                btn.textContent = prevText;
+                if (card) card.dataset.flagState = current;
+                if (window.console) console.warn('flag.set network err', err);
+            })
+            .finally(function() { btn.disabled = false; });
+    });
+
     function renderBillCards(rows, opts) {
         opts = opts || {};
         var hostId = opts.hostId || "bills-cards";
@@ -751,7 +843,9 @@
                 dLabel = "days since passage";
             }
 
-            html += '<div class="at-card origin-' + esc(b.origin) + '">';
+            html += '<div class="at-card origin-' + esc(b.origin) +
+                '" data-billnumber="' + esc(b.billnumber) +
+                '" data-flag-state="' + esc(b.flag_state || '') + '">';
 
             // Column 1: bill number + tiny akleg passthrough icon.
             // The akleg ↗ used to live in its own row in column 2;
@@ -1173,6 +1267,20 @@
                 html += voteBar('S', b.senate_vote, b.senate_breakdown, 40);
                 html += '</div>';
             }
+
+            // Workflow flag button — bottom of column 3. Click cycles
+            // through default → needs-research → reviewed → decided →
+            // default. Posts to /api/bill/<bn>/flag for server-side
+            // persistence so the state survives across browsers and
+            // restarts. Card background tint is driven by the
+            // data-flag-state attribute on the .at-card root, set by
+            // the JS handler below.
+            var flagState = b.flag_state || '';
+            html += '<button type="button" class="at-flag-btn" ' +
+                'data-billnumber="' + esc(b.billnumber) + '" ' +
+                'data-flag-state="' + esc(flagState) + '" ' +
+                'title="Click to cycle: needs research → reviewed → decided → clear">' +
+                flagButtonLabel(flagState) + '</button>';
             html += '</div>';
 
             // Expander spans the full card row.
@@ -1535,7 +1643,7 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v36';
+    var LIST_KEY = 'at_list_v37';
     var DETAIL_KEY_PREFIX = 'at_detail_v40:';
 
     function lsGet(key) {

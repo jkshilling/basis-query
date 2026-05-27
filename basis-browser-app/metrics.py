@@ -1409,7 +1409,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v38", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v39", max_age=300)
     if cached is not None:
         return cached
 
@@ -1442,6 +1442,12 @@ def awaiting_transmittal(session="34"):
     # briefing_packets/. Bill-keyed like the others.
     import briefing_packets as _bp
     _briefing_index = _bp.index()
+
+    # Per-bill workflow flags (needs-research / reviewed / decided).
+    # User toggles these via /api/bill/<bn>/flag — we want each page
+    # render to reflect the current state.
+    import bill_flags as _flags
+    _flag_map = _flags.get_flags()
 
     today = datetime.now().date()
 
@@ -1974,6 +1980,10 @@ def awaiting_transmittal(session="34"):
             # SIGN/VETO/LWOS checkboxes from the blue-sheet PDFs,
             # without GLO's political-signal overlay.
             "dept_recommendation": dept_rec,
+            # User-set workflow flag, persisted server-side. Cycles
+            # through ""/needs-research/reviewed/decided via the
+            # POST /api/bill/<bn>/flag endpoint.
+            "flag_state": (_flag_map.get(compact_billnumber(bn)) or {}).get("state", ""),
             # LLM-synthesized neutral summary across all blue sheets.
             # None until the background prefetch generates one;
             # template falls back to the static hand-authored dict.
@@ -2035,7 +2045,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v38", result)
+    _cache.put("awaiting_transmittal_v39", result)
     return result
 
 

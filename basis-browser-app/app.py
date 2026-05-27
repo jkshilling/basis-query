@@ -174,7 +174,7 @@ def _refresh_all():
         # NEXT page render picks up the new llm_summary fields.
         try:
             from cache import _cache as _c
-            _c.pop("awaiting_transmittal_v38", None)
+            _c.pop("awaiting_transmittal_v39", None)
             awaiting_transmittal()
         except Exception:
             pass
@@ -208,7 +208,7 @@ def _invalidate_top_level_caches():
     keys_to_clear = [
         "hb_in_senate", "sb_in_house", "dashboard_stats", "action_code_counts",
         "bill_progress", "all_actions", "all_actions_v5", "governor_bills",
-        "awaiting_transmittal_v38", "pipeline_v3_20",
+        "awaiting_transmittal_v39", "pipeline_v3_20",
     ]
     # Also clear any activity_feed_X entries and today's floor calendar
     # (so refreshes pick up newly-calendared bills).
@@ -406,6 +406,37 @@ def api_bill_decision_detail(billnumber):
         return jsonify({"data": data, "error": None})
     except Exception as exc:
         return jsonify({"data": None, "error": str(exc)})
+
+
+@app.route("/api/bill/<path:billnumber>/flag", methods=["POST"])
+def api_bill_flag(billnumber):
+    """Set or cycle a bill's workflow flag.
+
+    Body (optional): {"state": "<state>"} — set explicit state.
+                      Pass empty string to clear.
+    No body: cycle to next state in the rotation
+             ("" → needs-research → reviewed → decided → "").
+
+    Returns: {"state": <new_state>, "billnumber": <bn>, "error": null}
+    """
+    import bill_flags
+    try:
+        payload = request.get_json(silent=True) or {}
+        if "state" in payload:
+            new = bill_flags.set_flag(billnumber, payload["state"])
+        else:
+            new = bill_flags.cycle_flag(billnumber)
+        return jsonify({
+            "billnumber": billnumber, "state": new, "error": None,
+        })
+    except ValueError as exc:
+        return jsonify({
+            "billnumber": billnumber, "state": None, "error": str(exc),
+        }), 400
+    except Exception as exc:
+        return jsonify({
+            "billnumber": billnumber, "state": None, "error": str(exc),
+        }), 500
 
 
 def _docx_to_html(path, filename):
