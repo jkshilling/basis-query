@@ -25,6 +25,16 @@
         .at-card.origin-S { border-left-color: #922b21; }
         .at-card .at-bn { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 1.05rem; font-weight: 600; }
         .at-card .at-bn a { text-decoration: none; }
+        .at-card .at-bn-ext {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: 0.78rem;
+            font-weight: 500;
+            color: #5b6770;
+            text-decoration: none;
+            margin-left: 2px;
+            vertical-align: 1px;
+        }
+        .at-card .at-bn-ext:hover { color: #1a5276; }
         .at-card .at-title { font-weight: 600; font-size: 1.02rem; margin-bottom: 4px; color: #1a2530; }
         .at-card .at-sub { font-size: 0.88rem; color: #5b6770; }
         .at-card .at-sub strong { color: #2c3e50; }
@@ -384,48 +394,24 @@
         .at-pill.active { background: #1a5276; color: #fff; border-color: #1a5276; }
 
         .at-sub-meta { font-size: 0.78rem; color: #6e7681; margin-left: 2px; }
-        .at-extlink {
-            font-size: 0.74rem;
-            color: #1a5276;
-            text-decoration: none;
-            margin-left: 8px;
-            white-space: nowrap;
-        }
-        .at-extlink:hover { text-decoration: underline; }
-        /* akleg.gov passthrough link — sits ABOVE the deliverables
-           box, no border, just a quiet link to the source data. */
-        .at-akleg-row { margin-top: 8px; font-size: 0.82rem; }
-
-        /* Attachments box — bordered container around curated
-           deliverables only (blue sheets + legal analyses). The
-           akleg link is intentionally outside this. */
+        /* Attachments box — a single unlabeled row holding chips for
+           curated deliverables (blue sheets + legal analyses). Chip
+           color encodes the kind (green = blue sheet, purple = legal).
+           Box is omitted entirely when no documents are on file.
+           The akleg passthrough link lives inline with the bill
+           number in column 1, not in this box. */
         .at-attach-box {
-            margin-top: 10px;
-            padding: 10px 14px;
+            margin-top: 8px;
+            padding: 6px 10px;
             background: #f7f9fb;
             border: 1px solid #d6dbe1;
             border-radius: 4px;
         }
-        .at-attach { font-size: 0.82rem; }
         .at-attach-row {
-            margin-top: 6px;
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             gap: 5px;
-        }
-        .at-attach-row:first-child { margin-top: 0; }
-        /* Fixed-width labels so chip-start columns align row-to-row. */
-        .at-attach-lbl {
-            display: inline-block;
-            width: 90px;
-            font-size: 0.72rem;
-            color: #6e7681;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            white-space: nowrap;
-            font-weight: 600;
-            flex-shrink: 0;
         }
         .at-chip {
             display: inline-flex;
@@ -626,8 +612,15 @@
 
             html += '<div class="at-card origin-' + esc(b.origin) + '">';
 
-            // Column 1: bill number
-            html += '<div class="at-bn"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + chamberSpan(b.origin) + ' ' + esc(b.billnumber) + '</a></div>';
+            // Column 1: bill number + tiny akleg passthrough icon.
+            // The akleg ↗ used to live in its own row in column 2;
+            // moved here to save a full row of vertical space.
+            html += '<div class="at-bn"><a href="/bill/' + encodeURIComponent(b.billnumber) + '">' + chamberSpan(b.origin) + ' ' + esc(b.billnumber) + '</a>';
+            if (b.akleg_url) {
+                html += ' <a class="at-bn-ext" href="' + esc(b.akleg_url) +
+                    '" target="_blank" rel="noopener" title="View on akleg.gov">↗</a>';
+            }
+            html += '</div>';
 
             // Column 2: content
             html += '<div>';
@@ -737,58 +730,34 @@
 
             // Subject tags removed per user — short title is descriptive.
 
-            // Attachments block: akleg link, then labeled rows for
-            // blue sheets and legal analyses. Each chip is a pill
-            // with the parsed label (agency, date, etc.).
+            // Attachments: blue sheets + legal analyses live on a
+            // single unlabeled row. Chip color encodes the kind
+            // (green = blue sheet, purple = legal). Empty state is
+            // omitted entirely — no row appears if nothing is on file.
+            // The akleg passthrough lives in the bill-number cell now.
             var isBill = (b.type === 'HB' || b.type === 'SB');
             var sheets = b.blue_sheets || [];
             var legals = b.legal_analyses || [];
 
-            // akleg link sits OUTSIDE the deliverables box — it's a
-            // passthrough to the legislature's own page, not a
-            // curated deliverable like the blue sheets and legal
-            // analyses below.
-            var attach = '';
-            if (b.akleg_url) {
-                attach += '<div class="at-akleg-row">';
-                attach += '<a class="at-extlink" href="' + esc(b.akleg_url) +
-                    '" target="_blank" rel="noopener">View on akleg.gov ↗</a>';
-                attach += '</div>';
-            }
-            attach += '<div class="at-attach-box">';
-
-            // Blue sheets: only render the row if HB/SB (resolutions
-            // don't get them). Either show chips for files on disk,
-            // or a muted "none on file" pill so the gap is visible.
-            if (isBill) {
-                attach += '<div class="at-attach-row"><span class="at-attach-lbl">Blue sheets</span>';
-                if (sheets.length) {
-                    sheets.forEach(function(s) {
-                        attach += '<a class="at-chip bluesheet" href="/blue-sheet-file/' +
-                            encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
-                            esc(s.filename) + '">📄 ' + esc(s.label) + '</a>';
-                    });
-                } else {
-                    attach += '<span class="at-chip missing" title="No blue sheet on file. Drop a PDF in basis-browser-app/blue_sheets/.">○ none on file</span>';
-                }
-                attach += '</div>';
-            }
-
-            // Legal analyses: applies to bills AND resolutions.
-            attach += '<div class="at-attach-row"><span class="at-attach-lbl">Legal</span>';
-            if (legals.length) {
+            if (sheets.length || legals.length) {
+                var attachTitle = isBill
+                    ? 'Curated deliverables. Drop PDFs in basis-browser-app/blue_sheets/ or legal_analyses/.'
+                    : 'Curated deliverables. Drop PDFs in basis-browser-app/legal_analyses/.';
+                var attach = '<div class="at-attach-box" title="' + esc(attachTitle) + '">';
+                attach += '<div class="at-attach-row">';
+                sheets.forEach(function(s) {
+                    attach += '<a class="at-chip bluesheet" href="/blue-sheet-file/' +
+                        encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
+                        esc(s.filename) + '">📄 ' + esc(s.label) + '</a>';
+                });
                 legals.forEach(function(s) {
                     attach += '<a class="at-chip legal" href="/legal-analysis-file/' +
                         encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
                         esc(s.filename) + '">⚖ ' + esc(s.label) + '</a>';
                 });
-            } else {
-                attach += '<span class="at-chip missing" title="No legal analysis on file. Drop a PDF in basis-browser-app/legal_analyses/.">○ none on file</span>';
+                attach += '</div></div>';
+                html += attach;
             }
-            attach += '</div>';
-
-            attach += '</div>';  // close at-attach-box
-            html += attach;
 
             html += '</div>';
 
@@ -1169,8 +1138,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v23';
-    var DETAIL_KEY_PREFIX = 'at_detail_v27:';
+    var LIST_KEY = 'at_list_v24';
+    var DETAIL_KEY_PREFIX = 'at_detail_v28:';
 
     function lsGet(key) {
         try {
