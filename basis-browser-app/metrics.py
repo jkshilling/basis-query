@@ -1409,7 +1409,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v34", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v35", max_age=300)
     if cached is not None:
         return cached
 
@@ -1637,11 +1637,15 @@ def awaiting_transmittal(session="34"):
         # from departmental blue-sheet recommendations + a few political
         # signals (Governor's own bill, veto-proof passage). Manual
         # overrides in glo_recs.GLO_OVERRIDES always win.
+        # IMPORTANT: this MUST use m_meta (already defined above), not
+        # bm (which isn't defined until later in the loop — referencing
+        # it here previously caught a NameError in the except block,
+        # which carried the previous iteration's bm value silently).
         try:
             import glo_recs as _glo
             glo_rec = _glo.guess(
                 blue_sheets=_bluesheet_index.get(compact_billnumber(bn), []),
-                requestor=bm.get("requestor") or "",
+                requestor=m_meta.get("requestor") or "",
                 veto_proof=veto_proof,
                 billnumber=compact_billnumber(bn),
             )
@@ -1947,7 +1951,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v34", result)
+    _cache.put("awaiting_transmittal_v35", result)
     return result
 
 
