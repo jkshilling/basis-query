@@ -164,6 +164,37 @@ GLO_OVERRIDES: dict[str, str | dict] = {
                  "commitment to local-control principles even though "
                  "the bill is veto-proof."),
     },
+
+    # ── Second-round escalations (heuristic-LWOS → VETO) ──────────
+    "HB 184": {
+        "rec": "VETO",
+        "note": ("AIDEA mandate-creep into workforce housing finance — "
+                 "expanding the corporation beyond its industrial-"
+                 "development core. Veto on principle even though the "
+                 "bill is veto-proof."),
+    },
+    "HB 28": {
+        "rec": "VETO",
+        "note": ("Education omnibus with curriculum / consolidation / "
+                 "loan-program mandates on local school boards. "
+                 "Departmental review itself leaned LWOS; veto puts "
+                 "the administration's local-control posture on record."),
+    },
+    "SB 89": {
+        "rec": "VETO",
+        "note": ("Physician-assistant scope-of-practice expansion. The "
+                 "administration opposes expanding non-physician "
+                 "prescriptive authority; veto on principle."),
+    },
+    "SB 174": {
+        "rec": "VETO",
+        "note": ("Omnibus creating the Alaska Invasive Species Council, "
+                 "a statewide spay-and-neuter assistance fund and "
+                 "program, special-request license plates, and a PFD "
+                 "contribution mechanism — confirmed in the passed "
+                 "version's title. Multiple new government structures "
+                 "in one bill; veto on small-government principle."),
+    },
 }
 
 
