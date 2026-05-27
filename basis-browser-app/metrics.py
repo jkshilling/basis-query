@@ -1975,9 +1975,14 @@ def bill_decision_detail(billnumber, session="34"):
     long_title = ""
     version_letter = ""
     bill_meta = None
+    # IMPORTANT: queries here MUST match the list awaiting_transmittal
+    # uses (Sponsors, Subjects, Versions, FiscalNotes) so this endpoint
+    # shares the same all_bills cache key. Before alignment, a
+    # fresh-cache deploy forced the first expander hit to spend ~15s
+    # rebuilding an essentially-identical 3-query all_bills cache.
+    queries = ["Sponsors", "Subjects", "Versions", "FiscalNotes"]
     for chamber in ("H", "S"):
-        for b in fetch_all_bills(chamber, session,
-                                  queries=["Sponsors", "Subjects", "Versions"]):
+        for b in fetch_all_bills(chamber, session, queries=queries):
             if b.get("billnumber") == billnumber:
                 bill_meta = b
                 break
@@ -2066,23 +2071,15 @@ def bill_decision_detail(billnumber, session="34"):
 
     # Fiscal-note bodies (full text, with dates). Marry the action-
     # code list (which gives us category info) with the FiscalNotes
-    # expansion from fetch_all_bills (which gives us the direct PDF
-    # URL + preparer agency). Match by FN number.
-    bn_compact = compact_billnumber(billnumber)
-    chamber = "H" if billnumber.startswith("HB") or billnumber.startswith("HJR") or billnumber.startswith("HCR") or billnumber.startswith("HR") else "S"
+    # expansion already on bill_meta from above (no second
+    # fetch_all_bills call needed — the queries list was aligned to
+    # include FiscalNotes so bill_meta already carries fn_pdfs).
     fn_pdfs_by_number = {}
-    try:
-        for bm_match in fetch_all_bills(chamber, session,
-                                         queries=["Sponsors", "Subjects",
-                                                  "Versions", "FiscalNotes"]):
-            if bm_match["billnumber"] == bn_compact:
-                for pdf in bm_match.get("fn_pdfs") or []:
-                    mm = re.search(r"(\d+)\s*$", pdf.get("name", "") or "")
-                    if mm:
-                        fn_pdfs_by_number["FN" + mm.group(1)] = pdf
-                break
-    except Exception:
-        pass
+    if bill_meta:
+        for pdf in bill_meta.get("fn_pdfs") or []:
+            mm = re.search(r"(\d+)\s*$", pdf.get("name", "") or "")
+            if mm:
+                fn_pdfs_by_number["FN" + mm.group(1)] = pdf
 
     fiscal_notes = []
     for c, a, jd, t in actions_for_bill:
