@@ -2061,7 +2061,7 @@ def bill_decision_detail(billnumber, session="34"):
     """Detailed veto-decision view for one bill: full per-legislator
     roll call on final passage in each chamber, plus action timeline
     and fiscal-note bodies. Cached 10 min."""
-    cache_key = f"bill_decision_detail_v12_{session}_{billnumber}"
+    cache_key = f"bill_decision_detail_v13_{session}_{billnumber}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -2351,6 +2351,22 @@ def bill_decision_detail(billnumber, session="34"):
     except Exception:
         pass
 
+    # Per-department Action Justification text from the blue sheets.
+    # Surfaced in the expander's Recommendation Rationale section as
+    # first-hand source quotes (not LLM-synthesized).
+    _dept_action_justifications = []
+    try:
+        import blue_sheets as _bs_aj
+        for s in _bs_aj.sheets_for(billnumber):
+            _dept_action_justifications.append({
+                "agency":               s.get("agency") or "?",
+                "recommendation":       s.get("recommendation") or "",
+                "filename":             s.get("filename") or "",
+                "action_justification": s.get("action_justification") or "",
+            })
+    except Exception:
+        pass
+
     result = {
         "billnumber": billnumber,
         "passage_votes": passage_votes,
@@ -2376,6 +2392,10 @@ def bill_decision_detail(billnumber, session="34"):
         "rationale": rationale,
         # LLM-synthesized concrete-group stakeholder lists.
         "stakeholders": stakeholders,
+        # Per-department Action Justification text — the actual
+        # reasoning text each agency wrote in their blue sheet,
+        # surfaced in the Recommendation Rationale section.
+        "dept_action_justifications": _dept_action_justifications,
     }
     _cache.put(cache_key, result)
     return result

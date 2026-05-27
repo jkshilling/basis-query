@@ -607,31 +607,40 @@
         /* GLO Recommendation Rationale section in the expander.
            Lists the GLO and DEPT chips with their human-readable
            reasoning beside each. */
-        .at-rationale-row {
-            margin: 8px 0 0;
+        /* Recommendation Rationale — stacked block-per-source layout
+           (chip above, prose below). The previous side-by-side flex
+           layout wrapped awkwardly when prose was short or chips
+           narrow; the stacked version reads cleanly at all widths. */
+        .at-rat-block {
+            margin-top: 10px;
+            padding: 10px 12px;
+            background: #fbfcfd;
+            border-left: 3px solid #c8d0d8;
+            border-radius: 3px;
+        }
+        .at-rat-block:first-of-type { margin-top: 6px; }
+        .at-rat-head {
             display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 6px;
             flex-wrap: wrap;
-            align-items: baseline;
-            gap: 8px;
         }
-        .at-rationale-chip { flex-shrink: 0; align-self: flex-start; }
-        .at-rationale-note { color: #2c3e50; font-size: 0.9rem; line-height: 1.5; flex: 1 1 320px; }
-        .at-rationale-src { color: #6e7681; font-size: 0.78rem; font-style: italic; }
-        .at-rationale-override { color: #885a00; font-size: 0.85rem; }
-        /* Per-department rationale list under the DEPT chip. */
-        .at-dept-rationale-list {
-            list-style: none;
-            padding: 0;
+        .at-rat-src {
+            font-size: 0.76rem;
+            color: #6e7681;
+            font-style: italic;
+        }
+        .at-rat-src.at-rat-override { color: #885a00; }
+        a.at-rat-src { text-decoration: none; }
+        a.at-rat-src:hover { text-decoration: underline; }
+        .at-rat-body {
             margin: 0;
-            flex: 1 1 320px;
-        }
-        .at-dept-rationale-list li {
-            margin: 0 0 4px;
-            font-size: 0.9rem;
+            font-size: 0.92rem;
             line-height: 1.5;
             color: #2c3e50;
         }
-        .at-dept-rationale-list strong { color: #1a2530; }
+        .at-rat-body.at-rat-empty { color: #95a5a6; font-style: italic; }
 
         /* Stakeholders block: 3 columns, each with a colored title bar.
            Beneficiaries = green, Burdened = red, Affected = grey. */
@@ -1657,14 +1666,99 @@
     function renderDecisionDetail(d) {
         var h = '';
 
-        // Recommendation Rationale section deliberately removed.
-        // The chips themselves (GLO + DEPT in column 3 of the card,
-        // plus the blue-sheet recommendation dots) carry the
-        // categorical signal; the previous LLM-generated rationales
-        // were not defensible and the layout was awkward. If you
-        // want WHY a department recommended something, the
-        // 'Recommendation' field is in their blue-sheet PDF —
-        // accessible via the chip in the attach row.
+        // Recommendation Rationale. GLO rationale draws on the
+        // heuristic source + LLM synthesis. DEPT rationales show
+        // each department's actual Action Justification text from
+        // their blue sheet — first-hand source, not a re-statement.
+        var glo = d.glo_recommendation;
+        var dept = d.dept_recommendation;
+        var rationale = d.rationale;
+        var deptBreakdown = (dept && dept.breakdown) || [];
+        var hasGloRow = glo && (glo.rec || glo.note);
+        var hasDeptRow = (dept && dept.rec) || deptBreakdown.length;
+        if (hasGloRow || hasDeptRow) {
+            h += '<div class="at-section">';
+            h += '<div class="at-section-h">Recommendation Rationale</div>';
+
+            // GLO row — chip, then prose underneath. Stacks vertically
+            // so prose never wraps awkwardly around a chip.
+            if (hasGloRow) {
+                var gloCls = glo.rec === '?' ? 'unknown' : glo.rec;
+                h += '<div class="at-rat-block">';
+                h += '<div class="at-rat-head"><span class="at-glo ' + gloCls + '">' +
+                     'GLO: ' + esc(glo.rec || '—') + '</span>';
+                if (glo.source) {
+                    h += '<span class="at-rat-src">heuristic: ' +
+                         esc(glo.source.replace(/-/g, ' ')) + '</span>';
+                }
+                if (glo.overridden) {
+                    h += '<span class="at-rat-src at-rat-override">manually overridden</span>';
+                }
+                h += '</div>';
+                var gloText = (rationale && rationale.glo_rationale) || glo.note || '';
+                if (gloText) {
+                    h += '<p class="at-rat-body">' + esc(gloText) + '</p>';
+                }
+                h += '</div>';
+            }
+
+            // DEPT rationale — one block per department blue sheet.
+            // Each shows the department's actual Action Justification
+            // text (from the PDF), not an LLM re-statement.
+            if (hasDeptRow) {
+                // The blue_sheets array from the card payload carries
+                // the action_justification text. Pull it onto the
+                // detail view through d.dept_action_justifications.
+                var aj = d.dept_action_justifications || [];
+                if (aj.length) {
+                    aj.forEach(function(item) {
+                        var rec = (item.recommendation || '').toUpperCase();
+                        var recCls = rec === '?' ? 'unknown' : (rec || 'unknown');
+                        h += '<div class="at-rat-block">';
+                        h += '<div class="at-rat-head"><span class="at-glo ' + recCls + '">' +
+                             esc(item.agency || '?') + ': ' + esc(rec || '—') +
+                             '</span>';
+                        if (item.filename) {
+                            h += '<a class="at-rat-src" href="/blue-sheet-file/' +
+                                 encodeURIComponent(item.filename) +
+                                 '" target="_blank" rel="noopener">source ↗</a>';
+                        }
+                        h += '</div>';
+                        var txt = (item.action_justification || '').trim();
+                        if (txt) {
+                            // Truncate to ~400 chars at a sentence boundary.
+                            if (txt.length > 420) {
+                                var slice = txt.substring(0, 400);
+                                var sentEnd = Math.max(
+                                    slice.lastIndexOf('. '),
+                                    slice.lastIndexOf('! '),
+                                    slice.lastIndexOf('? ')
+                                );
+                                if (sentEnd > 200) {
+                                    txt = slice.substring(0, sentEnd + 1) + ' …';
+                                } else {
+                                    txt = slice.replace(/\s+\S*$/, '') + '…';
+                                }
+                            }
+                            h += '<p class="at-rat-body">' + esc(txt) + '</p>';
+                        } else {
+                            h += '<p class="at-rat-body at-rat-empty">' +
+                                 'No Action Justification text in the blue sheet.</p>';
+                        }
+                        h += '</div>';
+                    });
+                } else if (dept && dept.note) {
+                    h += '<div class="at-rat-block">';
+                    h += '<div class="at-rat-head"><span class="at-glo ' +
+                         (dept.rec === '?' ? 'unknown' : dept.rec) + '">DEPT: ' +
+                         esc(dept.rec || '—') + '</span></div>';
+                    h += '<p class="at-rat-body">' + esc(dept.note) + '</p>';
+                    h += '</div>';
+                }
+            }
+
+            h += '</div>';
+        }
 
         // Legal Review (Department of Law) — extracted from each
         // briefing packet that covers this bill. Often the text is
@@ -1993,7 +2087,7 @@
     });
 
     var LIST_KEY = 'at_list_v46';
-    var DETAIL_KEY_PREFIX = 'at_detail_v45:';
+    var DETAIL_KEY_PREFIX = 'at_detail_v46:';
 
     function lsGet(key) {
         try {

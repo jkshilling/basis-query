@@ -172,7 +172,7 @@ def _refresh_all():
                 # Drop the cached entry to force re-build with the
                 # newly-available LLM summary.
                 from cache import _cache as _c
-                _c.pop(f"bill_decision_detail_v12_34_{bn}", None)
+                _c.pop(f"bill_decision_detail_v13_34_{bn}", None)
                 bill_decision_detail(bn)
             except Exception:
                 pass
@@ -251,7 +251,7 @@ def _refresh_all():
                 continue
             try:
                 from cache import _cache as _c
-                _c.pop(f"bill_decision_detail_v12_34_{bn}", None)
+                _c.pop(f"bill_decision_detail_v13_34_{bn}", None)
                 bill_decision_detail(bn)
             except Exception:
                 pass
@@ -310,7 +310,7 @@ def _refresh_all():
                 continue
             try:
                 from cache import _cache as _c
-                _c.pop(f"bill_decision_detail_v12_34_{bn}", None)
+                _c.pop(f"bill_decision_detail_v13_34_{bn}", None)
                 bill_decision_detail(bn)
             except Exception:
                 pass
