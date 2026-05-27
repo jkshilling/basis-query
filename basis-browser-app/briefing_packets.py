@@ -92,13 +92,21 @@ def _read_docx_text(filename):
 # "SECTIONAL ANALYSIS:", "ADMINISTRATION POSITION:", etc.) or at
 # the end of the document.
 _DOL_RE = re.compile(
-    r"DEPARTMENT\s+OF\s+LAW\s+BILL\s+REVIEW\s*:?\s*"
+    r"DEPARTMENT OF LAW BILL REVIEW\s*:?\s*"
     r"(.*?)"
     r"(?="
-    r"(?:[A-Z][A-Z ,&]{4,40}?):"  # next ALL-CAPS heading with colon
+    r"(?:[A-Z][A-Z &]{2,}\s*):"   # next ALL-CAPS heading with colon
     r"|\Z)",
     re.DOTALL,
 )
+
+
+def _normalize_ws(s):
+    """Collapse all whitespace runs (including newlines) into single
+    spaces. Briefing-packet DOCX text comes with massive runs of
+    spaces from collapsed table cells; the section-detection regex
+    can't reliably look ahead through those runs."""
+    return re.sub(r"\s+", " ", s).strip()
 
 
 def _extract_dol_review(filename):
@@ -114,17 +122,17 @@ def _extract_dol_review(filename):
     if key in _dol_cache:
         return _dol_cache[key]
 
-    text = _read_docx_text(filename) if filename.lower().endswith(".docx") else ""
+    raw = _read_docx_text(filename) if filename.lower().endswith(".docx") else ""
     out = ""
-    if text:
+    if raw:
+        # Normalize whitespace FIRST so the section-boundary lookahead
+        # works regardless of DOCX table-cell flattening.
+        text = _normalize_ws(raw)
         m = _DOL_RE.search(text)
         if m:
             body = m.group(1).strip()
-            # Collapse multi-space runs (DOCX flattening artifact).
-            body = re.sub(r"[ \t]+", " ", body)
-            body = re.sub(r"\s*\n\s*", "\n", body).strip()
-            # Trim runaway captures (shouldn't happen with the
-            # next-heading boundary but defense-in-depth).
+            # Clean some common boilerplate artifacts.
+            body = re.sub(r"^\s*[:.]+\s*", "", body)
             if len(body) > 4000:
                 body = body[:3950].rsplit(" ", 1)[0] + "…"
             out = body
