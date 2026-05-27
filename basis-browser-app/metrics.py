@@ -1386,7 +1386,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v19", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v20", max_age=300)
     if cached is not None:
         return cached
 
@@ -1611,23 +1611,50 @@ def awaiting_transmittal(session="34"):
             + session + "?Root=" + compact_bn.replace(" ", "%20")
         )
 
-        # At-governor-specific fields: when the bill IS at the governor,
-        # find action 033's date and compute the clock countdown.
+        # At-governor-specific fields: find the transmittal date (033)
+        # and the authoritative return-by date (096 — "DUE BACK FROM
+        # GOVERNOR mm/dd/yy"). The legislature computes the return
+        # date itself, properly excluding Sundays per Article II §17.
+        # Always prefer that over our calendar arithmetic.
         transmit_date = ""
+        return_by_date_str = ""  # raw mm/dd/yy from action 096
+        return_by_date = None    # parsed date object
         days_at_governor = None
         gov_deadline = None
         gov_days_left = None
         if is_at_gov:
-            for c, _, jd, _ in actions:
-                if c == "033" and jd:
+            for c, _, jd, t in actions:
+                if c == "033" and jd and not transmit_date:
                     transmit_date = jd
-                    break
+                if c == "096" and t and not return_by_date_str:
+                    # Text format: "DUE BACK FROM GOVERNOR 5/30/26"
+                    m_due = re.search(
+                        r"DUE BACK FROM GOVERNOR\s+(\d{1,2})/(\d{1,2})/(\d{2,4})",
+                        t, re.IGNORECASE,
+                    )
+                    if m_due:
+                        mm, dd, yy = m_due.groups()
+                        year = int(yy)
+                        if year < 100:
+                            year += 2000
+                        try:
+                            return_by_date = datetime(year, int(mm), int(dd)).date()
+                            return_by_date_str = m_due.group(0).split("GOVERNOR")[-1].strip()
+                        except ValueError:
+                            pass
+            if return_by_date:
+                gov_days_left = (return_by_date - today).days
             if transmit_date:
                 try:
                     td = datetime.strptime(transmit_date, "%Y-%m-%d").date()
                     days_at_governor = (today - td).days
+                    # Window inferred from session timing — still useful
+                    # to display "15-day window" or "20-day window".
                     gov_deadline = governor_deadline_days(td)
-                    gov_days_left = gov_deadline - days_at_governor
+                    # Fall back to calendar math only if the legislature
+                    # hasn't yet logged the 096 due-back action.
+                    if gov_days_left is None:
+                        gov_days_left = gov_deadline - days_at_governor
                 except ValueError:
                     pass
         # Stale at-gov filter: if the gubernatorial deadline lapsed
@@ -1686,6 +1713,11 @@ def awaiting_transmittal(session="34"):
             "days_at_governor": days_at_governor,
             "governor_deadline_days": gov_deadline,
             "governor_days_left": gov_days_left,
+            # Authoritative return-by date string from action 096 if
+            # available — e.g. "5/30/26". Sourced from the legislature
+            # directly, so the Sunday-exclusion math is theirs.
+            "return_by_date": (return_by_date.strftime("%b %-d, %Y")
+                               if return_by_date else ""),
         }
 
         # Route to bucket. At-governor wins routing over bill-vs-resolution
@@ -1734,7 +1766,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v19", result)
+    _cache.put("awaiting_transmittal_v20", result)
     return result
 
 

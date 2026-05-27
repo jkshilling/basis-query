@@ -639,9 +639,12 @@
             html += '<div class="at-meta">';
             html +=   '<span class="at-days ' + dClass + '">' + dTxt + '</span>';
             html +=   '<span class="at-days-label">' + esc(dLabel) + '</span>';
-            // Add the transmittal date as a secondary line for at-gov mode.
+            // At-gov: transmittal + due-back dates as secondary lines.
             if (mode === "at_gov" && b.transmit_date) {
                 html += '<span class="at-meta-sub">transmitted ' + esc(b.transmit_date) + '</span>';
+                if (b.return_by_date) {
+                    html += '<span class="at-meta-sub">due back ' + esc(b.return_by_date) + '</span>';
+                }
             }
             html += '</div>';
 
@@ -965,8 +968,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v10';
-    var DETAIL_KEY_PREFIX = 'at_detail_v14:';
+    var LIST_KEY = 'at_list_v11';
+    var DETAIL_KEY_PREFIX = 'at_detail_v15:';
 
     function lsGet(key) {
         try {
