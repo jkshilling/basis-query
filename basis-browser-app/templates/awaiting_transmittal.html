@@ -471,6 +471,8 @@
         .at-chip.bluesheet:hover { background: #d1efde; }
         .at-chip.legal { background: #f3eaf7; border-color: #d8c4e3; color: #6c3483; }
         .at-chip.legal:hover { background: #e6d2ef; }
+        .at-chip.briefing { background: #fef5e7; border-color: #f5cb7f; color: #885a00; }
+        .at-chip.briefing:hover { background: #fbe6c4; }
         .at-chip.missing {
             color: #95a5a6;
             font-style: italic;
@@ -947,16 +949,19 @@
 
             // Attachments box. For HB/SB the box always appears so the
             // user can see at a glance whether docs have been filed.
-            // Each kind ("Blue sheets" / "Legal analyses") renders its
-            // own row, even if empty — empty rows show a muted "none
-            // on file" placeholder pill. Resolutions skip the blue-
-            // sheet row entirely (resolutions don't get blue sheets).
+            // Each kind ("Blue sheets" / "Legal analyses" / "Briefing
+            // packets") renders its own row, even if empty — empty
+            // rows show a muted "none on file" placeholder pill.
+            // Resolutions skip the blue-sheet row entirely (resolutions
+            // don't get blue sheets).
+            var briefings = b.briefing_packets || [];
             var showBlueSheetRow = isBill;  // HB/SB only
             var showLegalRow = true;        // every bill + resolution
-            if (showBlueSheetRow || showLegalRow) {
+            var showBriefingRow = true;     // every bill + resolution
+            if (showBlueSheetRow || showLegalRow || showBriefingRow) {
                 var attachTitle = isBill
-                    ? 'Curated deliverables. Drop PDFs in basis-browser-app/blue_sheets/ or legal_analyses/.'
-                    : 'Curated deliverables. Drop PDFs in basis-browser-app/legal_analyses/.';
+                    ? 'Curated deliverables. Drop PDFs in basis-browser-app/blue_sheets/, legal_analyses/, or briefing_packets/.'
+                    : 'Curated deliverables. Drop PDFs in basis-browser-app/legal_analyses/ or briefing_packets/.';
                 var attach = '<div class="at-attach-box" title="' + esc(attachTitle) + '">';
                 if (showBlueSheetRow) {
                     attach += '<div class="at-attach-row">';
@@ -1000,6 +1005,20 @@
                         });
                     } else {
                         attach += '<span class="at-chip missing" title="No legal analysis on file. Drop a PDF in basis-browser-app/legal_analyses/.">none on file</span>';
+                    }
+                    attach += '</div>';
+                }
+                if (showBriefingRow) {
+                    attach += '<div class="at-attach-row">';
+                    attach += '<span class="at-attach-lbl">Briefing packets</span>';
+                    if (briefings.length) {
+                        briefings.forEach(function(s) {
+                            attach += '<a class="at-chip briefing" href="/briefing-packet-file/' +
+                                encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
+                                esc(s.filename) + '">📋 ' + esc(s.label) + '</a>';
+                        });
+                    } else {
+                        attach += '<span class="at-chip missing" title="No briefing packet on file. Drop a PDF in basis-browser-app/briefing_packets/.">none on file</span>';
                     }
                     attach += '</div>';
                 }
@@ -1418,8 +1437,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v32';
-    var DETAIL_KEY_PREFIX = 'at_detail_v37:';
+    var LIST_KEY = 'at_list_v33';
+    var DETAIL_KEY_PREFIX = 'at_detail_v38:';
 
     function lsGet(key) {
         try {

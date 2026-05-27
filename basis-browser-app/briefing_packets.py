@@ -1,0 +1,178 @@
+"""Briefing-packet index — parallels blue_sheets.py and
+legal_analyses.py for the basis-browser-app/briefing_packets/ folder.
+
+A briefing packet is a curated decision-support document — typically
+the Governor's Legislative Office (GLO) compiling the departmental
+blue sheets, legal review, and political analysis into one binder
+the Governor or chief of staff can read in one sitting.
+
+Filename matching is the same forgiving regex used for blue sheets
+and legal analyses: the first bill prefix + digits anywhere in the
+name wins, optionally preceded by a CS/HCS/SCS marker. Leading
+zeros stripped. Multi-bill files (e.g. "Brief HB 10 and HB 176.pdf")
+get indexed under every bill referenced.
+
+No content parsing yet — the chip just shows a date label. If
+briefing packets carry structured fields (a final recommendation,
+key issues list, etc.) we can add extraction later, same way we
+mine blue sheets for SIGN/VETO/LWOS + "What does this Bill do?".
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import time
+
+_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "briefing_packets",
+)
+
+_PREFIXES = ("HSCR", "SSCR", "HJR", "SJR", "HCR", "SCR", "HB", "SB", "HR", "SR")
+_PREFIX_PATTERN = "|".join(_PREFIXES)
+
+_BILL_RE = re.compile(
+    r"(?:CS|HCS|SCS|SCS\s?CS|HCS\s?CS)?"
+    r"(" + _PREFIX_PATTERN + r")"
+    r"\s*0*(\d+)",
+    re.IGNORECASE,
+)
+
+_EXT_RE = re.compile(r"\.(pdf|docx?)$", re.IGNORECASE)
+
+# Same three date patterns we use elsewhere.
+_DATE_RE_ISO = re.compile(r"(\d{4})[./\-](\d{1,2})[./\-](\d{1,2})")
+_DATE_RE_AMR = re.compile(r"\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{2,4})\b")
+_DATE_RE_LONG = re.compile(
+    r"\b(\d{1,2})\s+"
+    r"(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s+"
+    r"(\d{2,4})\b",
+    re.IGNORECASE,
+)
+
+_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+_MONTH_LOOKUP = {m.upper(): i + 1 for i, m in enumerate(_MONTHS)}
+
+_cache_value = None
+_cache_time = 0.0
+_CACHE_TTL = 60.0
+
+
+def _extract_billnumbers(filename):
+    """Find every bill reference in the filename; dedupe in order."""
+    if not _EXT_RE.search(filename):
+        return []
+    seen = []
+    for m in _BILL_RE.finditer(filename):
+        prefix = m.group(1).upper()
+        number = str(int(m.group(2)))
+        bn = f"{prefix} {number}"
+        if bn not in seen:
+            seen.append(bn)
+    return seen
+
+
+def _extract_date_from_text(text):
+    if not text:
+        return ""
+    m = _DATE_RE_ISO.search(text)
+    if m:
+        try:
+            year, mm, dd = (int(x) for x in m.groups())
+            if 2020 <= year <= 2100 and 1 <= mm <= 12 and 1 <= dd <= 31:
+                return f"{_MONTHS[mm - 1]} {dd}"
+        except (ValueError, IndexError):
+            pass
+    m = _DATE_RE_AMR.search(text)
+    if m:
+        try:
+            mm, dd, yy = (int(x) for x in m.groups())
+            if 1 <= mm <= 12 and 1 <= dd <= 31:
+                return f"{_MONTHS[mm - 1]} {dd}"
+        except (ValueError, IndexError):
+            pass
+    m = _DATE_RE_LONG.search(text)
+    if m:
+        try:
+            dd = int(m.group(1))
+            mm = _MONTH_LOOKUP.get(m.group(2).upper()[:3], 0)
+            if 1 <= mm <= 12 and 1 <= dd <= 31:
+                return f"{_MONTHS[mm - 1]} {dd}"
+        except (ValueError, IndexError):
+            pass
+    return ""
+
+
+def _extract_date(filename):
+    return _extract_date_from_text(filename)
+
+
+def _mtime_date(filename):
+    """File mtime as a 'Mon DD' string — last-resort date so every
+    chip carries one consistently."""
+    path = os.path.join(_DIR, filename)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    import datetime as _dt
+    d = _dt.date.fromtimestamp(mtime)
+    return f"{_MONTHS[d.month - 1]} {d.day}"
+
+
+def _scan():
+    out = {}
+    if not os.path.isdir(_DIR):
+        return out
+    for fn in sorted(os.listdir(_DIR)):
+        bns = _extract_billnumbers(fn)
+        if not bns:
+            continue
+        date = _extract_date(fn) or _mtime_date(fn)
+        # Label shape: always "Brief · MON DD" so chips read uniformly.
+        label = f"Brief · {date}" if date else "Brief"
+        for bn in bns:
+            out.setdefault(bn, []).append({
+                "filename": fn,
+                "date":     date,
+                "label":    label,
+            })
+    # Dedupe within each bill by date (rare — typically one packet per bill).
+    for bn, lst in out.items():
+        seen = set()
+        unique = []
+        for entry in lst:
+            key = entry["date"] or entry["filename"]
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(entry)
+        out[bn] = unique
+    return out
+
+
+def index():
+    global _cache_value, _cache_time
+    now = time.monotonic()
+    if _cache_value is not None and (now - _cache_time) < _CACHE_TTL:
+        return _cache_value
+    _cache_value = _scan()
+    _cache_time = now
+    return _cache_value
+
+
+def packets_for(billnumber):
+    return index().get((billnumber or "").strip(), [])
+
+
+def abs_path(filename):
+    if not filename or "/" in filename or "\\" in filename or ".." in filename:
+        return None
+    candidate = os.path.normpath(os.path.join(_DIR, filename))
+    if not candidate.startswith(_DIR + os.sep):
+        return None
+    if not os.path.isfile(candidate):
+        return None
+    return candidate

@@ -1409,7 +1409,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v36", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v37", max_age=300)
     if cached is not None:
         return cached
 
@@ -1438,6 +1438,10 @@ def awaiting_transmittal(session="34"):
     # in legal_analyses/. Applies to both bills AND resolutions.
     import legal_analyses as _la
     _legal_index = _la.index()
+    # Briefing-packet index: GLO-curated decision binders dropped in
+    # briefing_packets/. Bill-keyed like the others.
+    import briefing_packets as _bp
+    _briefing_index = _bp.index()
 
     today = datetime.now().date()
 
@@ -1894,6 +1898,8 @@ def awaiting_transmittal(session="34"):
             # Legal analyses — LLS / DOL constitutional/legal reviews.
             # Applies to both bills and resolutions.
             "legal_analyses": _legal_index.get(compact_billnumber(bn), []),
+            # Briefing packets — GLO-curated decision binders.
+            "briefing_packets": _briefing_index.get(compact_billnumber(bn), []),
             "passed_both_date": format_status_date(passed_both_date),
             "days_since_passage": days_since_passage,
             # Vote tallies and veto-override math
@@ -1977,7 +1983,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v36", result)
+    _cache.put("awaiting_transmittal_v37", result)
     return result
 
 

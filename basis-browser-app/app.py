@@ -174,7 +174,7 @@ def _refresh_all():
         # NEXT page render picks up the new llm_summary fields.
         try:
             from cache import _cache as _c
-            _c.pop("awaiting_transmittal_v36", None)
+            _c.pop("awaiting_transmittal_v37", None)
             awaiting_transmittal()
         except Exception:
             pass
@@ -208,7 +208,7 @@ def _invalidate_top_level_caches():
     keys_to_clear = [
         "hb_in_senate", "sb_in_house", "dashboard_stats", "action_code_counts",
         "bill_progress", "all_actions", "all_actions_v5", "governor_bills",
-        "awaiting_transmittal_v36", "pipeline_v3_20",
+        "awaiting_transmittal_v37", "pipeline_v3_20",
     ]
     # Also clear any activity_feed_X entries and today's floor calendar
     # (so refreshes pick up newly-calendared bills).
@@ -512,6 +512,14 @@ def serve_blue_sheet_file(filename):
     prevents path traversal."""
     import blue_sheets as bs_mod
     return _serve_inline_doc(bs_mod.abs_path(filename), filename)
+
+
+@app.route("/briefing-packet-file/<path:filename>")
+def serve_briefing_packet_file(filename):
+    """Serve a specific briefing-packet file by filename. Same
+    inline-rendering treatment as blue sheets and legal analyses."""
+    import briefing_packets as bp_mod
+    return _serve_inline_doc(bp_mod.abs_path(filename), filename)
 
 
 @app.route("/api/session-countdown")
