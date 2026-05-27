@@ -66,7 +66,7 @@ _CACHE: dict | None = None
 
 # Bump this when you change the prompt below — it gets folded into
 # the cache key so every cached summary regenerates automatically.
-_SYSTEM_PROMPT_VERSION = "v7-json-execsumm"
+_SYSTEM_PROMPT_VERSION = "v8-no-bn-repeat"
 
 _SYSTEM_PROMPT = """You are writing analysis for a veto-decision-support dashboard \
 about Alaska bills. For each bill, return a JSON object with TWO fields:
@@ -74,14 +74,21 @@ about Alaska bills. For each bill, return a JSON object with TWO fields:
 {
   "executive_summary": "<one tight sentence, 12-22 words, in active voice, saying \
 WHAT THE BILL DOES. Plain English. No filler openers. No 'Enacted under X', no \
-'This bill', no 'Under this legislation'. Start with the bill number as the \
-subject and a strong verb. Example: 'HB 36 creates a new treatment foster home \
-license category and requires judicial review of foster-child psychiatric \
-hospitalizations within 7 days of admission.'>",
+'This bill', no 'Under this legislation'. \
+DO NOT start with the bill number ('HB 36 creates...'); the card already \
+displays the bill number prominently right next to this summary, so repeating \
+it wastes the slot. Start with the substantive change as the subject. \
+Examples that are GOOD: \
+  'Creates a new treatment foster home license category and requires judicial \
+review of foster-child psychiatric hospitalizations within 7 days.' \
+  'Establishes gold and silver coin and bullion as legal tender; prohibits \
+municipal sales tax on specie exchanges.' \
+  'Joins Alaska to the Occupational Therapy Licensure Compact, allowing OTs \
+and OTAs to practice across member states without separate Alaska licensure.'>",
 
   "summary": "<two paragraphs, 150-250 words total, describing what the bill does \
 in more depth. Same rules as the executive_summary plus the paragraph structure \
-below.>"
+below. Inside the summary you may reference the bill number naturally.>"
 }
 
 INPUT: the bill's BASIS metadata, then any departmental blue-sheet analyses, then \
