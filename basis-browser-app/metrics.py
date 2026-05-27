@@ -1409,7 +1409,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v35", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v36", max_age=300)
     if cached is not None:
         return cached
 
@@ -1632,6 +1632,28 @@ def awaiting_transmittal(session="34"):
                 "zero_fns": 0, "indet_fns": 0, "unparseable": 0,
                 "fy_min": None, "fy_max": None, "per_fn": [],
             }
+
+        # LLM-generated neutral synthesis across every blue sheet for
+        # this bill. Read-only cache lookup — never hits the Anthropic
+        # API on the hot path. The bill_details stage of _refresh_all
+        # is responsible for populating these in the background once
+        # per bill, then incrementally when blue-sheet content changes.
+        llm_summary = None
+        try:
+            import bill_summarizer as _summ
+            cached_summ = _summ.get_cached(
+                compact_billnumber(bn),
+                _bluesheet_index.get(compact_billnumber(bn), []),
+                m_meta,
+            )
+            if cached_summ:
+                llm_summary = {
+                    "summary":      cached_summ["summary"],
+                    "model":        cached_summ["model"],
+                    "generated_at": cached_summ["generated_at"],
+                }
+        except Exception:
+            pass
 
         # GLO (Governor's Legislative Office) recommendation. Computed
         # from departmental blue-sheet recommendations + a few political
@@ -1894,6 +1916,10 @@ def awaiting_transmittal(session="34"):
             # computed from blue-sheet rolls + political signals;
             # overridable per bill via glo_recs.GLO_OVERRIDES.
             "glo_recommendation": glo_rec,
+            # LLM-synthesized neutral summary across all blue sheets.
+            # None until the background prefetch generates one;
+            # template falls back to the static hand-authored dict.
+            "llm_summary": llm_summary,
             # At-governor flag + clock fields (populated only when at gov)
             "is_at_governor": is_at_gov,
             "transmit_date": format_status_date_full(transmit_date),
@@ -1951,7 +1977,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v35", result)
+    _cache.put("awaiting_transmittal_v36", result)
     return result
 
 

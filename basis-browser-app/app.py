@@ -86,12 +86,14 @@ def _refresh_all():
     # cache writes.
     s = time.monotonic()
     detail_count = 0
+    all_bill_entries = []
     try:
         at_data = awaiting_transmittal()
-        all_bills = (at_data.get("bills", []) + at_data.get("at_gov_bills", []) +
-                     at_data.get("resolutions_substantive", []) +
-                     at_data.get("resolutions_procedural", []))
-        for entry in all_bills:
+        all_bill_entries = (at_data.get("bills", []) +
+                            at_data.get("at_gov_bills", []) +
+                            at_data.get("resolutions_substantive", []) +
+                            at_data.get("resolutions_procedural", []))
+        for entry in all_bill_entries:
             bn = entry.get("billnumber") or ""
             if not bn:
                 continue
@@ -105,6 +107,79 @@ def _refresh_all():
     except Exception as exc:
         log.warning("refresh.step name=bill_details elapsed=%.1fs status=fail err=%r",
                     time.monotonic() - s, exc)
+
+    # Stage 4: LLM-generated neutral summaries via the Anthropic API.
+    # Each call is ~1-2 s and ~$0.008. Already-cached summaries (same
+    # input-hash) skip the API entirely. Sequential to avoid rate-limit
+    # contention; total cold cost is ~3-5 minutes for a full rebuild,
+    # zero after that until blue-sheet content changes.
+    s = time.monotonic()
+    summ_made = summ_cached = 0
+    try:
+        import bill_summarizer as _summ
+        import blue_sheets as _bs
+        from fetch import fetch_all_bills
+        # Index meta dicts by billnumber for fast lookup.
+        meta_by_bn = {}
+        for chamber in ("H", "S"):
+            for b in fetch_all_bills(chamber, "34",
+                                      queries=["Sponsors", "Subjects",
+                                               "Versions", "FiscalNotes"]):
+                meta_by_bn[b.get("billnumber", "")] = b
+        for entry in all_bill_entries:
+            bn = entry.get("billnumber") or ""
+            if not bn:
+                continue
+            sheets = _bs.sheets_for(bn)
+            # Skip bills with no blue-sheet content (LLM has nothing
+            # substantive to synthesize). The hand-authored fallback
+            # dict in bill_summaries.py covers these when needed.
+            if not any(s.get("description") for s in sheets):
+                continue
+            meta = meta_by_bn.get(bn)
+            # Was it already cached?
+            if _summ.get_cached(bn, sheets, meta):
+                summ_cached += 1
+                continue
+            try:
+                if _summ.summarize_bill(bn, sheets, meta):
+                    summ_made += 1
+            except Exception as exc:
+                log.warning("refresh.summary name=%s err=%r", bn, exc)
+        log.info("refresh.step name=llm_summaries new=%d cached=%d "
+                 "elapsed=%.1fs status=ok",
+                 summ_made, summ_cached, time.monotonic() - s)
+    except Exception as exc:
+        log.warning("refresh.step name=llm_summaries elapsed=%.1fs "
+                    "status=fail err=%r", time.monotonic() - s, exc)
+
+    # Stage 5: refresh bill_decision_detail again, now that LLM
+    # summaries are cached — so they appear in the detail payloads
+    # without waiting for the next hourly cycle.
+    if summ_made:
+        s = time.monotonic()
+        for entry in all_bill_entries:
+            bn = entry.get("billnumber") or ""
+            if not bn:
+                continue
+            try:
+                # Drop the cached entry to force re-build with the
+                # newly-available LLM summary.
+                from cache import _cache as _c
+                _c.pop(f"bill_decision_detail_v9_34_{bn}", None)
+                bill_decision_detail(bn)
+            except Exception:
+                pass
+        # Also drop the top-level awaiting_transmittal cache so the
+        # NEXT page render picks up the new llm_summary fields.
+        try:
+            from cache import _cache as _c
+            _c.pop("awaiting_transmittal_v36", None)
+            awaiting_transmittal()
+        except Exception:
+            pass
+        log.info("refresh.step name=detail_rewarm elapsed=%.1fs status=ok",
+                 time.monotonic() - s)
 
     log.info("refresh.complete total_elapsed=%.1fs", time.monotonic() - t0)
 
@@ -133,7 +208,7 @@ def _invalidate_top_level_caches():
     keys_to_clear = [
         "hb_in_senate", "sb_in_house", "dashboard_stats", "action_code_counts",
         "bill_progress", "all_actions", "all_actions_v5", "governor_bills",
-        "awaiting_transmittal_v35", "pipeline_v3_20",
+        "awaiting_transmittal_v36", "pipeline_v3_20",
     ]
     # Also clear any activity_feed_X entries and today's floor calendar
     # (so refreshes pick up newly-calendared bills).
