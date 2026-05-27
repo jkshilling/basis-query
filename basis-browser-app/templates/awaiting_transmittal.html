@@ -65,21 +65,35 @@
             display: flex;
             flex: 1;
             height: 12px;
-            background: #eef2f6;
+            background: #fafbfc;  /* near-white, clearly distinguishes empty seats from voter colors */
+            border: 1px solid #e2e6eb;
             border-radius: 2px;
             overflow: hidden;
         }
         .at-vb-seg { display: block; height: 100%; }
-        .at-vb-pad { display: block; height: 100%; }
+        /* Hatched pattern for the unused-capacity pad so it reads as
+           "seats this chamber doesn't have" instead of "missing data
+           we didn't fetch". Critical for the Senate bar (20 of 40). */
+        .at-vb-pad {
+            display: block;
+            height: 100%;
+            background-image: repeating-linear-gradient(
+                45deg,
+                transparent, transparent 3px,
+                rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 5px
+            );
+        }
         /* Yeas: full saturation by party color */
         .at-vb-yea-D { background: #1f4e79; }
         .at-vb-yea-R { background: #922b21; }
-        .at-vb-yea-N { background: #5b6770; }
-        /* Nays: same hues but lighter / desaturated, so opposition
-           reads as visually distinct from support */
+        /* Nonpartisan = purple (saturated for yeas, lighter for nays).
+           Deliberately NOT grey, which would visually collide with
+           the empty-capacity pad. */
+        .at-vb-yea-N { background: #6c3483; }
+        /* Nays: same hues but lighter / desaturated */
         .at-vb-nay-D { background: #a8c2dc; }
         .at-vb-nay-R { background: #e0a8a3; }
-        .at-vb-nay-N { background: #c8ced3; }
+        .at-vb-nay-N { background: #c5a8cf; }
         .at-vb-num {
             font-variant-numeric: tabular-nums;
             color: #4a5560;
@@ -1155,8 +1169,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v20';
-    var DETAIL_KEY_PREFIX = 'at_detail_v24:';
+    var LIST_KEY = 'at_list_v21';
+    var DETAIL_KEY_PREFIX = 'at_detail_v25:';
 
     function lsGet(key) {
         try {
