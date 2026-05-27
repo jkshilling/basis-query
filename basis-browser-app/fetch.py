@@ -597,6 +597,78 @@ def count_actions_by_year(session, years):
     return {y: dict(c) for y, c in counts.items()}
 
 
+# --- Canonical 'Bills Passed Both Bodies' list (scraped from akleg) ---
+
+def fetch_passed_bills(session="34"):
+    """Scrape the Alaska Legislature's canonical 'Bills Passed Both
+    Bodies' list at /basis/Bill/Passed/{session}. This is the
+    authoritative source for what passed both chambers — we use it
+    as primary input and enrich from BASIS, rather than
+    reverse-engineering passage state from action codes / status text.
+
+    Returns list of dicts: {billnumber, title, sponsor, status,
+    date, pdf_url}. Cached 5 min — list only updates when a bill
+    clears both chambers.
+    """
+    cache_key = f"passed_bills_v1_{session}"
+    cached = _cache.get(cache_key, max_age=300)
+    if cached is not None:
+        return cached
+
+    url = f"https://www.akleg.gov/basis/Bill/Passed/{session}"
+    try:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "basis-browser/1"},
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            html_body = resp.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        log.warning("passed_bills.fail err=%r", exc)
+        return []
+
+    # Each <tr class="Both ..."> = bill/resolution passed by both
+    # chambers. The page also has Senate/House-only rows for
+    # single-chamber resolutions; those don't go to the governor.
+    rows = re.split(r'<tr class="Both[^"]*">', html_body)[1:]
+    results = []
+    bn_re = re.compile(r'<a href = "[^"]*Root=([^"]+)"[^>]*>[^<]+</a')
+    title_re = re.compile(r'<td class="col02">([^<]*)</td>', re.DOTALL)
+    sponsor_re = re.compile(
+        r'<td class="col03">([^<]*?)(?:<BR>|<br>|</td>)', re.DOTALL,
+    )
+    status_re = re.compile(
+        r'<td class="col04">(?:<nobr>)?'
+        r"(?:<a [^>]*href='([^']+)'[^>]*>pdf</a>\s*)?"
+        r"([^<]*?)(?:</nobr>|</td>)",
+        re.DOTALL,
+    )
+    date_re = re.compile(r'<td class="col05">([^<]+)</td>')
+
+    for chunk in rows:
+        bn_m = bn_re.search(chunk)
+        if not bn_m:
+            continue
+        bn = compact_billnumber(bn_m.group(1))
+        title_m = title_re.search(chunk)
+        sponsor_m = sponsor_re.search(chunk)
+        status_m = status_re.search(chunk)
+        date_m = date_re.search(chunk)
+        pdf_url = (status_m.group(1).strip()
+                   if status_m and status_m.group(1) else "")
+        status_text = (status_m.group(2) if status_m else "").strip()
+        results.append({
+            "billnumber": bn,
+            "title": (title_m.group(1).strip() if title_m else ""),
+            "sponsor": (sponsor_m.group(1).strip() if sponsor_m else ""),
+            "status": status_text,
+            "date": (date_m.group(1).strip() if date_m else ""),
+            "pdf_url": pdf_url,
+        })
+
+    _cache.put(cache_key, results)
+    return results
+
+
 # --- Single-bill detail fetch ---
 
 def fetch_members(session="34"):

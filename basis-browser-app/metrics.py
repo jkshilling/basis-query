@@ -21,6 +21,7 @@ from fetch import (
     fetch_committee_reports, scan_all_actions, count_actions_by_year,
     fetch_bill_detail, fetch_floor_calendar, is_procedural_resolution,
     fetch_members, fetch_bill_votes, fetch_sponsor_statement,
+    fetch_passed_bills,
 )
 from bill_summaries import get_bill_summary
 
@@ -1385,7 +1386,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v16", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v18", max_age=300)
     if cached is not None:
         return cached
 
@@ -1414,66 +1415,60 @@ def awaiting_transmittal(session="34"):
     at_gov_bills = []
     at_gov_resolutions = []
 
+    # Build a lookup from billnumber → (origin, title, status, actions)
+    # so we can enrich each akleg-Passed entry with action data.
+    actions_by_bill = {}
     for bn, origin, title, status, actions in scan_all_actions(session):
+        actions_by_bill[bn] = (origin, title, status, actions)
+
+    # CANONICAL SOURCE: the legislature's official "Bills Passed Both
+    # Bodies" list at /basis/Bill/Passed/{session}. We iterate this
+    # list (the same one users can see on akleg.gov) rather than
+    # reverse-engineering "passed both chambers" from action codes.
+    # Each row's status is up-to-date because the legislature
+    # maintains this page directly.
+    passed = fetch_passed_bills(session)
+    for entry_in in passed:
+        bn = entry_in["billnumber"]
         prefix = bn.split()[0] if bn else ""
-        if prefix not in ("HB", "SB", "HJR", "SJR", "HCR", "SCR"):
+        # The akleg Passed list is the canonical filter — accept any
+        # bill/resolution prefix that appears (including HR/SR
+        # single-chamber resolutions that occasionally get transmitted).
+        if not prefix:
             continue
-        su = (status or "").upper()
-        # Skip terminal states. BASIS reliably updates these in status.
-        # "LEGIS RESOLVE N" is the resolutions-equivalent of CHAPTER —
-        # adopted and filed by the Legislative Affairs Agency.
+        su = (entry_in["status"] or "").upper()
+
+        # Terminal: chaptered, vetoed, veto sustained, or already
+        # filed as a legislative/chamber resolve. These have run
+        # their course — drop from the active-decision view.
         if ("CHAPTER" in su or "VETOED" in su or "VETO SUSTAINED" in su
-                or "LEGIS RESOLVE" in su):
+                or "LEGIS RESOLVE" in su or "HOUSE RESOLVE" in su
+                or "SENATE RESOLVE" in su):
             continue
 
-        # Classify by ACTION CODES (authoritative) rather than
-        # StatusText, which BASIS sometimes lags on — e.g. HB 23 and
-        # HB 25 had status "(H) CONCURRED(S) AM" while their most
-        # recent action was already 049 AWAITING TRANSMITTAL TO GOV.
-        #   049 = AWAITING TRANSMITTAL TO GOV
-        #   033 = TRANSMITTED TO GOVERNOR
-        #   034/036/038 = SIGNED / LAW WITHOUT SIG / VETOED (terminal)
-        TERMINAL_CODES = {"034", "036", "038"}
-        latest_at_gov = ""    # most recent 033 date
-        latest_awaiting = ""  # most recent 049 date
-        latest_terminal = ""  # most recent terminal-code date
-        for c, _a, jd, _t in actions:
-            if c == "033" and jd > latest_at_gov:
-                latest_at_gov = jd
-            elif c == "049" and jd > latest_awaiting:
-                latest_awaiting = jd
-            elif c in TERMINAL_CODES and jd > latest_terminal:
-                latest_terminal = jd
-        # Terminal action overrides everything — skip.
-        if latest_terminal and latest_terminal >= max(latest_at_gov, latest_awaiting):
-            continue
-        # At-governor when 033 happened and no later 049 reset it.
-        is_at_gov = bool(latest_at_gov) and latest_at_gov >= latest_awaiting
-        # Awaiting when 049 is the most recent transmittal-related event.
-        is_awaiting = bool(latest_awaiting) and not is_at_gov
+        # AT GOVERNOR: bill has been physically transmitted, gov clock
+        # is running.
+        is_at_gov = (
+            "TRANSM TO GOVERNOR" in su
+            or "TRANSMITTED TO GOVERNOR" in su
+            or "DUE BACK FROM GOVERNOR" in su
+        )
+        # AWAITING TRANSMITTAL: anything else on the Passed list that
+        # isn't terminal or at-gov. CONCURRED(X) AM, RTN TO ... GOV
+        # NEXT, AWAIT TRANSMIT GOV — all mean "passed both chambers,
+        # not yet handed to gov."
+        is_awaiting = not is_at_gov
 
-        # Defensive fallback to StatusText for the rare bill whose
-        # action stream is missing the canonical code (BASIS data
-        # quality is uneven on older sessions / unusual bill types).
-        if not (is_at_gov or is_awaiting):
-            is_at_gov = (
-                "TRANSM TO GOVERNOR" in su
-                or "TRANSMITTED TO GOVERNOR" in su
-                or "DUE BACK FROM GOVERNOR" in su
-            )
-            is_awaiting = (
-                (
-                    "GOV NEXT" in su
-                    or "RTN TO" in su
-                    or "AWAIT TRANSMIT" in su
-                    or "AWAITING TRANSMITTAL" in su
-                )
-                and not is_at_gov
-            )
-
-        # Skip anything not in one of our two buckets
-        if not (is_at_gov or is_awaiting):
-            continue
+        # Look up action history for enrichment (dates, vote tallies,
+        # fiscal notes). Default to empty if BASIS doesn't return it.
+        actions_tuple = actions_by_bill.get(bn)
+        if actions_tuple:
+            origin, _, status, actions = actions_tuple
+        else:
+            origin = "H" if prefix.startswith("H") else "S"
+            status = entry_in["status"]
+            actions = []
+        title = entry_in["title"] or (actions_tuple[1] if actions_tuple else "")
 
         # Most recent meaningful action (drives the days-waiting badge
         # and the human-readable "Last Action" column). Skip pure
@@ -1719,7 +1714,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v16", result)
+    _cache.put("awaiting_transmittal_v18", result)
     return result
 
 
