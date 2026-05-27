@@ -42,6 +42,50 @@
         }
         .at-card .at-days-label { display: block; font-size: 0.7rem; color: #888; margin-top: 4px; letter-spacing: 0.04em; text-transform: uppercase; }
         .at-card .at-meta-sub { display: block; font-size: 0.7rem; color: #6e7681; margin-top: 6px; }
+
+        /* Mini vote-breakdown bars in the right column under the
+           days badge. Two stacked rows (House, Senate), each
+           proportionally segmented by party with yeas in solid
+           colors and nays in muted shades. */
+        .at-vb { margin-top: 16px; min-width: 180px; text-align: left; }
+        .at-vb-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+            font-size: 0.7rem;
+        }
+        .at-vb-lbl {
+            width: 12px;
+            font-weight: 700;
+            color: #6e7681;
+            text-align: right;
+        }
+        .at-vb-bar {
+            display: flex;
+            flex: 1;
+            height: 12px;
+            background: #eef2f6;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .at-vb-seg { display: block; height: 100%; }
+        .at-vb-pad { display: block; height: 100%; }
+        /* Yeas: full saturation by party color */
+        .at-vb-yea-D { background: #1f4e79; }
+        .at-vb-yea-R { background: #922b21; }
+        .at-vb-yea-N { background: #5b6770; }
+        /* Nays: same hues but lighter / desaturated, so opposition
+           reads as visually distinct from support */
+        .at-vb-nay-D { background: #a8c2dc; }
+        .at-vb-nay-R { background: #e0a8a3; }
+        .at-vb-nay-N { background: #c8ced3; }
+        .at-vb-num {
+            font-variant-numeric: tabular-nums;
+            color: #4a5560;
+            min-width: 36px;
+            font-size: 0.7rem;
+        }
         .at-days-green { background: #27ae60; }
         .at-days-yellow { background: #f39c12; }
         .at-days-orange { background: #e67e22; }
@@ -732,7 +776,10 @@
 
             html += '</div>';
 
-            // Column 3: days badge first, then expander spans all columns below.
+            // Column 3: days badge + dates, then a visual party
+            // breakdown for the vote. Both chambers sized on the same
+            // scale (40-wide), so House looks twice as long as Senate
+            // — reflecting the actual chamber sizes.
             html += '<div class="at-meta">';
             html +=   '<span class="at-days ' + dClass + '">' + dTxt + '</span>';
             html +=   '<span class="at-days-label">' + esc(dLabel) + '</span>';
@@ -742,6 +789,47 @@
                 if (b.return_by_date) {
                     html += '<span class="at-meta-sub">due back ' + esc(b.return_by_date) + '</span>';
                 }
+            }
+
+            // Mini vote-breakdown bars. Each segment's flex value is
+            // its raw count, so widths are proportional to votes and
+            // both bars share the same total scale (40 max House,
+            // 20 max Senate). Empty trailing space represents seats
+            // not present in that chamber's tally.
+            function voteBar(label, vote, breakdown, scaleMax) {
+                if (!vote) return '';
+                var by = breakdown || {};
+                var yeas = by.Y || {};
+                var nays = by.N || {};
+                var seg = function(party, cls, count) {
+                    if (!count) return '';
+                    return '<span class="at-vb-seg at-vb-' + cls + '" title="' +
+                        count + ' ' + party + '" style="flex:' + count + '"></span>';
+                };
+                var total = (vote.yeas || 0) + (vote.nays || 0) +
+                            (vote.excused || 0) + (vote.absent || 0);
+                var html = '<div class="at-vb-row">';
+                html += '<span class="at-vb-lbl">' + esc(label) + '</span>';
+                html += '<div class="at-vb-bar">';
+                html += seg('D yea', 'yea-D', yeas.D || 0);
+                html += seg('R yea', 'yea-R', yeas.R || 0);
+                html += seg('N yea', 'yea-N', yeas.N || 0);
+                html += seg('D nay', 'nay-D', nays.D || 0);
+                html += seg('R nay', 'nay-R', nays.R || 0);
+                html += seg('N nay', 'nay-N', nays.N || 0);
+                // Pad to scaleMax so House and Senate are on same axis.
+                var pad = Math.max(0, scaleMax - total);
+                if (pad > 0) html += '<span class="at-vb-pad" style="flex:' + pad + '"></span>';
+                html += '</div>';
+                html += '<span class="at-vb-num">' + (vote.yeas || 0) + '-' + (vote.nays || 0) + '</span>';
+                html += '</div>';
+                return html;
+            }
+            if (b.house_vote || b.senate_vote) {
+                html += '<div class="at-vb">';
+                html += voteBar('H', b.house_vote, b.house_breakdown, 40);
+                html += voteBar('S', b.senate_vote, b.senate_breakdown, 40);
+                html += '</div>';
             }
             html += '</div>';
 
@@ -1065,8 +1153,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v18';
-    var DETAIL_KEY_PREFIX = 'at_detail_v22:';
+    var LIST_KEY = 'at_list_v19';
+    var DETAIL_KEY_PREFIX = 'at_detail_v23:';
 
     function lsGet(key) {
         try {
