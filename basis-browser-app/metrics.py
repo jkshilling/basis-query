@@ -1327,7 +1327,12 @@ def _latest_floor_passage_per_chamber(votes_list, members):
     has vote/name/party/district/majority. Excludes the 'Advance from
     Second to Third Reading' procedural roll.
     """
-    by_ch_date = {}
+    # Bucket by (chamber, date, title). A chamber can hold multiple
+    # roll calls on the same day (Third Reading + reconsideration +
+    # final passage on an omnibus, e.g. the operating budget). Each
+    # roll call is a full 60-member tally; if we merge them by date
+    # alone we double- or triple-count yeas. The title disambiguates.
+    by_ch_key = {}
     for v in votes_list or []:
         title_u = (v.get("title") or "").upper()
         if "FINAL PASSAGE" not in title_u and "THIRD READING" not in title_u:
@@ -1338,7 +1343,8 @@ def _latest_floor_passage_per_chamber(votes_list, members):
         ch = m.get("chamber", "")
         if ch not in ("H", "S"):
             continue
-        by_ch_date.setdefault((ch, v.get("date") or ""), []).append({
+        key = (ch, v.get("date") or "", title_u)
+        by_ch_key.setdefault(key, []).append({
             "vote": v.get("vote", ""),
             "name": m.get("name") or v.get("member_code", ""),
             "party": m.get("party", ""),
@@ -1348,10 +1354,27 @@ def _latest_floor_passage_per_chamber(votes_list, members):
     out = {"H": [], "S": []}
     dates = {"H": "", "S": ""}
     for ch in ("H", "S"):
-        ch_dates = sorted({d for (cc, d) in by_ch_date if cc == ch})
-        if ch_dates:
-            dates[ch] = ch_dates[-1]
-            out[ch] = by_ch_date[(ch, ch_dates[-1])]
+        # Candidates: keys for this chamber, sorted by date then title.
+        # Pick the latest date; within that date prefer titles that
+        # contain "FINAL PASSAGE" over generic "THIRD READING".
+        ch_keys = [k for k in by_ch_key if k[0] == ch]
+        if not ch_keys:
+            continue
+        ch_keys.sort(key=lambda k: (
+            k[1],                                  # date
+            1 if "FINAL PASSAGE" in k[2] else 0,   # prefer final passage
+        ))
+        chosen = ch_keys[-1]
+        dates[ch] = chosen[1]
+        # De-dup legislators in case BASIS replays the same row twice.
+        seen = set()
+        rows = []
+        for r in by_ch_key[chosen]:
+            if r["name"] in seen:
+                continue
+            seen.add(r["name"])
+            rows.append(r)
+        out[ch] = rows
     return out, dates
 
 
@@ -1386,7 +1409,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v28", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v29", max_age=300)
     if cached is not None:
         return cached
 
@@ -1832,7 +1855,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v28", result)
+    _cache.put("awaiting_transmittal_v29", result)
     return result
 
 
