@@ -173,7 +173,7 @@ def fetch(section, session="34", chamber=None, queries=None, result_range=None,
 def fetch_all_bills(chamber, session="34", queries=None):
     """Fetch all bills for a chamber with optional expansions. Cached
     for 10 minutes."""
-    cache_key = f"all_bills_v5_{session}_{chamber}_{','.join(queries or [])}"
+    cache_key = f"all_bills_v6_{session}_{chamber}_{','.join(queries or [])}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -674,7 +674,7 @@ def fetch_passed_bills(session="34"):
 def fetch_members(session="34"):
     """Member roster keyed by BASIS code. Each value carries name,
     chamber, party, district, and majority flag. Cached an hour."""
-    cache_key = f"members_v3_{session}"
+    cache_key = f"members_v4_{session}"
     cached = _cache.get(cache_key, max_age=3600)
     if cached is not None:
         return cached
@@ -684,12 +684,19 @@ def fetch_members(session="34"):
     # "..50" returns the LAST 50 records alphabetically, not the first.
     # Always use an explicit "start..end" so pagination actually
     # advances forward through the roster.
+    #
+    # Committees expansion is cheap (a few extra elements per member)
+    # and lets us derive chair/co-chair attributions for committee-
+    # sponsored bills. The 'position' attribute on each <Committee>
+    # element is 'C0'/'C1' for co-chairs/chairs, numeric for regular
+    # members.
     PAGE = 50
     start = 0
     while True:
         end = start + PAGE - 1
         rng = f"{start}..{end}"
-        r = fetch(section="members", session=session, result_range=rng)
+        r = fetch(section="members", session=session, result_range=rng,
+                  queries=["Committees"])
         body = r["body"].decode("utf-8", errors="replace")
         if "<Error" in body[:300] or "FaultException" in body:
             break
@@ -698,8 +705,26 @@ def fetch_members(session="34"):
         except ET.ParseError:
             break
         page_count = 0
-        for det in root.iter():
-            if strip_ns(det.tag) != "MemberDetails":
+        for member in root.iter():
+            if strip_ns(member.tag) != "Member":
+                continue
+            det = None
+            committees = []
+            for child in member:
+                tag = strip_ns(child.tag)
+                if tag == "MemberDetails":
+                    det = child
+                elif tag == "Committees":
+                    for c in child:
+                        if strip_ns(c.tag) != "Committee":
+                            continue
+                        committees.append({
+                            "chamber":  c.attrib.get("chamber", ""),
+                            "code":     c.attrib.get("code", ""),
+                            "position": c.attrib.get("position", ""),
+                            "name":     (c.text or "").strip(),
+                        })
+            if det is None:
                 continue
             code = det.attrib.get("code", "").strip()
             if not code or code in members:
@@ -717,6 +742,7 @@ def fetch_members(session="34"):
                 "party": party,
                 "district": district,
                 "majority": majority,
+                "committees": committees,
             }
             page_count += 1
         if page_count < PAGE:
@@ -724,6 +750,39 @@ def fetch_members(session="34"):
         start += PAGE
     _cache.put(cache_key, members)
     return members
+
+
+def committee_chairs(session="34"):
+    """Derive {"chamber|code": [chair_member_dict, ...]} by scanning
+    every member's Committees list for 'position' starting with 'C'
+    (BASIS's chair/co-chair marker). Multiple chairs per committee
+    are common — House and Senate Finance each have two co-chairs.
+    Key is "H|FIN" / "S|FIN" etc. as a flat string so the value is
+    JSON-serializable (the disk cache stores JSON)."""
+    cache_key = f"committee_chairs_v2_{session}"
+    cached = _cache.get(cache_key, max_age=3600)
+    if cached is not None:
+        return cached
+
+    chairs = {}
+    for m in fetch_members(session).values():
+        for c in m.get("committees") or []:
+            pos = (c.get("position") or "").upper()
+            if not pos.startswith("C"):
+                continue
+            key = f"{c.get('chamber','')}|{c.get('code','')}"
+            chairs.setdefault(key, []).append({
+                "code":     m["code"],
+                "name":     m["name"],
+                "party":    m["party"],
+                "district": m["district"],
+                "position": pos,
+            })
+    # Stable ordering: chairs first (C0/C1 lexical), then by last name.
+    for k, lst in chairs.items():
+        lst.sort(key=lambda x: (x["position"], x["name"].split()[-1]))
+    _cache.put(cache_key, chairs)
+    return chairs
 
 
 def fetch_all_votes_index(session="34"):

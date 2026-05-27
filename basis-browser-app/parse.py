@@ -232,6 +232,19 @@ def parse_bills_extended(result):
             "latest_version_letter": "",
             "latest_version_title": "",
             "subjects": [],
+            # Sponsorship extensions (issue #3): committee bills name a
+            # Committee + an optional Requestor. The Requestor names the
+            # real entity behind a committee bill ("THE GOVERNOR" or a
+            # task force / department). The committee identifies which
+            # committee chamber + code introduced it (RLS, FIN, etc.).
+            "requestor": "",
+            "committee_sponsor_code": "",
+            "committee_sponsor_name": "",
+            "committee_sponsor_chamber": "",
+            # Fiscal-note PDFs (issue #2): the FiscalNotes expansion of
+            # the Bills endpoint exposes each FN's preparer agency, fiscal-
+            # impact letter (N/P/I/etc.), and a direct PDF URL.
+            "fn_pdfs": [],
         }
 
         for subs in elem:
@@ -249,7 +262,8 @@ def parse_bills_extended(result):
             count = 0
             sponsor_list = []
             for member in sponsors:
-                if strip_ns(member.tag) == "MemberDetails":
+                tag = strip_ns(member.tag)
+                if tag == "MemberDetails":
                     count += 1
                     code = member.attrib.get("code", "")
                     first = child_text(member, "FirstName")
@@ -264,12 +278,45 @@ def parse_bills_extended(result):
                     if is_prime:
                         bill["prime_sponsor"] = name
                         bill["prime_sponsor_code"] = code
-                elif strip_ns(member.tag) == "Committee":
+                elif tag == "Committee":
                     if not bill["prime_sponsor"]:
                         bill["prime_sponsor"] = f"({member.attrib.get('code', '')})"
+                    bill["committee_sponsor_code"] = member.attrib.get("code", "")
+                    bill["committee_sponsor_chamber"] = member.attrib.get("chamber", "")
+                    bill["committee_sponsor_name"] = (member.text or "").strip()
                     count += 1
+                elif tag == "Requestor":
+                    # BASIS uses literal '%' as a placeholder for "no
+                    # requestor" — treat that as empty. Whitespace-pad
+                    # is common too.
+                    req = (member.text or "").strip()
+                    if req and req != "%":
+                        bill["requestor"] = req
             bill["sponsor_count"] = count
             bill["sponsors"] = sponsor_list
+
+        # Fiscal-note PDFs from the FiscalNotes expansion. Each entry
+        # exposes the preparer agency + impact code + direct PDF URL.
+        for fn_root in elem:
+            if strip_ns(fn_root.tag) != "FiscalNotes":
+                continue
+            for fn in fn_root:
+                if strip_ns(fn.tag) != "FiscalNote":
+                    continue
+                url = ""
+                for content in fn:
+                    if strip_ns(content.tag) == "Content":
+                        for u in content:
+                            if strip_ns(u.tag) == "Url":
+                                url = (u.text or "").strip()
+                                break
+                bill["fn_pdfs"].append({
+                    "name":     fn.attrib.get("name", "").strip(),
+                    "date":     fn.attrib.get("date", "").strip(),
+                    "preparer": fn.attrib.get("preparer", "").strip(),
+                    "impact":   fn.attrib.get("fiscalimpact", "").strip(),
+                    "url":      url,
+                })
 
         for versions in elem:
             if strip_ns(versions.tag) != "Versions":

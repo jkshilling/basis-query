@@ -21,7 +21,7 @@ from fetch import (
     fetch_committee_reports, scan_all_actions, count_actions_by_year,
     fetch_bill_detail, fetch_floor_calendar, is_procedural_resolution,
     fetch_members, fetch_bill_votes, fetch_sponsor_statement,
-    fetch_passed_bills,
+    fetch_passed_bills, committee_chairs,
 )
 from bill_summaries import get_bill_summary
 
@@ -1409,7 +1409,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v30", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v31", max_age=300)
     if cached is not None:
         return cached
 
@@ -1419,10 +1419,12 @@ def awaiting_transmittal(session="34"):
     meta = {}
     for chamber in ("H", "S"):
         for b in fetch_all_bills(chamber, session,
-                                  queries=["Sponsors", "Subjects", "Versions"]):
+                                  queries=["Sponsors", "Subjects", "Versions",
+                                           "FiscalNotes"]):
             meta[b["billnumber"]] = b
 
     members = fetch_members(session)
+    chairs = committee_chairs(session)
     # Non-blocking probe of the votes index: if it's been built (warm),
     # we enrich vote chips with party breakdowns; if not, the page still
     # loads with totals-only and breakdowns appear after the index warms.
@@ -1591,9 +1593,27 @@ def awaiting_transmittal(session="34"):
         fn_buckets = {"zero": 0, "indeterminate": 0, "amount": 0}
         for body in fn_latest.values():
             fn_buckets[categorize_fiscal_note(body)] += 1
-        fiscal_notes = [
-            {"label": k, "body": v} for k, v in sorted(fn_latest.items())
-        ]
+        # Marry the action-code FN list with the FiscalNotes expansion
+        # (which gives us each FN's direct PDF URL + preparer). Match
+        # by FN number ("FN1" → "Fiscal Note 1"). When BASIS exposes a
+        # PDF we attach it; otherwise the pill stays text-only.
+        m_meta = meta.get(compact_billnumber(bn), {})
+        fn_pdfs_by_number = {}
+        for pdf in m_meta.get("fn_pdfs") or []:
+            # Extract the trailing integer from "Fiscal Note 3" etc.
+            mm = re.search(r"(\d+)\s*$", pdf.get("name", "") or "")
+            if mm:
+                fn_pdfs_by_number["FN" + mm.group(1)] = pdf
+        fiscal_notes = []
+        for k, v in sorted(fn_latest.items()):
+            pdf = fn_pdfs_by_number.get(k, {})
+            fiscal_notes.append({
+                "label":    k,
+                "body":     v,
+                "url":      pdf.get("url", ""),
+                "preparer": pdf.get("preparer", ""),
+                "impact":   pdf.get("impact", ""),
+            })
 
         # Veto-override math: combined yeas across both chambers vs.
         # the 2/3 (40) and 3/4 (45) thresholds. We don't auto-detect
@@ -1624,25 +1644,46 @@ def awaiting_transmittal(session="34"):
             except ValueError:
                 pass
 
-        m = meta.get(compact_billnumber(bn), {})
-        sponsor = m.get("prime_sponsor") or ""
-        subjects = m.get("subjects") or []
+        bm = meta.get(compact_billnumber(bn), {})  # bill metadata
+        sponsor = bm.get("prime_sponsor") or ""
+        subjects = bm.get("subjects") or []
         # sponsor_count includes the prime sponsor; subtract 1 for the
         # cosponsor tally (clamped at 0).
-        cosponsor_count = max((m.get("sponsor_count") or 1) - 1, 0)
+        cosponsor_count = max((bm.get("sponsor_count") or 1) - 1, 0)
 
         # Prime sponsor party/district lookup (by member code from the
         # Sponsors expansion; fall back to scanning by name).
-        prime_code = m.get("prime_sponsor_code") or ""
+        prime_code = bm.get("prime_sponsor_code") or ""
         prime_member = members.get(prime_code, {})
         sponsor_party = prime_member.get("party") or ""
         sponsor_district = prime_member.get("district") or ""
+
+        # Committee + requestor: for bills introduced by a committee
+        # (HB 263 by RLS, HB 78 by FIN, etc.), BASIS gives us the
+        # committee code/name and a Requestor field that names the
+        # entity that asked for the bill ("THE GOVERNOR", a task force,
+        # or empty for committee-originated). This is the real
+        # accountability layer for committee bills.
+        committee_sponsor_code = bm.get("committee_sponsor_code") or ""
+        committee_sponsor_name = bm.get("committee_sponsor_name") or ""
+        committee_sponsor_chamber = bm.get("committee_sponsor_chamber") or ""
+        requestor = bm.get("requestor") or ""
+        committee_chairs_list = []
+        if committee_sponsor_code:
+            chair_key = f"{committee_sponsor_chamber}|{committee_sponsor_code}"
+            for ch in chairs.get(chair_key, []):
+                committee_chairs_list.append({
+                    "name":     ch["name"],
+                    "party":    ch["party"],
+                    "district": ch["district"],
+                    "position": ch["position"],
+                })
 
         # Cosponsor party breakdown: count Ds vs Rs (and others) among
         # the non-prime sponsors. Gives a "bipartisan-cosponsored"
         # signal which makes a veto politically costlier.
         cosponsor_by_party = {}
-        for sp in m.get("sponsors") or []:
+        for sp in bm.get("sponsors") or []:
             if sp.get("prime"):
                 continue
             sp_member = members.get(sp.get("code") or "", {})
@@ -1775,6 +1816,14 @@ def awaiting_transmittal(session="34"):
             "sponsor_district": sponsor_district,
             "cosponsor_count": cosponsor_count,
             "cosponsor_by_party": cosponsor_by_party,
+            # Committee bill attribution (issue #3): names the requesting
+            # entity ("THE GOVERNOR" / task force / department) and the
+            # introducing committee. Empty for member-sponsored bills.
+            "requestor": requestor,
+            "committee_sponsor_code": committee_sponsor_code,
+            "committee_sponsor_name": committee_sponsor_name,
+            "committee_sponsor_chamber": committee_sponsor_chamber,
+            "committee_chairs": committee_chairs_list,
             "subjects": subjects[:5],
             "akleg_url": akleg_url,
             # Blue sheets — list of curated agency analyses on disk.
@@ -1855,7 +1904,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v30", result)
+    _cache.put("awaiting_transmittal_v31", result)
     return result
 
 
@@ -1993,17 +2042,41 @@ def bill_decision_detail(billnumber, session="34"):
 
     milestones_display = {k: format_status_date_full(v) for k, v in milestones.items()}
 
-    # Fiscal-note bodies (full text, with dates).
+    # Fiscal-note bodies (full text, with dates). Marry the action-
+    # code list (which gives us category info) with the FiscalNotes
+    # expansion from fetch_all_bills (which gives us the direct PDF
+    # URL + preparer agency). Match by FN number.
+    bn_compact = compact_billnumber(billnumber)
+    chamber = "H" if billnumber.startswith("HB") or billnumber.startswith("HJR") or billnumber.startswith("HCR") or billnumber.startswith("HR") else "S"
+    fn_pdfs_by_number = {}
+    try:
+        for bm_match in fetch_all_bills(chamber, session,
+                                         queries=["Sponsors", "Subjects",
+                                                  "Versions", "FiscalNotes"]):
+            if bm_match["billnumber"] == bn_compact:
+                for pdf in bm_match.get("fn_pdfs") or []:
+                    mm = re.search(r"(\d+)\s*$", pdf.get("name", "") or "")
+                    if mm:
+                        fn_pdfs_by_number["FN" + mm.group(1)] = pdf
+                break
+    except Exception:
+        pass
+
     fiscal_notes = []
     for c, a, jd, t in actions_for_bill:
         if c == "105" and t:
             m = _FN_RE.match(t.strip())
             if m:
+                lbl = m.group(1)
+                pdf = fn_pdfs_by_number.get(lbl, {})
                 fiscal_notes.append({
-                    "label": m.group(1),
-                    "body": m.group(2).strip(),
-                    "date": jd,
+                    "label":    lbl,
+                    "body":     m.group(2).strip(),
+                    "date":     jd,
                     "category": categorize_fiscal_note(m.group(2)),
+                    "url":      pdf.get("url", ""),
+                    "preparer": pdf.get("preparer", ""),
+                    "impact":   pdf.get("impact", ""),
                 })
 
     result = {

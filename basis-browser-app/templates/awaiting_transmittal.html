@@ -177,6 +177,9 @@
         .at-fn-pill.zero { background: #e8f8f0; border-color: #b7e1c8; color: #1e6e3a; }
         .at-fn-pill.indeterminate { background: #fef5e7; border-color: #f5cb7f; color: #885a00; }
         .at-fn-pill.amount { background: #fde8e8; border-color: #f1b0b0; color: #8a1e1e; }
+        /* When the pill is also an anchor (lazy-linked to akleg.gov PDF). */
+        .at-fn-pill-link { text-decoration: none; cursor: pointer; }
+        .at-fn-pill-link:hover { filter: brightness(0.95); text-decoration: underline; }
         /* Expanded detail block */
         .at-expand {
             grid-column: 1 / -1;
@@ -658,17 +661,81 @@
                 return keys.map(function(k) { return byParty[k] + k; }).join(' ');
             }
             if (b.sponsor) {
-                html += '<div class="at-sub"><strong>Sponsor:</strong> ' + esc(b.sponsor);
-                if (b.sponsor_party) {
-                    html += ' <span class="at-sub-meta">(' + partyTagInline(b.sponsor_party) + ')</span>';
+                // For committee-introduced bills BASIS gives us
+                // (1) the committee that filed it and (2) an optional
+                // Requestor naming the real entity behind the bill
+                // ("THE GOVERNOR", a task force, etc.). Surface both
+                // instead of the bare "(RLS)" code: e.g.
+                //   "House Rules Committee (chair Stutes R-5), by
+                //    request of the Governor"
+                // For member-sponsored bills, fall back to the
+                // original "Sponsor: Name (party) + N cosponsors" line.
+                var chamberWord = (b.committee_sponsor_chamber === 'H'
+                                   ? 'House'
+                                   : b.committee_sponsor_chamber === 'S'
+                                     ? 'Senate'
+                                     : '');
+                var cmteName = b.committee_sponsor_name || '';
+                if (cmteName && chamberWord) {
+                    // Title-case "RULES" → "Rules", "LABOR & COMMERCE" →
+                    // "Labor & Commerce". BASIS hands us SHOUTING text.
+                    cmteName = cmteName.toLowerCase().replace(
+                        /\b[a-z]/g,
+                        function(c){ return c.toUpperCase(); }
+                    );
+                    html += '<div class="at-sub"><strong>Sponsor:</strong> ' +
+                        chamberWord + ' ' + esc(cmteName) + ' Committee';
+                    var chairList = b.committee_chairs || [];
+                    if (chairList.length) {
+                        // "chair Stutes (R-5)" or "co-chairs Foster (D-39),
+                        // Josephson (D-15)" if >1.
+                        var noun = chairList.length === 1 ? 'chair' : 'co-chairs';
+                        var nameStrs = chairList.map(function(c) {
+                            var last = c.name.split(' ').slice(-1)[0];
+                            var meta = c.party ? c.party + (c.district ? '-' + c.district : '') : '';
+                            return esc(last) + (meta ? ' (' + meta + ')' : '');
+                        });
+                        html += ' <span class="at-sub-meta">(' + noun + ' ' +
+                            nameStrs.join(', ') + ')</span>';
+                    }
+                    if (b.requestor) {
+                        // Title-case "THE GOVERNOR" → "the Governor".
+                        var reqDisplay = b.requestor.toLowerCase().replace(
+                            /\b[a-z]/g,
+                            function(c){ return c.toUpperCase(); }
+                        );
+                        // Special-case the most common pattern.
+                        if (/the\s+governor/i.test(reqDisplay)) {
+                            reqDisplay = 'the Governor';
+                        }
+                        html += ' <span class="at-sub-meta">— by request of ' +
+                            esc(reqDisplay) + '</span>';
+                    }
+                    html += '</div>';
+                } else {
+                    html += '<div class="at-sub"><strong>Sponsor:</strong> ' + esc(b.sponsor);
+                    if (b.sponsor_party) {
+                        html += ' <span class="at-sub-meta">(' + partyTagInline(b.sponsor_party) + ')</span>';
+                    }
+                    if (b.cosponsor_count > 0) {
+                        html += ' <span class="at-sub-meta">+ ' + b.cosponsor_count + ' cosponsor' + (b.cosponsor_count === 1 ? '' : 's');
+                        var cpBreak = partyBreakdownText(b.cosponsor_by_party);
+                        if (cpBreak) html += ' (' + cpBreak + ')';
+                        html += '</span>';
+                    }
+                    if (b.requestor) {
+                        var reqDisplay2 = b.requestor.toLowerCase().replace(
+                            /\b[a-z]/g,
+                            function(c){ return c.toUpperCase(); }
+                        );
+                        if (/the\s+governor/i.test(reqDisplay2)) {
+                            reqDisplay2 = 'the Governor';
+                        }
+                        html += ' <span class="at-sub-meta">— by request of ' +
+                            esc(reqDisplay2) + '</span>';
+                    }
+                    html += '</div>';
                 }
-                if (b.cosponsor_count > 0) {
-                    html += ' <span class="at-sub-meta">+ ' + b.cosponsor_count + ' cosponsor' + (b.cosponsor_count === 1 ? '' : 's');
-                    var cpBreak = partyBreakdownText(b.cosponsor_by_party);
-                    if (cpBreak) html += ' (' + cpBreak + ')';
-                    html += '</span>';
-                }
-                html += '</div>';
             }
 
             // Vote tallies — show party breakdown when available
@@ -1023,14 +1090,32 @@
         h += renderRollCallCol('Senate', d.passage_votes.S, d.vote_counts.S, d.passage_dates.S);
         h += '</div></div>';
 
-        // Fiscal notes (full)
+        // Fiscal notes (full). Each FN pill is now an anchor to the
+        // akleg.gov PDF when the FiscalNotes expansion supplied a URL
+        // (issue #2 — link fiscal-note pills to actual notes).
         if (d.fiscal_notes && d.fiscal_notes.length) {
             h += '<div class="at-section">';
             h += '<div class="at-section-h">Fiscal Notes</div>';
             h += '<ul class="at-fn-list">';
             d.fiscal_notes.forEach(function(fn) {
-                h += '<li><span class="at-fn-pill ' + esc(fn.category) + '">' + esc(fn.label) + '</span>';
-                h += '<span class="lbl"></span>' + esc(fn.body);
+                var pillHtml;
+                if (fn.url) {
+                    pillHtml = '<a class="at-fn-pill ' + esc(fn.category) +
+                        ' at-fn-pill-link" href="' + esc(fn.url) +
+                        '" target="_blank" rel="noopener" title="Open ' +
+                        esc(fn.label) + ' PDF on akleg.gov">' +
+                        esc(fn.label) + ' ↗</a>';
+                } else {
+                    pillHtml = '<span class="at-fn-pill ' + esc(fn.category) +
+                        '">' + esc(fn.label) + '</span>';
+                }
+                h += '<li>' + pillHtml;
+                if (fn.preparer) {
+                    h += '<span class="lbl"></span>' + esc(fn.preparer);
+                    if (fn.body) h += ' <span style="color:#6e7681">— ' + esc(fn.body) + '</span>';
+                } else {
+                    h += '<span class="lbl"></span>' + esc(fn.body);
+                }
                 if (fn.date) h += '<span class="meta" style="color:#888;font-size:0.75rem;margin-left:6px">· ' + esc(fn.date) + '</span>';
                 h += '</li>';
             });
@@ -1160,8 +1245,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v27';
-    var DETAIL_KEY_PREFIX = 'at_detail_v31:';
+    var LIST_KEY = 'at_list_v28';
+    var DETAIL_KEY_PREFIX = 'at_detail_v32:';
 
     function lsGet(key) {
         try {
