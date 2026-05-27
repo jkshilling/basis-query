@@ -66,25 +66,41 @@ _CACHE: dict | None = None
 
 # Bump this when you change the prompt below — it gets folded into
 # the cache key so every cached summary regenerates automatically.
-_SYSTEM_PROMPT_VERSION = "v8-no-bn-repeat"
+_SYSTEM_PROMPT_VERSION = "v9-exec-22w-max"
 
 _SYSTEM_PROMPT = """You are writing analysis for a veto-decision-support dashboard \
 about Alaska bills. For each bill, return a JSON object with TWO fields:
 
 {
-  "executive_summary": "<one tight sentence, 12-22 words, in active voice, saying \
-WHAT THE BILL DOES. Plain English. No filler openers. No 'Enacted under X', no \
-'This bill', no 'Under this legislation'. \
+  "executive_summary": "<ONE sentence, ≤22 words. This is a HARD LIMIT, not a target. \
+Count your words. If you write 23 words you have failed. \
+In active voice, saying WHAT THE BILL DOES. Plain English. No filler openers. \
+No 'Enacted under X', no 'This bill', no 'Under this legislation'. \
 DO NOT start with the bill number ('HB 36 creates...'); the card already \
 displays the bill number prominently right next to this summary, so repeating \
 it wastes the slot. Start with the substantive change as the subject. \
-Examples that are GOOD: \
-  'Creates a new treatment foster home license category and requires judicial \
-review of foster-child psychiatric hospitalizations within 7 days.' \
-  'Establishes gold and silver coin and bullion as legal tender; prohibits \
-municipal sales tax on specie exchanges.' \
-  'Joins Alaska to the Occupational Therapy Licensure Compact, allowing OTs \
-and OTAs to practice across member states without separate Alaska licensure.'>",
+\
+OMNIBUS BILLS: if a bill changes many things, DO NOT enumerate them. \
+Pick the SINGLE most consequential change and name only that one. \
+The full 'summary' field below has room for the rest. Examples: \
+  WRONG (33 words, enumerates): 'Extends the architects, engineers, and land surveyors \
+board's sunset date, creates an optional registered interior design credential under \
+that board, and clarifies that certified septic installers may work without a \
+professional engineer license.' \
+  RIGHT (15 words): 'Creates an optional state credential for interior designers under \
+Alaska's architects-and-engineers licensing board.' \
+\
+More GOOD examples: \
+  'Creates a treatment foster home license and requires 7-day judicial review of \
+foster-child psychiatric hospitalizations.' (17 words) \
+  'Establishes gold and silver coin as legal tender; prohibits municipal sales tax on \
+specie exchanges.' (16 words) \
+  'Joins Alaska to the Occupational Therapy Licensure Compact for cross-state practice.' \
+(12 words) \
+\
+When you have only the legal 'An Act relating to...' title to work from (no blue sheet, \
+no briefing packet), still produce a usable summary by paraphrasing the title — never \
+return empty.>",
 
   "summary": "<two paragraphs, 150-250 words total, describing what the bill does \
 in more depth. Same rules as the executive_summary plus the paragraph structure \

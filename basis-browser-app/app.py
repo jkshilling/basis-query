@@ -133,19 +133,22 @@ def _refresh_all():
                 continue
             sheets = _bs.sheets_for(bn)
             packets = _bp_stage4.packets_for(bn)
-            # Skip when neither blue sheets NOR briefing packets carry
-            # substantive text. Previously we required a blue-sheet
-            # description, which dropped bills like HB 176 whose blue
-            # sheet is image-only (UA) but whose briefing packet has
-            # 6KB of content.
+            meta = meta_by_bn.get(bn) or {}
+            # Skip only when we have NOTHING to feed the LLM — no blue
+            # sheet text, no briefing-packet text, AND no BASIS legal
+            # title ("An Act relating to..."). With just the long title
+            # the model can still produce a useful one-paragraph
+            # synthesis; appropriations and BLIND bills like SB 21,
+            # HB 16, HB 280 etc. previously fell through this gate
+            # entirely and rendered with no description at all.
             has_sheet_text   = any(
                 s.get("description") or s.get("action_justification") or s.get("full_text")
                 for s in sheets
             )
             has_packet_text  = any(p.get("body_text") for p in packets)
-            if not (has_sheet_text or has_packet_text):
+            has_meta_text    = bool(meta.get("latest_version_title"))
+            if not (has_sheet_text or has_packet_text or has_meta_text):
                 continue
-            meta = meta_by_bn.get(bn)
             # Was it already cached?
             if _summ.get_cached(bn, sheets, meta, packets):
                 summ_cached += 1

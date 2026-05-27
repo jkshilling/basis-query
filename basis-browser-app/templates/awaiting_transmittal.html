@@ -1763,22 +1763,20 @@
                         var agencyU = (item.agency || '').toUpperCase();
                         var rec = (item.recommendation || '').toUpperCase();
                         var recCls = rec === '?' ? 'unknown' : (rec || 'unknown');
-                        h += '<div class="at-rat-block">';
-                        h += '<div class="at-rat-head"><span class="at-glo ' + recCls + '">' +
-                             esc(item.agency || '?') + ': ' + esc(rec || '—') +
-                             '</span>';
-                        if (item.filename) {
-                            h += '<a class="at-rat-src" href="/blue-sheet-file/' +
-                                 encodeURIComponent(item.filename) +
-                                 '" target="_blank" rel="noopener">source ↗</a>';
-                        }
-                        h += '</div>';
-                        // Prefer LLM rationale text.
+                        // Decide what body text (if any) we will show before
+                        // emitting the block — skip the block entirely when
+                        // there's nothing real to display, rather than
+                        // printing a "no text" placeholder line. That
+                        // placeholder added zero information and added clutter.
                         var llmTxt = (llmRatByAgency[agencyU] || '').trim();
-                        if (llmTxt && llmTxt !== 'No justification text provided.') {
-                            h += '<p class="at-rat-body">' + esc(llmTxt) + '</p>';
+                        var STUBS = {
+                            'No justification text provided.': true,
+                            'No justification text provided': true,
+                        };
+                        var bodyHtml = '';
+                        if (llmTxt && !STUBS[llmTxt]) {
+                            bodyHtml = '<p class="at-rat-body">' + esc(llmTxt) + '</p>';
                         } else {
-                            // Fallback: truncated raw Action Justification.
                             var txt = (item.action_justification || '').trim();
                             if (txt) {
                                 if (txt.length > 420) {
@@ -1794,11 +1792,27 @@
                                         txt = slice.replace(/\s+\S*$/, '') + '…';
                                     }
                                 }
-                                h += '<p class="at-rat-body">' + esc(txt) + '</p>';
-                            } else {
-                                h += '<p class="at-rat-body at-rat-empty">' +
-                                     'No Action Justification text in the blue sheet.</p>';
+                                bodyHtml = '<p class="at-rat-body">' + esc(txt) + '</p>';
                             }
+                        }
+                        // If we have NO usable body AND no clean recommendation
+                        // chip (the only useful signal left), suppress the
+                        // entire block. A '?' rec with no text is pure noise.
+                        if (!bodyHtml && (!rec || rec === '?')) {
+                            return;
+                        }
+                        h += '<div class="at-rat-block">';
+                        h += '<div class="at-rat-head"><span class="at-glo ' + recCls + '">' +
+                             esc(item.agency || '?') + ': ' + esc(rec || '—') +
+                             '</span>';
+                        if (item.filename) {
+                            h += '<a class="at-rat-src" href="/blue-sheet-file/' +
+                                 encodeURIComponent(item.filename) +
+                                 '" target="_blank" rel="noopener">source ↗</a>';
+                        }
+                        h += '</div>';
+                        if (bodyHtml) {
+                            h += bodyHtml;
                         }
                         h += '</div>';
                     });
@@ -2141,8 +2155,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v55';
-    var DETAIL_KEY_PREFIX = 'at_detail_v50:';
+    var LIST_KEY = 'at_list_v56';
+    var DETAIL_KEY_PREFIX = 'at_detail_v51:';
 
     function lsGet(key) {
         try {
