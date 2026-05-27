@@ -1,10 +1,25 @@
-"""Blue-sheet index: scan basis-browser-app/blue_sheets/ for PDFs
-and map each filename back to a canonical billnumber.
+"""Blue-sheet index: scan basis-browser-app/blue_sheets/ and map
+each PDF/DOCX file back to a canonical billnumber.
 
 A "blue sheet" is a one-page legislative analysis attached to a
 bill — the term comes from the (historically blue) paper they were
-printed on. Drop a PDF in the folder with the bill number as the
-filename and the Governor's Desk page picks it up automatically.
+printed on. Drop a file in the folder and the Governor's Desk page
+picks it up automatically.
+
+Filename matching is intentionally forgiving: any of these all map
+to "HB 195":
+
+    HB195.pdf
+    HB 195.pdf
+    hb195.pdf
+    Blue Sheet - HB195 5.20.26.pdf
+    HB195CS(STA)-DCCED-CBPL-BS-05-12-26.pdf
+    2026 Blue Sheet HB 195.docx
+    CSHB195-DOH-DPH-5-18-26.pdf
+
+The matcher pulls the FIRST occurrence of any bill prefix
+(HB/SB/HJR/SJR/HCR/SCR/HR/SR/HSCR/SSCR) followed by digits,
+optionally preceded by a "CS/HCS/SCS" committee-substitute marker.
 """
 
 import os
@@ -13,35 +28,55 @@ import time
 
 _DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "blue_sheets")
 
-# Filename → canonical billnumber. e.g. "HB195.pdf" → "HB 195",
-# "HJR  4.pdf" → "HJR 4". The mapping rule mirrors what BASIS uses.
-_FILENAME_RE = re.compile(
-    r"^([A-Za-z]+)\s*0*(\d+)\.pdf$",
+# Permissible bill-number prefixes, longest first so e.g. "HSCR"
+# matches before "HCR" or "SR".
+_PREFIXES = ("HSCR", "SSCR", "HJR", "SJR", "HCR", "SCR", "HB", "SB", "HR", "SR")
+_PREFIX_PATTERN = "|".join(_PREFIXES)
+
+# First occurrence of [optional CS marker] + prefix + zero-padded digits
+# inside any filename. Captures (prefix, number).
+_BILL_RE = re.compile(
+    r"(?:CS|HCS|SCS|SCS\s?CS|HCS\s?CS)?"  # optional committee-substitute
+    r"(" + _PREFIX_PATTERN + r")"
+    r"\s*0*(\d+)",
     re.IGNORECASE,
 )
 
-# In-memory cache so we don't re-scan the disk on every request.
-# 60-second TTL = good middle ground: adding a new blue sheet
-# appears on the page within a minute without an app restart.
+# Accept PDFs (preferred — browsers render inline) and DOCX/DOC
+# (browsers download — still functional if that's what the user has).
+_EXT_RE = re.compile(r"\.(pdf|docx?)$", re.IGNORECASE)
+
+# In-memory cache so we don't re-scan disk on every request.
 _cache_value = None
 _cache_time = 0.0
 _CACHE_TTL = 60.0
 
 
+def _extract_billnumber(filename):
+    """Pull the canonical billnumber out of a filename, or None."""
+    if not _EXT_RE.search(filename):
+        return None
+    m = _BILL_RE.search(filename)
+    if not m:
+        return None
+    prefix = m.group(1).upper()
+    number = str(int(m.group(2)))  # strip leading zeros
+    return f"{prefix} {number}"
+
+
 def _scan():
-    """Return {canonical_billnumber: filename_on_disk}."""
+    """Return {canonical_billnumber: filename_on_disk}.
+    If multiple files map to the same bill, keep the first by name —
+    deterministic but arbitrary. User can de-dupe by removing extras."""
     out = {}
     if not os.path.isdir(_DIR):
         return out
-    for fn in os.listdir(_DIR):
-        if not fn.lower().endswith(".pdf"):
+    for fn in sorted(os.listdir(_DIR)):
+        bn = _extract_billnumber(fn)
+        if not bn:
             continue
-        m = _FILENAME_RE.match(fn)
-        if not m:
-            continue
-        prefix = m.group(1).upper()
-        number = str(int(m.group(2)))  # strip leading zeros
-        out[f"{prefix} {number}"] = fn
+        if bn not in out:
+            out[bn] = fn
     return out
 
 
@@ -58,7 +93,7 @@ def index():
 
 def filename_for(billnumber):
     """Return the on-disk filename for a billnumber, or None."""
-    return index().get(billnumber.strip())
+    return index().get((billnumber or "").strip())
 
 
 def abs_path(filename):
@@ -68,6 +103,7 @@ def abs_path(filename):
     if not filename or "/" in filename or "\\" in filename or ".." in filename:
         return None
     candidate = os.path.normpath(os.path.join(_DIR, filename))
+    # Must be a regular file directly inside _DIR
     if not candidate.startswith(_DIR + os.sep):
         return None
     if not os.path.isfile(candidate):
