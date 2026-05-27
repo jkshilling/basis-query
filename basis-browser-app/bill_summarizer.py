@@ -188,6 +188,8 @@ def _input_hash(billnumber: str, blue_sheets: list, bill_meta: dict | None,
             s.get("agency", ""),
             s.get("recommendation", ""),
             s.get("description", ""),
+            s.get("action_justification", ""),
+            s.get("full_text", ""),
         ]))
     # Briefing-packet body text gets folded into the input hash too,
     # so edits to the briefing-packet content invalidate the cached
@@ -216,9 +218,22 @@ def _build_user_message(billnumber: str, blue_sheets: list,
         for s in blue_sheets:
             agency = s.get("agency") or "(unknown department)"
             rec = s.get("recommendation") or "no recommendation"
-            desc = s.get("description") or "(no analytical text extracted from this sheet)"
+            desc = (s.get("description") or "").strip()
+            just = (s.get("action_justification") or "").strip()
+            full = (s.get("full_text") or "").strip()
             lines.append(f"=== {agency} blue sheet — recommends: {rec} ===")
-            lines.append(desc.strip())
+            if desc:
+                lines.append("What does this Bill do:")
+                lines.append(desc)
+            if just:
+                lines.append("Action Justification:")
+                lines.append(just)
+            # If neither section parsed cleanly (OCR'd file, non-
+            # standard template like the UA email), fall through to
+            # the full first-page text so the LLM still has content.
+            if not desc and not just and full:
+                lines.append("Full text (template did not parse cleanly):")
+                lines.append(full)
             lines.append("")
     else:
         lines.append("(No departmental blue sheets on file yet.)")

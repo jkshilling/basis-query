@@ -138,7 +138,10 @@ def _refresh_all():
             # description, which dropped bills like HB 176 whose blue
             # sheet is image-only (UA) but whose briefing packet has
             # 6KB of content.
-            has_sheet_text   = any(s.get("description") for s in sheets)
+            has_sheet_text   = any(
+                s.get("description") or s.get("action_justification") or s.get("full_text")
+                for s in sheets
+            )
             has_packet_text  = any(p.get("body_text") for p in packets)
             if not (has_sheet_text or has_packet_text):
                 continue

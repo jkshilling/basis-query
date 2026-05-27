@@ -212,11 +212,32 @@ _REC_RE = re.compile(
     r"(?:☒|\[\s*[xX✓]\s*\])\s*(SIGN|VETO|LWOS)",
 )
 
+# OCR'd PDFs often mangle the ☒ / ☐ glyphs into character soup
+# like "Xl SIGN O VETO O LWOS" or "(R'SIGN =O. VETO i LWOS".
+# Fallback: find all three options in the recommendation block and
+# pick the one whose preceding 1-4 chars differ from the (unchecked)
+# pattern shared by the other two. The "O" / "[ ]" / "□" prefix is
+# what tesseract emits for an unchecked box; anything else flags the
+# checked option.
+_REC_OCR_BLOCK_RE = re.compile(
+    r"Select\s+one\.?(.{1,300}?)Action\s+Justif",
+    re.IGNORECASE | re.DOTALL,
+)
+_REC_OPT_RE = re.compile(
+    r"(\S{1,4}?)\s*(SIGN|VETO|LWOS)\b",
+    re.IGNORECASE,
+)
+
 
 def _extract_recommendation(filename):
     """Return 'SIGN' | 'VETO' | 'LWOS' | ''. Looks for the checked
     box on page 1 of the blue sheet. '' when not found (image-only
-    PDF, malformed sheet, etc.)."""
+    PDF, malformed sheet, etc.).
+
+    Two-stage: first try the strict ☒-glyph regex (works for clean
+    digital-text PDFs and the original DOCX-flattened layout); then
+    fall back to OCR-tolerant detection by comparing prefix
+    characters across the three options."""
     path = os.path.join(_DIR, filename)
     try:
         mtime = os.path.getmtime(path)
@@ -229,9 +250,32 @@ def _extract_recommendation(filename):
     text = _read_first_page_text(filename)
     found = ""
     if text:
+        # Stage 1: clean checkbox glyph match.
         m = _REC_RE.search(text)
         if m:
             found = m.group(1).upper()
+        else:
+            # Stage 2: OCR-tolerant. Look for the SIGN/VETO/LWOS triple
+            # within the recommendation block and inspect prefixes.
+            block_m = _REC_OCR_BLOCK_RE.search(text)
+            if block_m:
+                block = block_m.group(1)
+                opts = []  # (prefix, option) tuples in document order
+                for om in _REC_OPT_RE.finditer(block):
+                    opts.append((om.group(1).strip(), om.group(2).upper()))
+                if len(opts) >= 2:
+                    # The unchecked-box prefix is typically 'O' (single
+                    # capital o, what tesseract emits for ☐), ' ', '0',
+                    # or '[]'. Anything else marks the checked option.
+                    def _is_unchecked(p):
+                        if not p:
+                            return True
+                        if p in ("O", "0", "o", "[]", "[", "]", "Q"):
+                            return True
+                        return False
+                    checked = [o for (p, o) in opts if not _is_unchecked(p)]
+                    if len(checked) == 1:
+                        found = checked[0]
     _content_rec_cache[key] = found
     return found
 
@@ -260,7 +304,10 @@ _DESC_PRIMARY_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _DESC_FALLBACK_RE = re.compile(
-    r"Action\s+Justification\s*[–-]?\s*Why\s+do\s+you\s+recommend.*?Please\s+be\s+specific\.?\s+"
+    # Em-dash (—), en-dash (–), hyphen (-), or no separator at all.
+    # "Please be specific" line is sometimes absent in OCR output.
+    r"Action\s+Justification\s*[—–-]?\s*Why\s+do\s+you\s+recommend[^.]{0,80}\.?\s*"
+    r"(?:Please\s+be\s+specific\.?\s*)?"
     r"(.*?)"
     r"(?:What\s+does\s+this\s+Bill\s+do|Detailed\s+Sectional\s+Analysis|\Z)",
     re.IGNORECASE | re.DOTALL,
@@ -516,12 +563,20 @@ def _scan():
             or _mtime_date(fn)
         )
         # Departmental recommendation (SIGN/VETO/LWOS), analytical
-        # description, and action-justification text — all pulled
-        # from the PDF body. Each extracted once per file (mtime-
-        # keyed cache).
+        # description, action-justification text, and the full
+        # first-page text — all pulled from the PDF body. Each
+        # extracted once per file (mtime-keyed cache). full_text is
+        # the fallback when the structured sections aren't parseable
+        # (UA's email-shaped "blue sheet", OCR'd files with mangled
+        # section headers, etc.) — the LLM summarizer reads it as
+        # supplementary context.
         recommendation = _extract_recommendation(fn)
         description = _extract_description(fn)
         action_justification = _extract_action_justification(fn)
+        full_text = _read_full_text(fn) if fn.lower().endswith(".pdf") or fn.lower().endswith((".docx", ".doc")) else ""
+        # Trim full_text to keep token cost predictable.
+        if len(full_text) > 6000:
+            full_text = full_text[:5980].rsplit(" ", 1)[0] + "…"
         label = agency
         # Index the same file under EVERY bill it references. Agency
         # blue sheets sometimes cover multiple bills (e.g.
@@ -535,6 +590,7 @@ def _scan():
                 "recommendation":       recommendation,
                 "description":          description,
                 "action_justification": action_justification,
+                "full_text":            full_text,
             })
     # De-dup within each bill: if two entries have identical (agency,
     # date) keep only one — and prefer PDF over DOCX when both exist
