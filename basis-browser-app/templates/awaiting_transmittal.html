@@ -22,10 +22,16 @@
             gap: 14px;
             padding: 14px 16px;
             background: #fff;
-            border: 1px solid #d6dbe1;
-            border-left: 4px solid #1a5276;
-            border-radius: 4px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+            /* Stronger card border + deeper drop shadow so each card
+               reads as its own discrete container. The chamber-of-
+               origin accent on the left edge is also widened from
+               4px → 5px to keep its visual weight relative to the
+               new border. */
+            border: 1px solid #8b97a3;
+            border-left: 5px solid #1a5276;
+            border-radius: 5px;
+            box-shadow: 0 2px 6px rgba(15, 25, 40, 0.10),
+                        0 1px 2px rgba(15, 25, 40, 0.06);
         }
         .at-card.origin-S { border-left-color: #922b21; }
 
@@ -1815,8 +1821,8 @@
         }
         s += '<div class="at-stat"><div class="n">' + d.counts.bills + '</div><div class="l">Bills awaiting</div></div>';
         // Recommendation distribution tiles.
-        s += renderRecTile('GLO recommendations (HB/SB)', gloCounts);
-        s += renderRecTile('DEPT recommendations (HB/SB)', deptCounts);
+        s += renderRecTile('GLO recommendations', gloCounts);
+        s += renderRecTile('DEPT recommendations', deptCounts);
         document.getElementById("at-strip").innerHTML = s;
     }
 
@@ -1895,7 +1901,7 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v43';
+    var LIST_KEY = 'at_list_v44';
     var DETAIL_KEY_PREFIX = 'at_detail_v43:';
 
     function lsGet(key) {
