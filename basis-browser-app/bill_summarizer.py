@@ -146,6 +146,41 @@ def _load_cache() -> dict:
                 _CACHE = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             _CACHE = {}
+        # Self-heal: pre-fix entries where json.loads failed and the raw
+        # JSON text landed in `summary` with `executive_summary` empty.
+        # The fix re-parses them in place with strict=False; if parsing
+        # still fails the entry is left untouched.
+        dirty = False
+        for h, entry in list(_CACHE.items()):
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("executive_summary"):
+                continue
+            s = entry.get("summary", "")
+            if not (isinstance(s, str) and s.lstrip().startswith("{")
+                    and '"executive_summary"' in s):
+                continue
+            try:
+                p = json.loads(s, strict=False)
+                exec_s = str(p.get("executive_summary", "")).strip()
+                full_s = str(p.get("summary", "")).strip()
+                if exec_s and full_s:
+                    entry["executive_summary"] = exec_s
+                    entry["summary"] = full_s
+                    dirty = True
+                    log.info("summarizer.cache_self_healed bn=%s",
+                             entry.get("billnumber", "?"))
+            except json.JSONDecodeError:
+                pass
+        if dirty:
+            # Persist the repair so the next process boot doesn't redo it.
+            tmp = _CACHE_PATH + ".tmp"
+            try:
+                with open(tmp, "w") as f:
+                    json.dump(_CACHE, f, separators=(",", ":"))
+                os.replace(tmp, _CACHE_PATH)
+            except OSError as e:
+                log.warning("summarizer.cache_heal_save_failed err=%r", e)
     return _CACHE
 
 
@@ -159,6 +194,26 @@ def _save_cache():
             os.replace(tmp, _CACHE_PATH)
         except OSError as e:
             log.warning("summarizer.cache_save_failed err=%r", e)
+
+
+def _forgiving_json_loads(text: str):
+    """Parse JSON that may contain raw control characters (notably
+    literal '\\n' inside string values, which the LLM emits regularly
+    despite "valid JSON only" instructions).
+
+    Tries strict parse first (so well-formed responses stay on the fast
+    path), then falls back to strict=False, which RFC-violates by
+    allowing control characters in strings — exactly the LLM's typical
+    failure mode. Raises json.JSONDecodeError if BOTH attempts fail.
+    """
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # strict=False permits raw \n, \t, etc. inside string values.
+        # This rescues responses where the model put paragraph breaks
+        # inside the "summary" value as literal newlines instead of
+        # the JSON-required \n escape.
+        return json.loads(text, strict=False)
 
 
 def _read_api_key() -> str:
@@ -344,7 +399,7 @@ def summarize_bill(billnumber: str, blue_sheets: list,
             raw_text = raw_text[:-3].rstrip()
 
     try:
-        parsed = json.loads(raw_text)
+        parsed = _forgiving_json_loads(raw_text)
         exec_summary = str(parsed.get("executive_summary", "")).strip()
         full_summary = str(parsed.get("summary", "")).strip()
     except json.JSONDecodeError:
@@ -546,7 +601,7 @@ def synthesize_rationale(billnumber, blue_sheets, bill_meta,
         if text.endswith("```"):
             text = text[:-3].rstrip()
     try:
-        parsed = json.loads(text)
+        parsed = _forgiving_json_loads(text)
     except json.JSONDecodeError:
         log.warning("rationale.bad_json bn=%s raw=%r", bn, text[:300])
         return None
@@ -728,7 +783,7 @@ def synthesize_stakeholders(billnumber, blue_sheets, briefing_packets,
         if text.endswith("```"):
             text = text[:-3].rstrip()
     try:
-        parsed = json.loads(text)
+        parsed = _forgiving_json_loads(text)
     except json.JSONDecodeError:
         log.warning("stakeholders.bad_json bn=%s raw=%r", bn, text[:300])
         return None
