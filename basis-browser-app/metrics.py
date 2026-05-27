@@ -1409,7 +1409,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v39", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v40", max_age=300)
     if cached is not None:
         return cached
 
@@ -2045,7 +2045,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v39", result)
+    _cache.put("awaiting_transmittal_v40", result)
     return result
 
 
@@ -2055,7 +2055,7 @@ def bill_decision_detail(billnumber, session="34"):
     """Detailed veto-decision view for one bill: full per-legislator
     roll call on final passage in each chamber, plus action timeline
     and fiscal-note bodies. Cached 10 min."""
-    cache_key = f"bill_decision_detail_v10_{session}_{billnumber}"
+    cache_key = f"bill_decision_detail_v11_{session}_{billnumber}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -2293,6 +2293,23 @@ def bill_decision_detail(billnumber, session="34"):
     except Exception:
         pass
 
+    # Department-of-Law bill-review text(s) extracted from each
+    # briefing packet covering this bill. Every packet contains a
+    # 'DEPARTMENT OF LAW BILL REVIEW:' section — often just 'TBD'
+    # while DOL is still reviewing, but the absence vs presence is
+    # itself useful signal for the expander section.
+    dol_reviews = []
+    try:
+        import briefing_packets as _bp_mod
+        for p in _bp_mod.packets_for(billnumber):
+            if p.get("dol_review"):
+                dol_reviews.append({
+                    "packet_filename": p.get("filename") or "",
+                    "text": p["dol_review"],
+                })
+    except Exception:
+        pass
+
     result = {
         "billnumber": billnumber,
         "passage_votes": passage_votes,
@@ -2312,6 +2329,8 @@ def bill_decision_detail(billnumber, session="34"):
         # GLO + DEPT rationale displayed in the expander.
         "glo_recommendation": glo_payload,
         "dept_recommendation": dept_payload,
+        # DOL bill-review text(s) extracted from briefing packets.
+        "dol_reviews": dol_reviews,
     }
     _cache.put(cache_key, result)
     return result

@@ -589,6 +589,25 @@
         .at-rationale-note { color: #2c3e50; font-size: 0.9rem; line-height: 1.4; }
         .at-rationale-src { color: #6e7681; font-size: 0.78rem; font-style: italic; }
         .at-rationale-override { color: #885a00; font-size: 0.85rem; }
+
+        /* DOL Bill Review block in the expander. Each packet's review
+           gets its own dol-block with a source-file link header. */
+        .at-dol-block {
+            margin-top: 8px;
+            padding: 10px 12px;
+            background: #faf6fc;
+            border-left: 3px solid #d8c4e3;
+            border-radius: 3px;
+        }
+        .at-dol-src {
+            font-size: 0.78rem;
+            color: #6e7681;
+            margin-bottom: 6px;
+        }
+        .at-dol-src a { color: #6c3483; text-decoration: none; }
+        .at-dol-src a:hover { text-decoration: underline; }
+        .at-dol-block p { margin: 0; font-size: 0.92rem; line-height: 1.5; color: #2c3e50; }
+        .at-dol-tbd { color: #885a00 !important; }
         .at-glo.overridden::after { content: " *"; font-weight: 700; }
 
         /* Empty-state indicator for HB/SB bills with no blue sheet on
@@ -1453,6 +1472,34 @@
             h += '</div>';
         }
 
+        // Legal Review (Department of Law) — extracted from each
+        // briefing packet that covers this bill. Often the text is
+        // just 'TBD' (DOL hasn't completed review yet); that itself
+        // is useful signal worth showing.
+        var dolList = d.dol_reviews || [];
+        if (dolList.length) {
+            h += '<div class="at-section">';
+            h += '<div class="at-section-h">Legal Review (Department of Law)</div>';
+            dolList.forEach(function(dol) {
+                var txt = (dol.text || '').trim();
+                var srcFn = dol.packet_filename || '';
+                h += '<div class="at-dol-block">';
+                if (srcFn) {
+                    h += '<div class="at-dol-src">From <a href="/briefing-packet-file/' +
+                        encodeURIComponent(srcFn) + '" target="_blank" rel="noopener">' +
+                        esc(srcFn) + '</a></div>';
+                }
+                if (txt.toUpperCase() === 'TBD' || txt.length < 20) {
+                    h += '<p class="at-dol-tbd"><em>' + esc(txt) +
+                         '</em> — DOL review not yet provided.</p>';
+                } else {
+                    h += '<p>' + esc(txt) + '</p>';
+                }
+                h += '</div>';
+            });
+            h += '</div>';
+        }
+
         // Neutral Summary — hand-authored description of what the
         // bill does. Sponsor statements (the sponsor's advocacy
         // framing) are intentionally NOT linked here: this is a
@@ -1685,8 +1732,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v37';
-    var DETAIL_KEY_PREFIX = 'at_detail_v40:';
+    var LIST_KEY = 'at_list_v38';
+    var DETAIL_KEY_PREFIX = 'at_detail_v41:';
 
     function lsGet(key) {
         try {

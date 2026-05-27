@@ -166,7 +166,7 @@ def _refresh_all():
                 # Drop the cached entry to force re-build with the
                 # newly-available LLM summary.
                 from cache import _cache as _c
-                _c.pop(f"bill_decision_detail_v10_34_{bn}", None)
+                _c.pop(f"bill_decision_detail_v11_34_{bn}", None)
                 bill_decision_detail(bn)
             except Exception:
                 pass
@@ -174,7 +174,7 @@ def _refresh_all():
         # NEXT page render picks up the new llm_summary fields.
         try:
             from cache import _cache as _c
-            _c.pop("awaiting_transmittal_v39", None)
+            _c.pop("awaiting_transmittal_v40", None)
             awaiting_transmittal()
         except Exception:
             pass
@@ -208,7 +208,7 @@ def _invalidate_top_level_caches():
     keys_to_clear = [
         "hb_in_senate", "sb_in_house", "dashboard_stats", "action_code_counts",
         "bill_progress", "all_actions", "all_actions_v5", "governor_bills",
-        "awaiting_transmittal_v39", "pipeline_v3_20",
+        "awaiting_transmittal_v40", "pipeline_v3_20",
     ]
     # Also clear any activity_feed_X entries and today's floor calendar
     # (so refreshes pick up newly-calendared bills).
