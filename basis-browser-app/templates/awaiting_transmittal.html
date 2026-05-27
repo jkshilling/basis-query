@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Awaiting Transmittal — BASIS Browser</title>
+    <title>Pending Governor Action — BASIS Browser</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script src="{{ url_for('static', filename='util.js') }}"></script>
     <script src="{{ url_for('static', filename='sort.js') }}"></script>
@@ -709,11 +709,11 @@
 </head>
 <body class="wide">
     <nav>
-        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/schedule">Schedule</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/pipeline">Pipeline</a> | <strong>Governor’s Desk</strong> | <a href="/governor">Governor</a> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
+        <a href="/dashboard">Dashboard</a> | <a href="/">Crossover</a> | <a href="/activity">Activity</a> | <a href="/schedule">Schedule</a> | <a href="/bill-progress">Bill Progress</a> | <a href="/pipeline">Pipeline</a> | <strong>Pending Governor Action</strong> | <a href="/governor">Governor</a> | <a href="/search">Search</a> | <a href="/action-codes">Action Codes</a>
     </nav>
     <header>
-        <h1>On the Governor's Desk</h1>
-        <p>Bills and resolutions currently with the governor: <strong>"At Governor"</strong> means transmitted and the 15-day (in-session) or 20-day (post-adjournment) clock is running (Article II §17). <strong>"Awaiting Transmittal"</strong> means passed both chambers but still sitting with the origin chamber's secretary — clock has <em>not</em> started.</p>
+        <h1>Pending Governor Action</h1>
+        <p>Bills past both chambers. <strong>At Governor</strong>: transmitted, veto clock running (15 days in-session / 20 post-adjournment; Art. II §17). <strong>Awaiting Transmittal</strong>: passed but still with the origin chamber's secretary; clock not started.</p>
         <p style="font-size:0.78rem;color:#888;margin:4px 0 0;min-height:1em;"><span id="at-refresh-hint"></span> <button type="button" id="at-refresh-btn" style="background:none;border:none;color:#888;text-decoration:underline;cursor:pointer;font-size:inherit;padding:0;font-family:inherit">Refresh now</button></p>
     </header>
 
@@ -735,7 +735,7 @@
 
         <section id="at-gov-section" style="display:none">
             <h2>At Governor — Clock Running <span id="at-gov-count"></span></h2>
-            <p class="chart-note">Bills and resolutions <strong>already transmitted</strong>. The 15-day in-session / 20-day post-adjournment gubernatorial clock is running; without action they become law automatically when the deadline lapses. Sorted by days remaining, most urgent first.</p>
+            <p class="chart-note">Transmitted; veto clock running. Become law automatically if the deadline lapses without action. Most urgent first.</p>
             <div id="at-gov-cards" class="at-cards"></div>
         </section>
 
@@ -758,7 +758,7 @@
 
         <section>
             <h2>Bills <span id="bills-count"></span></h2>
-            <p class="chart-note">Decision-support view for veto/sign analysis on HB/SB bills awaiting transmittal. Each card surfaces the chamber-by-chamber vote tallies (with combined yeas vs. the 40-vote standard / 45-vote appropriations override threshold), fiscal-note posture, effective date, and sponsorship breadth. The governor's clock (15 in session / 20 post-adjournment) has <em>not</em> started; it begins only on transmittal. <span id="gov-window-hint"></span></p>
+            <p class="chart-note">Passed both chambers, not yet transmitted. Veto clock has not started. <span id="gov-window-hint"></span></p>
             <div id="bills-cards" class="at-cards"></div>
         </section>
 
@@ -1732,7 +1732,7 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v38';
+    var LIST_KEY = 'at_list_v39';
     var DETAIL_KEY_PREFIX = 'at_detail_v41:';
 
     function lsGet(key) {
