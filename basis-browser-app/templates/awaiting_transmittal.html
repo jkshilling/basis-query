@@ -348,6 +348,9 @@
         .at-bluesheet { margin-left: 12px; font-size: 0.74rem; }
         .at-bluesheet.has { color: #1e8449; font-weight: 600; }
         .at-bluesheet.missing { color: #b0b8c0; font-style: italic; cursor: help; }
+        .at-legal { margin-left: 12px; font-size: 0.74rem; }
+        .at-legal.has { color: #6c3483; font-weight: 600; }
+        .at-legal.missing { color: #b0b8c0; font-style: italic; cursor: help; }
 
         /* Stat strip */
         .at-strip { display: flex; gap: 12px; margin: 10px 0 20px; flex-wrap: wrap; }
@@ -637,19 +640,35 @@
             if (b.akleg_url) {
                 linkRow += '<a class="at-extlink" href="' + esc(b.akleg_url) + '" target="_blank" rel="noopener">View on akleg.gov ↗</a>';
             }
-            // One chip per blue sheet on file (multiple agencies often
-            // each submit one). When the filename embeds an agency
-            // (DOH, DPS, DCCED…) and/or date, show those.
+            // Blue sheets are executive-branch agency analyses; they
+            // only apply to HB/SB. Suppress the section for
+            // resolutions entirely (no chip, no "missing" marker).
+            var isBill = (b.type === 'HB' || b.type === 'SB');
             var sheets = b.blue_sheets || [];
-            if (sheets.length) {
-                sheets.forEach(function(s) {
-                    var lab = s.label || 'Blue sheet';
-                    linkRow += '<a class="at-extlink at-bluesheet has" href="/blue-sheet-file/' +
+            if (isBill) {
+                if (sheets.length) {
+                    sheets.forEach(function(s) {
+                        var lab = s.label || 'Blue sheet';
+                        linkRow += '<a class="at-extlink at-bluesheet has" href="/blue-sheet-file/' +
+                            encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
+                            esc(s.filename) + '">📄 ' + esc(lab) + ' ↗</a>';
+                    });
+                } else {
+                    linkRow += '<span class="at-bluesheet missing" title="No blue sheet on file for this bill. Drop a PDF in basis-browser-app/blue_sheets/ to add one.">○ No blue sheet</span>';
+                }
+            }
+            // Legal analyses (LLS / DOL) — applies to bills AND
+            // resolutions. Same chip pattern, different folder.
+            var legals = b.legal_analyses || [];
+            if (legals.length) {
+                legals.forEach(function(s) {
+                    var lab = s.label || 'Legal analysis';
+                    linkRow += '<a class="at-extlink at-legal has" href="/legal-analysis-file/' +
                         encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
-                        esc(s.filename) + '">📄 ' + esc(lab) + ' ↗</a>';
+                        esc(s.filename) + '">⚖ ' + esc(lab) + ' ↗</a>';
                 });
             } else {
-                linkRow += '<span class="at-bluesheet missing" title="No blue sheet on file for this bill. Drop a PDF in basis-browser-app/blue_sheets/ to add one.">○ No blue sheet</span>';
+                linkRow += '<span class="at-legal missing" title="No legal analysis on file. Drop a PDF in basis-browser-app/legal_analyses/ to add one.">○ No legal analysis</span>';
             }
             linkRow += '</div>';
             html += linkRow;
@@ -989,8 +1008,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v13';
-    var DETAIL_KEY_PREFIX = 'at_detail_v17:';
+    var LIST_KEY = 'at_list_v14';
+    var DETAIL_KEY_PREFIX = 'at_detail_v18:';
 
     function lsGet(key) {
         try {

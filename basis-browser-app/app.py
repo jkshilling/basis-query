@@ -105,7 +105,7 @@ def _invalidate_top_level_caches():
     keys_to_clear = [
         "hb_in_senate", "sb_in_house", "dashboard_stats", "action_code_counts",
         "bill_progress", "all_actions", "all_actions_v5", "governor_bills",
-        "awaiting_transmittal_v24", "pipeline_v3_20",
+        "awaiting_transmittal_v25", "pipeline_v3_20",
     ]
     # Also clear any activity_feed_X entries and today's floor calendar
     # (so refreshes pick up newly-calendared bills).
@@ -303,6 +303,20 @@ def api_bill_decision_detail(billnumber):
         return jsonify({"data": data, "error": None})
     except Exception as exc:
         return jsonify({"data": None, "error": str(exc)})
+
+
+@app.route("/legal-analysis-file/<path:filename>")
+def serve_legal_analysis_file(filename):
+    """Serve a specific legal-analysis file by filename."""
+    from flask import send_file, abort
+    import legal_analyses as la_mod
+    path = la_mod.abs_path(filename)
+    if not path:
+        abort(404)
+    mime = ("application/pdf" if path.lower().endswith(".pdf")
+            else "application/octet-stream")
+    return send_file(path, mimetype=mime,
+                     download_name=filename, as_attachment=False)
 
 
 @app.route("/blue-sheet-file/<path:filename>")

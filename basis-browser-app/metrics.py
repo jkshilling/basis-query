@@ -1386,7 +1386,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v24", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v25", max_age=300)
     if cached is not None:
         return cached
 
@@ -1405,11 +1405,14 @@ def awaiting_transmittal(session="34"):
     # loads with totals-only and breakdowns appear after the index warms.
     votes_idx = _cache.get("all_votes_v2_" + session, max_age=3600) or {}
 
-    # Blue-sheet index: {billnumber: filename} for any PDFs that have
-    # been dropped in basis-browser-app/blue_sheets/. Used to attach
-    # a per-bill flag on the card.
+    # Blue-sheet index: agency analyses dropped in blue_sheets/.
+    # Applies to HB/SB only — resolutions don't get blue sheets.
     import blue_sheets as _bs
     _bluesheet_index = _bs.index()
+    # Legal-analyses index: LLS / DOL constitutional analyses dropped
+    # in legal_analyses/. Applies to both bills AND resolutions.
+    import legal_analyses as _la
+    _legal_index = _la.index()
 
     today = datetime.now().date()
 
@@ -1750,11 +1753,13 @@ def awaiting_transmittal(session="34"):
             "cosponsor_by_party": cosponsor_by_party,
             "subjects": subjects[:5],
             "akleg_url": akleg_url,
-            # Blue sheets — list of curated agency analyses on disk
-            # for this bill. Each entry: {filename, agency, date,
-            # label}. Empty list = no sheets on file. Multiple agencies
-            # often file separate sheets on the same bill.
+            # Blue sheets — list of curated agency analyses on disk.
+            # Empty for resolutions (template suppresses the section
+            # when type is not HB/SB).
             "blue_sheets": _bluesheet_index.get(compact_billnumber(bn), []),
+            # Legal analyses — LLS / DOL constitutional/legal reviews.
+            # Applies to both bills and resolutions.
+            "legal_analyses": _legal_index.get(compact_billnumber(bn), []),
             "passed_both_date": format_status_date(passed_both_date),
             "days_since_passage": days_since_passage,
             # Vote tallies and veto-override math
@@ -1828,7 +1833,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v24", result)
+    _cache.put("awaiting_transmittal_v25", result)
     return result
 
 
