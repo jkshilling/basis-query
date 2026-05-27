@@ -699,24 +699,26 @@
                 html += '</div>';
             }
 
-            // Fiscal posture row. Effective-date references are
-            // deliberately omitted — actual statutory dates live in
-            // the bill text (linked via akleg.gov).
-            var detailParts = [];
-            if (b.fiscal_notes && b.fiscal_notes.length) {
+            // Fiscal posture — aggregated by category to avoid 4
+            // repetitive "FN1: ZERO ... FN4: ZERO" pills. One pill
+            // per non-empty category, with a count. The full per-FN
+            // list (with department info) is still in the expander.
+            var fs = b.fiscal_summary || {};
+            var fnTotal = (fs.zero || 0) + (fs.indeterminate || 0) + (fs.amount || 0);
+            if (fnTotal > 0) {
                 var fnHtml = '<div><span class="label">Fiscal</span>';
-                b.fiscal_notes.forEach(function(fn) {
-                    var bodyU = (fn.body || '').toUpperCase();
-                    var cat = bodyU.indexOf('ZERO') >= 0 ? 'zero'
-                            : bodyU.indexOf('INDETERMINATE') >= 0 ? 'indeterminate'
-                            : 'amount';
-                    fnHtml += '<span class="at-fn-pill ' + cat + '" title="' + esc(fn.body) + '">' + esc(fn.label) + ': ' + esc(fn.body) + '</span>';
-                });
+                var addPill = function(cat, count, word) {
+                    if (!count) return;
+                    var lbl = count + ' ' + word;
+                    fnHtml += '<span class="at-fn-pill ' + cat + '">' + lbl + '</span>';
+                };
+                addPill('zero', fs.zero, fs.zero === 1 ? 'zero' : 'zero');
+                addPill('indeterminate', fs.indeterminate,
+                    fs.indeterminate === 1 ? 'indeterminate' : 'indeterminate');
+                addPill('amount', fs.amount,
+                    fs.amount === 1 ? 'has amount' : 'have amounts');
                 fnHtml += '</div>';
-                detailParts.push(fnHtml);
-            }
-            if (detailParts.length) {
-                html += '<div class="at-detail-row">' + detailParts.join('') + '</div>';
+                html += '<div class="at-detail-row">' + fnHtml + '</div>';
             }
 
             // Subject tags removed per user — short title is descriptive.
@@ -1153,8 +1155,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v19';
-    var DETAIL_KEY_PREFIX = 'at_detail_v23:';
+    var LIST_KEY = 'at_list_v20';
+    var DETAIL_KEY_PREFIX = 'at_detail_v24:';
 
     function lsGet(key) {
         try {
