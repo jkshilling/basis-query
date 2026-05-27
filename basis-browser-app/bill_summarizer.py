@@ -327,6 +327,192 @@ def get_cached(billnumber: str, blue_sheets: list,
 
 
 # --------------------------------------------------------------------------
+# Recommendation rationale synthesis — separate prompt, separate cache.
+# --------------------------------------------------------------------------
+
+_RATIONALE_PROMPT_VERSION = "v1"
+
+_RATIONALE_SYSTEM_PROMPT = """You are helping a veto-decision-support dashboard \
+show WHY the various recommendation chips on a bill card landed where they did. \
+For one Alaska bill at a time you will receive:
+
+- The bill's BASIS metadata (number, title)
+- Each department's blue-sheet Action Justification text (their own stated \
+  reasoning for SIGN / VETO / LWOS)
+- The GLO heuristic source (one of: 'departments', 'governor-bill', 'veto-proof')
+- Any DOL Bill Review text from the briefing packet
+- The GLO recommendation + DEPT recommendation rollup
+
+Produce a JSON object with two fields:
+
+{
+  "glo_rationale": "<one or two sentences explaining a plausible basis for the \
+GLO recommendation given the heuristic source and the departmental analysis>",
+  "dept_rationales": [
+    {"agency": "<short code>", "text": "<one-sentence concise summary of THIS \
+department's reasoning for THEIR pick>"},
+    ...
+  ]
+}
+
+Rules:
+
+- 'glo_rationale' MUST be 1-2 sentences. Do not name specific departments — use \
+  neutral phrasing like 'the agencies' or 'departmental reviewers'. The GLO is \
+  an internal heuristic, so the rationale should reflect heuristic + departmental \
+  consensus reasoning, not 'X department said Y'.
+- 'dept_rationales' is one entry per department blue sheet. The 'agency' field \
+  is the short code (DOH, DCCED, etc.). The 'text' is a single concise sentence \
+  capturing the SUBSTANTIVE concern or benefit driving THIS department's pick — \
+  not a restatement of the pick itself.
+- If an Action Justification text is empty or 'TBD', set the 'text' to exactly \
+  'No justification text provided.'
+- Stay factual; do not invent reasoning that isn't in the source text.
+- Be tight. The whole JSON object should be < 400 tokens.
+- Return ONLY the JSON object — no preamble, no markdown fence."""
+
+
+def _rationale_input_hash(billnumber, blue_sheets, glo_payload, dept_payload):
+    parts = [_RATIONALE_PROMPT_VERSION, (billnumber or "").strip()]
+    parts.append((glo_payload or {}).get("source", ""))
+    parts.append((glo_payload or {}).get("rec", ""))
+    parts.append((dept_payload or {}).get("rec", ""))
+    for s in sorted(blue_sheets or [], key=lambda x: (x.get("agency", ""), x.get("filename", ""))):
+        parts.append("|".join([
+            s.get("agency", ""),
+            s.get("recommendation", ""),
+            s.get("action_justification", ""),
+        ]))
+    digest = hashlib.sha256("\n---\n".join(parts).encode("utf-8")).hexdigest()
+    return "r:" + digest[:22]
+
+
+def _build_rationale_user_message(billnumber, bill_meta, blue_sheets,
+                                   glo_payload, dept_payload):
+    lines = []
+    lines.append(f"Bill: {billnumber}")
+    if bill_meta:
+        title = bill_meta.get("latest_version_title") or bill_meta.get("short_title")
+        if title:
+            lines.append(f"Title: {title}")
+    glo_rec = (glo_payload or {}).get("rec") or "(no rec)"
+    glo_src = (glo_payload or {}).get("source") or "(no source)"
+    dept_rec = (dept_payload or {}).get("rec") or "(no rec)"
+    lines.append("")
+    lines.append(f"GLO recommendation: {glo_rec}   (heuristic source: {glo_src})")
+    lines.append(f"DEPT recommendation rollup: {dept_rec}")
+    lines.append("")
+    if not blue_sheets:
+        lines.append("(No blue sheets on file.)")
+    else:
+        for s in blue_sheets:
+            agency = s.get("agency") or "?"
+            rec = s.get("recommendation") or "no rec"
+            just = (s.get("action_justification") or "").strip() or "(no justification text in blue sheet)"
+            lines.append(f"=== {agency} blue sheet — recommends {rec} ===")
+            lines.append("Action Justification:")
+            lines.append(just)
+            lines.append("")
+    return "\n".join(lines).strip()
+
+
+def synthesize_rationale(billnumber, blue_sheets, bill_meta,
+                         glo_payload, dept_payload,
+                         *, force=False, timeout=60.0):
+    """Generate concise GLO + per-dept rationales. Cached on disk so
+    we only pay the API once per (bill + content + heuristic source).
+    Returns dict with keys glo_rationale, dept_rationales, model,
+    generated_at. None on failure."""
+    bn = (billnumber or "").strip()
+    if not bn:
+        return None
+    h = _rationale_input_hash(bn, blue_sheets, glo_payload, dept_payload)
+    cache = _load_cache()
+    if not force and h in cache:
+        return cache[h]
+
+    api_key = _read_api_key()
+    if not api_key:
+        log.warning("rationale.no_api_key")
+        return None
+
+    user_msg = _build_rationale_user_message(
+        bn, bill_meta, blue_sheets, glo_payload, dept_payload,
+    )
+    body = {
+        "model": _MODEL,
+        "max_tokens": 700,
+        "system": _RATIONALE_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": user_msg}],
+    }
+    req = urllib.request.Request(
+        _API_URL,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": _API_VERSION,
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            resp = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body_text = ""
+        try:
+            body_text = e.read().decode("utf-8", errors="replace")[:400]
+        except Exception:
+            pass
+        log.warning("rationale.http_error bn=%s status=%s body=%r",
+                    bn, e.code, body_text)
+        return None
+    except Exception as e:
+        log.warning("rationale.error bn=%s err=%r", bn, e)
+        return None
+
+    text = ""
+    for chunk in resp.get("content") or []:
+        if chunk.get("type") == "text":
+            text += chunk.get("text", "")
+    text = text.strip()
+    # Strip a markdown fence if the model added one despite instructions.
+    if text.startswith("```"):
+        text = text.lstrip("`").lstrip()
+        if text.lower().startswith("json"):
+            text = text[4:].lstrip()
+        if text.endswith("```"):
+            text = text[:-3].rstrip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        log.warning("rationale.bad_json bn=%s raw=%r", bn, text[:300])
+        return None
+
+    out = {
+        "glo_rationale":   str(parsed.get("glo_rationale", "")).strip(),
+        "dept_rationales": parsed.get("dept_rationales", []) or [],
+        "model":           _MODEL,
+        "generated_at":    int(time.time()),
+        "input_hash":      h,
+    }
+    cache[h] = out
+    _save_cache()
+    return out
+
+
+def get_cached_rationale(billnumber, blue_sheets, bill_meta,
+                          glo_payload, dept_payload):
+    """Read-only cache lookup. Returns None if no rationale is
+    cached for this exact input fingerprint."""
+    bn = (billnumber or "").strip()
+    if not bn:
+        return None
+    h = _rationale_input_hash(bn, blue_sheets, glo_payload, dept_payload)
+    return _load_cache().get(h)
+
+
+# --------------------------------------------------------------------------
 # Manual CLI: python -m bill_summarizer <BN>
 # --------------------------------------------------------------------------
 

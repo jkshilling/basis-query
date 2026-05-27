@@ -2055,7 +2055,7 @@ def bill_decision_detail(billnumber, session="34"):
     """Detailed veto-decision view for one bill: full per-legislator
     roll call on final passage in each chamber, plus action timeline
     and fiscal-note bodies. Cached 10 min."""
-    cache_key = f"bill_decision_detail_v11_{session}_{billnumber}"
+    cache_key = f"bill_decision_detail_v12_{session}_{billnumber}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
@@ -2310,6 +2310,24 @@ def bill_decision_detail(billnumber, session="34"):
     except Exception:
         pass
 
+    # GLO + per-department rationales — LLM-synthesized concise
+    # explanation of WHY each recommendation lands where it does.
+    # Read-only cache lookup; the Stage 6 background prefetch
+    # generates these. None when not yet cached.
+    rationale = None
+    try:
+        import bill_summarizer as _summ_mod
+        import blue_sheets as _bs_mod_for_rat
+        rationale = _summ_mod.get_cached_rationale(
+            billnumber,
+            _bs_mod_for_rat.sheets_for(billnumber),
+            bill_meta,
+            glo_payload,
+            dept_payload,
+        )
+    except Exception:
+        pass
+
     result = {
         "billnumber": billnumber,
         "passage_votes": passage_votes,
@@ -2331,6 +2349,8 @@ def bill_decision_detail(billnumber, session="34"):
         "dept_recommendation": dept_payload,
         # DOL bill-review text(s) extracted from briefing packets.
         "dol_reviews": dol_reviews,
+        # LLM-generated rationales for the GLO + DEPT chips.
+        "rationale": rationale,
     }
     _cache.put(cache_key, result)
     return result

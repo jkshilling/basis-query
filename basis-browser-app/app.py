@@ -166,7 +166,7 @@ def _refresh_all():
                 # Drop the cached entry to force re-build with the
                 # newly-available LLM summary.
                 from cache import _cache as _c
-                _c.pop(f"bill_decision_detail_v11_34_{bn}", None)
+                _c.pop(f"bill_decision_detail_v12_34_{bn}", None)
                 bill_decision_detail(bn)
             except Exception:
                 pass
@@ -179,6 +179,77 @@ def _refresh_all():
         except Exception:
             pass
         log.info("refresh.step name=detail_rewarm elapsed=%.1fs status=ok",
+                 time.monotonic() - s)
+
+    # Stage 6: LLM-synthesized rationale per bill (GLO rationale +
+    # one sentence per dept on WHY they recommend what they do).
+    # Separate cache from bill_summarizer.summarize_bill so prompt
+    # iteration on one doesn't invalidate the other. ~$0.005 per
+    # bill on cold rebuild.
+    s = time.monotonic()
+    rat_made = rat_cached = rat_skipped = 0
+    try:
+        import bill_summarizer as _summ
+        import blue_sheets as _bs2
+        # Need glo + dept payloads per bill — pull from the freshly-
+        # rebuilt awaiting_transmittal cache.
+        at_now = awaiting_transmittal()
+        all_now = (at_now.get("bills", []) + at_now.get("at_gov_bills", []) +
+                   at_now.get("resolutions_substantive", []) +
+                   at_now.get("resolutions_procedural", []))
+        meta_by_bn = {}
+        from fetch import fetch_all_bills
+        for chamber in ("H", "S"):
+            for b in fetch_all_bills(chamber, "34",
+                                      queries=["Sponsors", "Subjects",
+                                               "Versions", "FiscalNotes"]):
+                meta_by_bn[b.get("billnumber", "")] = b
+        for entry in all_now:
+            bn = entry.get("billnumber") or ""
+            if not bn:
+                continue
+            sheets = _bs2.sheets_for(bn)
+            glo_p = entry.get("glo_recommendation") or {}
+            dept_p = entry.get("dept_recommendation") or {}
+            # Skip when there's nothing to rationalize: no rec at all
+            # OR no blue-sheet content to base reasoning on.
+            if not (glo_p.get("rec") or dept_p.get("rec")):
+                rat_skipped += 1
+                continue
+            if not sheets:
+                rat_skipped += 1
+                continue
+            meta = meta_by_bn.get(bn)
+            if _summ.get_cached_rationale(bn, sheets, meta, glo_p, dept_p):
+                rat_cached += 1
+                continue
+            try:
+                if _summ.synthesize_rationale(bn, sheets, meta, glo_p, dept_p):
+                    rat_made += 1
+            except Exception as exc:
+                log.warning("refresh.rationale name=%s err=%r", bn, exc)
+        log.info("refresh.step name=rationales new=%d cached=%d skipped=%d "
+                 "elapsed=%.1fs status=ok",
+                 rat_made, rat_cached, rat_skipped, time.monotonic() - s)
+    except Exception as exc:
+        log.warning("refresh.step name=rationales elapsed=%.1fs status=fail err=%r",
+                    time.monotonic() - s, exc)
+
+    # Stage 7: re-warm bill_decision_detail one more time so the new
+    # rationale payloads land in the detail cache.
+    if rat_made:
+        s = time.monotonic()
+        for entry in all_bill_entries:
+            bn = entry.get("billnumber") or ""
+            if not bn:
+                continue
+            try:
+                from cache import _cache as _c
+                _c.pop(f"bill_decision_detail_v12_34_{bn}", None)
+                bill_decision_detail(bn)
+            except Exception:
+                pass
+        log.info("refresh.step name=detail_rewarm_rationale elapsed=%.1fs status=ok",
                  time.monotonic() - s)
 
     log.info("refresh.complete total_elapsed=%.1fs", time.monotonic() - t0)

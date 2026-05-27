@@ -127,6 +127,7 @@ _content_full_text_cache = {}        # first N pages — for descriptions
 _content_agency_cache = {}
 _content_rec_cache = {}              # extracted SIGN/VETO/LWOS
 _content_desc_cache = {}             # extracted "What does this Bill do?"
+_content_justif_cache = {}           # extracted "Action Justification"
 
 
 def _read_first_page_text(filename):
@@ -289,6 +290,33 @@ def _clean_description_text(raw):
     raw = re.sub(r"\n{3,}", "\n\n", raw)
     raw = raw.strip()
     return raw
+
+
+def _extract_action_justification(filename):
+    """Pull the 'Action Justification — Why do you recommend the
+    above action?' section from a blue sheet. This is where the
+    department actually explains the substantive reasoning behind
+    their SIGN/VETO/LWOS pick — the most useful raw input for any
+    rationale display."""
+    path = os.path.join(_DIR, filename)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    key = (filename, mtime)
+    if key in _content_justif_cache:
+        return _content_justif_cache[key]
+
+    text = _read_full_text(filename)
+    out = ""
+    if text:
+        m = _DESC_FALLBACK_RE.search(text)
+        if m:
+            out = _clean_description_text(m.group(1))
+    if len(out) > 1500:
+        out = out[:1480].rsplit(" ", 1)[0] + "…"
+    _content_justif_cache[key] = out
+    return out
 
 
 def _extract_description(filename):
@@ -487,24 +515,26 @@ def _scan():
             or _extract_date_from_content(fn)
             or _mtime_date(fn)
         )
-        # Departmental recommendation (SIGN/VETO/LWOS) + analytical
-        # description, pulled from the PDF body. Both extracted once
-        # per file (mtime-keyed cache) so even with N bills referencing
-        # the same multi-bill sheet, the parse happens once.
+        # Departmental recommendation (SIGN/VETO/LWOS), analytical
+        # description, and action-justification text — all pulled
+        # from the PDF body. Each extracted once per file (mtime-
+        # keyed cache).
         recommendation = _extract_recommendation(fn)
         description = _extract_description(fn)
+        action_justification = _extract_action_justification(fn)
         label = agency
         # Index the same file under EVERY bill it references. Agency
         # blue sheets sometimes cover multiple bills (e.g.
         # "UA Blue Sheet HB 10 and HB 176.pdf" → both HB 10 and HB 176).
         for bn in bns:
             out.setdefault(bn, []).append({
-                "filename":       fn,
-                "agency":         agency,
-                "date":           date,
-                "label":          label,
-                "recommendation": recommendation,
-                "description":    description,
+                "filename":             fn,
+                "agency":               agency,
+                "date":                 date,
+                "label":                label,
+                "recommendation":       recommendation,
+                "description":          description,
+                "action_justification": action_justification,
             })
     # De-dup within each bill: if two entries have identical (agency,
     # date) keep only one — and prefer PDF over DOCX when both exist
