@@ -1729,15 +1729,25 @@
             }
 
             // DEPT rationale — one block per department blue sheet.
-            // Each shows the department's actual Action Justification
-            // text (from the PDF), not an LLM re-statement.
+            // Prefer the LLM-generated dept_rationale text (clean
+            // third-person, ~1 sentence). Fall back to a truncated
+            // excerpt of the raw Action Justification text only if
+            // no LLM rationale is cached. Source-link to the actual
+            // PDF on every block so the user can verify.
             if (hasDeptRow) {
-                // The blue_sheets array from the card payload carries
-                // the action_justification text. Pull it onto the
-                // detail view through d.dept_action_justifications.
                 var aj = d.dept_action_justifications || [];
+                // Index LLM rationale texts by agency so we can pair
+                // them up with the action_justification metadata.
+                var llmRatByAgency = {};
+                if (rationale && rationale.dept_rationales) {
+                    rationale.dept_rationales.forEach(function(r) {
+                        var ag = (r.agency || '').toUpperCase();
+                        if (ag) llmRatByAgency[ag] = r.text || '';
+                    });
+                }
                 if (aj.length) {
                     aj.forEach(function(item) {
+                        var agencyU = (item.agency || '').toUpperCase();
                         var rec = (item.recommendation || '').toUpperCase();
                         var recCls = rec === '?' ? 'unknown' : (rec || 'unknown');
                         h += '<div class="at-rat-block">';
@@ -1750,26 +1760,32 @@
                                  '" target="_blank" rel="noopener">source ↗</a>';
                         }
                         h += '</div>';
-                        var txt = (item.action_justification || '').trim();
-                        if (txt) {
-                            // Truncate to ~400 chars at a sentence boundary.
-                            if (txt.length > 420) {
-                                var slice = txt.substring(0, 400);
-                                var sentEnd = Math.max(
-                                    slice.lastIndexOf('. '),
-                                    slice.lastIndexOf('! '),
-                                    slice.lastIndexOf('? ')
-                                );
-                                if (sentEnd > 200) {
-                                    txt = slice.substring(0, sentEnd + 1) + ' …';
-                                } else {
-                                    txt = slice.replace(/\s+\S*$/, '') + '…';
-                                }
-                            }
-                            h += '<p class="at-rat-body">' + esc(txt) + '</p>';
+                        // Prefer LLM rationale text.
+                        var llmTxt = (llmRatByAgency[agencyU] || '').trim();
+                        if (llmTxt && llmTxt !== 'No justification text provided.') {
+                            h += '<p class="at-rat-body">' + esc(llmTxt) + '</p>';
                         } else {
-                            h += '<p class="at-rat-body at-rat-empty">' +
-                                 'No Action Justification text in the blue sheet.</p>';
+                            // Fallback: truncated raw Action Justification.
+                            var txt = (item.action_justification || '').trim();
+                            if (txt) {
+                                if (txt.length > 420) {
+                                    var slice = txt.substring(0, 400);
+                                    var sentEnd = Math.max(
+                                        slice.lastIndexOf('. '),
+                                        slice.lastIndexOf('! '),
+                                        slice.lastIndexOf('? ')
+                                    );
+                                    if (sentEnd > 200) {
+                                        txt = slice.substring(0, sentEnd + 1) + ' …';
+                                    } else {
+                                        txt = slice.replace(/\s+\S*$/, '') + '…';
+                                    }
+                                }
+                                h += '<p class="at-rat-body">' + esc(txt) + '</p>';
+                            } else {
+                                h += '<p class="at-rat-body at-rat-empty">' +
+                                     'No Action Justification text in the blue sheet.</p>';
+                            }
                         }
                         h += '</div>';
                     });
@@ -2113,7 +2129,7 @@
     });
 
     var LIST_KEY = 'at_list_v49';
-    var DETAIL_KEY_PREFIX = 'at_detail_v47:';
+    var DETAIL_KEY_PREFIX = 'at_detail_v48:';
 
     function lsGet(key) {
         try {
