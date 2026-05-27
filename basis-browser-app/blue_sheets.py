@@ -247,7 +247,9 @@ def _extract_recommendation(filename):
     if key in _content_rec_cache:
         return _content_rec_cache[key]
 
-    text = _read_first_page_text(filename)
+    # Read across all pages — some OCR'd PDFs have pages out of order
+    # so the "Select one." recommendation block may not be on page 1.
+    text = _read_full_text(filename)
     found = ""
     if text:
         # Stage 1: clean checkbox glyph match.
