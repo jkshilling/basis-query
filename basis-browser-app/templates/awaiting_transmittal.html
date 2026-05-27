@@ -1705,9 +1705,17 @@
                 h += '<div class="at-rat-block">';
                 h += '<div class="at-rat-head"><span class="at-glo ' + gloCls + '">' +
                      'GLO: ' + esc(glo.rec || '—') + '</span>';
-                if (glo.source) {
-                    h += '<span class="at-rat-src">heuristic: ' +
-                         esc(glo.source.replace(/-/g, ' ')) + '</span>';
+                // Source label: only show it when it's NON-obvious.
+                // 'departments' is the default case (DEPT chip below
+                // says the same thing), so we drop that label.
+                // Surface the interesting cases:
+                //   'governor-bill'  → Governor's own bill
+                //   'veto-proof'     → Veto-proof passage
+                //   (override has its own marker below)
+                if (glo.source === 'governor-bill') {
+                    h += '<span class="at-rat-src">Governor\'s own bill</span>';
+                } else if (glo.source === 'veto-proof') {
+                    h += '<span class="at-rat-src">Veto-proof passage</span>';
                 }
                 if (glo.overridden) {
                     h += '<span class="at-rat-src at-rat-override">manually overridden</span>';
@@ -2105,7 +2113,7 @@
     });
 
     var LIST_KEY = 'at_list_v49';
-    var DETAIL_KEY_PREFIX = 'at_detail_v46:';
+    var DETAIL_KEY_PREFIX = 'at_detail_v47:';
 
     function lsGet(key) {
         try {
