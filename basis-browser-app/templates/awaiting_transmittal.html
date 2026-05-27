@@ -512,6 +512,16 @@
         .at-chip.legal:hover { background: #e6d2ef; }
         .at-chip.briefing { background: #fef5e7; border-color: #f5cb7f; color: #885a00; }
         .at-chip.briefing:hover { background: #fbe6c4; }
+        /* DOL Bill Review chip — companion to briefing packet chip.
+           Same purple family as legal_analyses since it's Law-side
+           content. Non-link; full text in expander. */
+        .at-chip.dol-review {
+            background: #f3eaf7;
+            border-color: #d8c4e3;
+            color: #6c3483;
+            cursor: help;
+        }
+        .at-chip.dol-review:hover { background: #e6d2ef; }
         .at-chip.missing {
             color: #95a5a6;
             font-style: italic;
@@ -1168,6 +1178,20 @@
                             attach += '<a class="at-chip briefing" href="/briefing-packet-file/' +
                                 encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
                                 esc(s.filename) + '">📋 ' + esc(s.label) + '</a>';
+                            // DOL Bill Review companion chip — every
+                            // briefing packet contains one. The chip
+                            // is non-link (the text shows in the
+                            // expander) but tooltip-previews the
+                            // review.
+                            if (s.dol_review) {
+                                var dolTip = s.dol_review.length > 280
+                                    ? s.dol_review.substring(0, 280) + '…'
+                                    : s.dol_review;
+                                attach += '<span class="at-chip dol-review" ' +
+                                    'title="' + esc(dolTip) +
+                                    '\n\nFull text in the expander.">' +
+                                    '⚖ DOL Review</span>';
+                            }
                         });
                     } else {
                         attach += '<span class="at-chip missing" title="No briefing packet on file. Drop a PDF in basis-browser-app/briefing_packets/.">none on file</span>';

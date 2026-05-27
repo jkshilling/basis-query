@@ -91,13 +91,29 @@ def _read_docx_text(filename):
 # pattern in these packets: "PROS:", "CONS:", "FISCAL ANALYSIS:",
 # "SECTIONAL ANALYSIS:", "ADMINISTRATION POSITION:", etc.) or at
 # the end of the document.
+# Known section headers that follow DOL BILL REVIEW in Alaska
+# briefing-paper template. Curated from a scan across all 27
+# packets. Using a generic "any ALL-CAPS heading" pattern caused
+# false-positive matches inside the DOL text body (e.g. "TBD
+# DEPARTMENT RECOMMENDATION" got parsed as a heading at offset 0,
+# capturing zero chars of DOL content). The curated list is more
+# robust.
+_DOL_NEXT_HEADINGS = [
+    r"DEPARTMENT\s+RECOMMENDATION",
+    r"STATUES?\s+AFFECTED",      # 'STATUES' is a recurring template typo
+    r"STATUTES\s+REPEALED",
+    r"DUE\s+TO\s+THE\s+LEGISLATURE\s+BY",
+    r"SIGNING\s+CEREMONY\s+SUGGESTIONS",
+    r"FISCAL\s+IMPACT",
+    r"BILL\s+SPECIFICS",
+    r"HOUSE\s+ON\s+PASSAGE",
+    r"SENATE\s+ON\s+PASSAGE",
+]
 _DOL_RE = re.compile(
     r"DEPARTMENT OF LAW BILL REVIEW\s*:?\s*"
     r"(.*?)"
-    r"(?="
-    r"(?:[A-Z][A-Z &]{2,}\s*):"   # next ALL-CAPS heading with colon
-    r"|\Z)",
-    re.DOTALL,
+    r"(?=(?:" + "|".join(_DOL_NEXT_HEADINGS) + r")\s*:|\Z)",
+    re.DOTALL | re.IGNORECASE,
 )
 
 
