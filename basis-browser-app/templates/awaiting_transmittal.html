@@ -345,6 +345,9 @@
             white-space: nowrap;
         }
         .at-extlink:hover { text-decoration: underline; }
+        .at-bluesheet { margin-left: 12px; font-size: 0.74rem; }
+        .at-bluesheet.has { color: #1e8449; font-weight: 600; }
+        .at-bluesheet.missing { color: #b0b8c0; font-style: italic; cursor: help; }
 
         /* Stat strip */
         .at-strip { display: flex; gap: 12px; margin: 10px 0 20px; flex-wrap: wrap; }
@@ -626,12 +629,21 @@
                 html += '</div>';
             }
 
-            // External link only — every card on this page has the
-            // same "RTN TO ... AWAITING TRANSMITTAL" status, so the
-            // explicit line is just noise. Keep the akleg link.
+            // External links: akleg + (when we have one) the curated
+            // blue-sheet PDF. Blue-sheet indicator is the second link;
+            // if no blue sheet exists for this bill, we show a muted
+            // "no blue sheet" marker so the absence is visible.
+            var linkRow = '<div class="at-status">';
             if (b.akleg_url) {
-                html += '<div class="at-status"><a class="at-extlink" href="' + esc(b.akleg_url) + '" target="_blank" rel="noopener">View on akleg.gov ↗</a></div>';
+                linkRow += '<a class="at-extlink" href="' + esc(b.akleg_url) + '" target="_blank" rel="noopener">View on akleg.gov ↗</a>';
             }
+            if (b.has_blue_sheet) {
+                linkRow += '<a class="at-extlink at-bluesheet has" href="/blue-sheet/' + encodeURIComponent(b.billnumber) + '" target="_blank" rel="noopener">📄 Blue sheet ↗</a>';
+            } else {
+                linkRow += '<span class="at-bluesheet missing" title="No blue sheet on file for this bill. Drop a PDF in basis-browser-app/blue_sheets/ to add one.">○ No blue sheet</span>';
+            }
+            linkRow += '</div>';
+            html += linkRow;
 
             html += '</div>';
 
@@ -968,8 +980,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v11';
-    var DETAIL_KEY_PREFIX = 'at_detail_v15:';
+    var LIST_KEY = 'at_list_v12';
+    var DETAIL_KEY_PREFIX = 'at_detail_v16:';
 
     function lsGet(key) {
         try {

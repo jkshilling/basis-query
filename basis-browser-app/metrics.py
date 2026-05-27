@@ -1386,7 +1386,7 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v21", max_age=300)
+    cached = _cache.get("awaiting_transmittal_v22", max_age=300)
     if cached is not None:
         return cached
 
@@ -1404,6 +1404,12 @@ def awaiting_transmittal(session="34"):
     # we enrich vote chips with party breakdowns; if not, the page still
     # loads with totals-only and breakdowns appear after the index warms.
     votes_idx = _cache.get("all_votes_v2_" + session, max_age=3600) or {}
+
+    # Blue-sheet index: {billnumber: filename} for any PDFs that have
+    # been dropped in basis-browser-app/blue_sheets/. Used to attach
+    # a per-bill flag on the card.
+    import blue_sheets as _bs
+    _bluesheet_index = _bs.index()
 
     today = datetime.now().date()
 
@@ -1744,6 +1750,9 @@ def awaiting_transmittal(session="34"):
             "cosponsor_by_party": cosponsor_by_party,
             "subjects": subjects[:5],
             "akleg_url": akleg_url,
+            # Blue sheet — present if we have a curated PDF on disk
+            # for this bill. Path is served by /blue-sheet/<bn>.
+            "has_blue_sheet": _bluesheet_index.get(compact_billnumber(bn)) is not None,
             "passed_both_date": format_status_date(passed_both_date),
             "days_since_passage": days_since_passage,
             # Vote tallies and veto-override math
@@ -1817,7 +1826,7 @@ def awaiting_transmittal(session="34"):
         # today — 15 (in session) or 20 (post-adjournment).
         "gov_deadline_if_transmitted_today": governor_deadline_days(),
     }
-    _cache.put("awaiting_transmittal_v21", result)
+    _cache.put("awaiting_transmittal_v22", result)
     return result
 
 
