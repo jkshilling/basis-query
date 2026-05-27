@@ -66,7 +66,7 @@ _CACHE: dict | None = None
 
 # Bump this when you change the prompt below — it gets folded into
 # the cache key so every cached summary regenerates automatically.
-_SYSTEM_PROMPT_VERSION = "v2-substance-only"
+_SYSTEM_PROMPT_VERSION = "v3-tight-2para"
 
 _SYSTEM_PROMPT = """You are writing a neutral, factual summary of what an Alaska bill \
 DOES. The summary appears on a veto-decision-support dashboard alongside other UI \
@@ -79,16 +79,30 @@ summary must:
 
 - Describe what the bill does. Which statutes change, which programs are created or \
   modified, what new requirements / rights / obligations are established.
-- Lead with one or two sentences capturing the bill's core change in plain English.
 - Stay neutral. Do not advocate or editorialize about whether the policy is good or \
   bad.
 - Use direct, declarative English. Avoid the passive "may be" / "is intended to" / \
   "would seek to" register common in agency writing.
 
+Format — these are NOT optional:
+
+- Write EXACTLY TWO paragraphs. No more, no fewer.
+- Paragraph 1: a tight overview, 2-3 sentences capturing the bill's core change \
+  including any specific statute cited (e.g. AS 14.30.360). This is a real \
+  paragraph — not a one-sentence orphan.
+- Paragraph 2: the mechanics — what specifically changes, what new requirements / \
+  programs / oversight are created, who must do what, key delayed effective dates if \
+  any. 4-6 sentences.
+- Total length 150-250 words; hard maximum 300.
+- No heading, no bullets, no inline lists. Flowing prose only.
+- Do not begin with "This bill" — vary openings.
+
 Hard constraints — these are NOT optional:
 
 - DO NOT name any department or agency (no "DOH", "DCCED", "DFCS", "Department of \
-  Health", etc.) anywhere in the summary.
+  Health", "Department of Family and Community Services", etc.) anywhere in the \
+  summary. Use neutral descriptors like "the department", "the state", or specific \
+  bodies like "the State Board of Education" when those appear in the bill text itself.
 - DO NOT mention what any department, agency, or person recommends, supports, opposes, \
   or thinks about the bill. The dashboard already displays recommendations \
   separately via colored indicators on each chip.
@@ -98,8 +112,7 @@ Hard constraints — these are NOT optional:
   about the bill or leave them out.
 - DO NOT describe the bill as "a compromise", "negotiated", "controversial", or any \
   other characterization. Stick to provisions.
-- Format / length: 2-3 paragraphs, ~150-250 words. Hard maximum 300 words. No heading. \
-  Do not begin with "This bill" — vary openings. Do not invent facts."""
+- Do not invent facts."""
 
 
 # --------------------------------------------------------------------------
