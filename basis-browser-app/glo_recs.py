@@ -64,18 +64,17 @@ GLO_OVERRIDES: dict[str, str | dict] = {
 
     # ── SIGN → LWOS (veto-proof Dem priorities the Gov doesn't own)
     "HB 16": {
-        "rec": "LWOS",
+        "rec": "VETO",
         "note": ("Dem-priority campaign-finance restriction. R "
-                 "governors rarely endorse new contribution limits; "
-                 "LWOS signals disagreement without forcing override "
-                 "theater."),
+                 "governors do not sign new contribution limits. "
+                 "Veto on principle; the override that follows is "
+                 "the legislature's responsibility, not ours."),
     },
     "HB 23": {
-        "rec": "LWOS",
+        "rec": "VETO",
         "note": ("Restores a state Civil Rights Commission the "
-                 "administration previously declined to fund. LWOS "
-                 "distances the Governor from a Dem-priority "
-                 "infrastructure decision he didn't drive."),
+                 "administration previously declined to fund. Veto "
+                 "puts the Governor's opposition on record."),
     },
     "HB 110": {
         "rec": "LWOS",
@@ -91,17 +90,18 @@ GLO_OVERRIDES: dict[str, str | dict] = {
                  "LWOS expresses business-friendly skepticism."),
     },
     "HB 176": {
-        "rec": "LWOS",
+        "rec": "VETO",
         "note": ("University of Alaska itself opposed this bill in "
-                 "its own internal briefing (Hutchison email). LWOS "
-                 "defers to UA's objection without provoking an "
-                 "override vote."),
+                 "its own internal briefing (Hutchison email). Veto "
+                 "respects UA's stated position even though the bill "
+                 "is veto-proof."),
     },
     "HB 195": {
-        "rec": "LWOS",
+        "rec": "VETO",
         "note": ("Pharmacist scope-of-practice expansion; D-sponsored. "
-                 "LWOS expresses caution about expanding non-physician "
-                 "prescriptive authority."),
+                 "Veto on principle: the administration opposes "
+                 "expanding non-physician prescriptive authority "
+                 "regardless of override outcome."),
     },
     "HB 298": {
         "rec": "LWOS",
@@ -110,10 +110,10 @@ GLO_OVERRIDES: dict[str, str | dict] = {
                  "co-equal branch's internal procedural reform; LWOS."),
     },
     "HB 302": {
-        "rec": "LWOS",
-        "note": ("Expands unemployment-insurance benefits. R "
-                 "governors don't ordinarily expand UI; LWOS signals "
-                 "fiscal-conservative disagreement."),
+        "rec": "VETO",
+        "note": ("Expands unemployment-insurance benefits. The "
+                 "administration opposes UI expansion on principle; "
+                 "veto puts the opposition on record."),
     },
     "SB 21": {
         "rec": "LWOS",
@@ -123,11 +123,11 @@ GLO_OVERRIDES: dict[str, str | dict] = {
                  "small-government caution."),
     },
     "SB 41": {
-        "rec": "LWOS",
+        "rec": "VETO",
         "note": ("New mental-health-education curriculum mandate on "
-                 "local school boards. R governors typically resist "
-                 "state curriculum mandates; LWOS signals "
-                 "local-control posture."),
+                 "local school boards. The administration opposes "
+                 "state curriculum mandates on principle; veto "
+                 "puts the local-control posture on record."),
     },
     "SB 79": {
         "rec": "LWOS",
@@ -137,10 +137,11 @@ GLO_OVERRIDES: dict[str, str | dict] = {
                  "LWOS signals business-friendly disagreement."),
     },
     "SB 167": {
-        "rec": "LWOS",
+        "rec": "VETO",
         "note": ("Expands PFD eligibility for overturned-conviction "
-                 "claimants; Dem-priority. LWOS signals "
-                 "fiscal-conservative disagreement on PFD expansion."),
+                 "claimants. The administration opposes PFD-eligibility "
+                 "expansion on principle; veto puts the opposition on "
+                 "record."),
     },
     "SB 178": {
         "rec": "LWOS",
