@@ -173,7 +173,7 @@ def fetch(section, session="34", chamber=None, queries=None, result_range=None,
 def fetch_all_bills(chamber, session="34", queries=None):
     """Fetch all bills for a chamber with optional expansions. Cached
     for 10 minutes."""
-    cache_key = f"all_bills_v6_{session}_{chamber}_{','.join(queries or [])}"
+    cache_key = f"all_bills_v7_{session}_{chamber}_{','.join(queries or [])}"
     cached = _cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached

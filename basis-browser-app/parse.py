@@ -241,6 +241,10 @@ def parse_bills_extended(result):
             "committee_sponsor_code": "",
             "committee_sponsor_name": "",
             "committee_sponsor_chamber": "",
+            # Sponsor-statement PDF URL straight from BASIS (a
+            # <SponsorStatement> child of <Sponsors>). Saves the
+            # expander a full akleg HTML scrape + PDF download.
+            "sponsor_statement_url": "",
             # Fiscal-note PDFs (issue #2): the FiscalNotes expansion of
             # the Bills endpoint exposes each FN's preparer agency, fiscal-
             # impact letter (N/P/I/etc.), and a direct PDF URL.
@@ -292,6 +296,10 @@ def parse_bills_extended(result):
                     req = (member.text or "").strip()
                     if req and req != "%":
                         bill["requestor"] = req
+                elif tag == "SponsorStatement":
+                    url = (member.text or "").strip()
+                    if url:
+                        bill["sponsor_statement_url"] = url
             bill["sponsor_count"] = count
             bill["sponsors"] = sponsor_list
 
