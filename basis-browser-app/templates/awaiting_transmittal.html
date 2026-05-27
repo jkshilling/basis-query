@@ -413,6 +413,19 @@
             align-items: center;
             gap: 5px;
         }
+        /* Inline section label — sits beside its chips on the shared
+           attach row. Second label (Legal) gets a left margin so it
+           visually separates from the preceding blue-sheet chips. */
+        .at-attach-lbl {
+            font-size: 0.72rem;
+            color: #6e7681;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .at-attach-lbl + .at-chip { margin-left: 1px; }
+        .at-chip + .at-attach-lbl { margin-left: 8px; }
         .at-chip {
             display: inline-flex;
             align-items: center;
@@ -745,16 +758,25 @@
                     : 'Curated deliverables. Drop PDFs in basis-browser-app/legal_analyses/.';
                 var attach = '<div class="at-attach-box" title="' + esc(attachTitle) + '">';
                 attach += '<div class="at-attach-row">';
-                sheets.forEach(function(s) {
-                    attach += '<a class="at-chip bluesheet" href="/blue-sheet-file/' +
-                        encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
-                        esc(s.filename) + '">📄 ' + esc(s.label) + '</a>';
-                });
-                legals.forEach(function(s) {
-                    attach += '<a class="at-chip legal" href="/legal-analysis-file/' +
-                        encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
-                        esc(s.filename) + '">⚖ ' + esc(s.label) + '</a>';
-                });
+                // Inline section labels so the category is named without
+                // burning a whole row per kind. "Blue sheets" only shows
+                // for HB/SB (resolutions don't get them).
+                if (sheets.length) {
+                    attach += '<span class="at-attach-lbl">Blue sheets</span>';
+                    sheets.forEach(function(s) {
+                        attach += '<a class="at-chip bluesheet" href="/blue-sheet-file/' +
+                            encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
+                            esc(s.filename) + '">📄 ' + esc(s.label) + '</a>';
+                    });
+                }
+                if (legals.length) {
+                    attach += '<span class="at-attach-lbl">Legal</span>';
+                    legals.forEach(function(s) {
+                        attach += '<a class="at-chip legal" href="/legal-analysis-file/' +
+                            encodeURIComponent(s.filename) + '" target="_blank" rel="noopener" title="' +
+                            esc(s.filename) + '">⚖ ' + esc(s.label) + '</a>';
+                    });
+                }
                 attach += '</div></div>';
                 html += attach;
             }
@@ -1138,8 +1160,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v25';
-    var DETAIL_KEY_PREFIX = 'at_detail_v29:';
+    var LIST_KEY = 'at_list_v26';
+    var DETAIL_KEY_PREFIX = 'at_detail_v30:';
 
     function lsGet(key) {
         try {
