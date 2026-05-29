@@ -586,6 +586,18 @@ def api_bill_flag(billnumber):
             new = bill_flags.set_flag(billnumber, dimension, payload["state"])
         else:
             new = bill_flags.cycle_flag(billnumber, dimension)
+        # The awaiting_transmittal payload bakes each bill's flag state
+        # into its entry and caches the whole thing for 5 minutes. A
+        # flag write mutates flags.json (the source of truth) but does
+        # NOT touch that derived cache — so without this invalidation the
+        # next page fetch serves stale flag values for up to 5 min, which
+        # reads to the user as "my flag didn't persist". Drop the cache so
+        # the next /api/awaiting-transmittal rebuilds with fresh flags.
+        try:
+            from cache import _cache as _c
+            _c.pop("awaiting_transmittal_v44", None)
+        except Exception:
+            pass
         return jsonify({
             "billnumber": billnumber,
             "dimension":  dimension,

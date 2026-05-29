@@ -1027,6 +1027,37 @@
         return state || '';
     }
 
+    // After a flag POST succeeds, write the new state into the cached
+    // response (every bucket a bill might live in) and re-save the
+    // localStorage list cache. This keeps the optimistic UI change
+    // alive across a refresh: the page instant-paints from localStorage
+    // before the background /api fetch returns, so the cache must carry
+    // the change or the flag appears to revert.
+    function persistFlagLocally(bn, dimension, state) {
+        if (!lastResponse) return;
+        var fieldByDim = {
+            workflow: 'flag_workflow',
+            gov_pref: 'flag_gov_pref',
+            followup: 'flag_followup',
+        };
+        var field = fieldByDim[dimension];
+        if (!field) return;
+        var buckets = ['bills', 'at_gov_bills', 'at_gov_resolutions',
+                       'resolutions_substantive', 'resolutions_procedural'];
+        buckets.forEach(function(key) {
+            (lastResponse[key] || []).forEach(function(b) {
+                if (b.billnumber !== bn) return;
+                b[field] = state;
+                // 'workflow' has a mirror field (flag_state) used for the
+                // card-background tint; keep the two in sync.
+                if (dimension === 'workflow') b.flag_state = state;
+            });
+        });
+        try {
+            lsSet(LIST_KEY, { data: lastResponse, timestamp: Date.now() });
+        } catch (e) { /* quota / private mode — optimistic UI still holds */ }
+    }
+
     // Delegated click handler — attached once at page load, fires for
     // any current or future at-flag-btn (cards re-render after sort /
     // filter changes, so we can't bind directly to each button).
@@ -1059,7 +1090,14 @@
                     btn.textContent = prevText;
                     if (dim === 'workflow' && card) card.dataset.flagState = current;
                     if (window.console) console.warn('flag.set failed', resp.error);
+                    return;
                 }
+                // Success: persist the new flag into the cached response
+                // so a refresh (which instant-paints from localStorage
+                // before the background fetch lands) shows the right
+                // value. Without this the optimistic UI is lost on reload
+                // and the flag appears not to have stuck.
+                persistFlagLocally(bn, dim, next);
             })
             .catch(function(err) {
                 btn.dataset.flagState = current;
@@ -2090,6 +2128,11 @@
     var currentBills = [];
     var sortMode = 'days';
     var filterMode = 'all';
+    // The full last-applied response (all buckets). The flag click
+    // handler mutates the matching bill here and rewrites localStorage
+    // so an optimistic flag change survives a page refresh even before
+    // the server-side awaiting_transmittal cache rebuilds.
+    var lastResponse = null;
 
     function applySortAndFilter(bills) {
         var out = bills.slice();
@@ -2185,6 +2228,7 @@
     }
 
     function applyResponse(d) {
+        lastResponse = d;
         document.getElementById('bills-count').textContent = '(' + d.counts.bills + ')';
         document.getElementById('rs-count').textContent    = '(' + d.counts.resolutions_substantive + ')';
         document.getElementById('rp-count').textContent    = '(' + d.counts.resolutions_procedural + ')';
