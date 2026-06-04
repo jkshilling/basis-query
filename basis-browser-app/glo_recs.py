@@ -167,11 +167,12 @@ GLO_OVERRIDES: dict[str, str | dict] = {
 
     # ── Second-round escalations (heuristic-LWOS → VETO) ──────────
     "HB 184": {
-        "rec": "VETO",
-        "note": ("AIDEA mandate-creep into workforce housing finance — "
-                 "expanding the corporation beyond its industrial-"
-                 "development core. Veto on principle even though the "
-                 "bill is veto-proof."),
+        "rec": "LWOS",
+        "note": ("AIDEA mandate-creep into workforce housing finance. "
+                 "The Governor's reservations are on record, but with "
+                 "veto-proof passage the legislature has clearly spoken; "
+                 "LWOS lets the bill take effect without endorsing the "
+                 "scope expansion."),
     },
     "HB 28": {
         "rec": "VETO",
