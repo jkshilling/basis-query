@@ -316,6 +316,79 @@
         }
         .at-expand-body { margin-top: 12px; }
         .at-expand-body .loading-inline { color: #888; font-style: italic; }
+
+        /* Veto-letter expander — visually echoes .at-expand but with a
+           subtle red accent so it reads as the "this bill is queued for
+           a veto" affordance. Only appears on cards where the user has
+           tagged gov_pref=VETO. */
+        .at-veto-letter {
+            grid-column: 1 / -1;
+            border-top: 1px dashed #d8a3a3;
+            padding-top: 10px;
+            margin-top: 4px;
+        }
+        .at-veto-letter summary {
+            cursor: pointer;
+            user-select: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #8a2c2c;
+            list-style: none;
+            padding: 4px 6px;
+            border-radius: 4px;
+            background: rgba(180, 50, 50, 0.04);
+            display: inline-block;
+        }
+        .at-veto-letter summary::-webkit-details-marker { display: none; }
+        .at-veto-letter summary::before {
+            content: "▸";
+            display: inline-block;
+            width: 1em;
+            margin-right: 4px;
+            transition: transform 0.1s ease;
+            color: #8a2c2c;
+        }
+        .at-veto-letter[open] summary::before { content: "▾"; }
+        .at-veto-letter summary:hover { background: rgba(180, 50, 50, 0.08); }
+        .at-veto-letter-body { margin-top: 12px; }
+        .at-veto-letter-body .loading-inline { color: #888; font-style: italic; }
+        .at-veto-letter-block { /* container */ }
+        .at-vl-meta {
+            font-size: 0.72rem;
+            color: #888;
+            font-style: italic;
+            margin-bottom: 12px;
+        }
+        /* The letter itself — typewriter-ish to read like a transmittal
+           document; max-width so it doesn't sprawl in a wide card. */
+        .at-vl-letter {
+            background: #fbfbf8;
+            border: 1px solid #e0d8c8;
+            border-radius: 4px;
+            padding: 18px 22px;
+            max-width: 720px;
+            font-family: ui-serif, Georgia, "Times New Roman", serif;
+            font-size: 0.92rem;
+            line-height: 1.5;
+            color: #222;
+        }
+        .at-vl-letter p { margin: 0 0 12px 0; }
+        .at-vl-salutation { font-weight: 600; }
+        .at-vl-version { font-weight: 700; }
+        .at-vl-legal-title { font-style: italic; }
+        .at-vl-closing { margin-top: 18px !important; }
+        .at-vl-sig {
+            white-space: pre-line;
+            margin-top: 4px !important;
+            font-family: ui-monospace, "SF Mono", Menlo, monospace;
+            font-size: 0.86rem;
+        }
+        .at-veto-empty p {
+            color: #777;
+            font-style: italic;
+            font-size: 0.86rem;
+            padding: 12px 0;
+        }
         .at-section { margin-top: 14px; }
         .at-section-h {
             font-size: 0.78rem;
@@ -1632,6 +1705,19 @@
             html += '<div class="at-expand-body"></div>';
             html += '</details>';
 
+            // Veto-letter expander — only on cards where the user has
+            // tagged the Governor's preference as VETO. Lazy-loads the
+            // letter from the same /api/bill/<bn>/decision-detail
+            // endpoint (the field 'veto_letter' is populated server-
+            // side when the gov_pref tag is set).
+            if (b.flag_gov_pref === 'VETO') {
+                html += '<details class="at-veto-letter" data-billnumber="' +
+                        esc(b.billnumber) + '">';
+                html += '<summary>Veto letter draft</summary>';
+                html += '<div class="at-veto-letter-body"></div>';
+                html += '</details>';
+            }
+
             html += '</div>';
         });
         host.innerHTML = html;
@@ -1679,6 +1765,89 @@
                     });
             });
         });
+
+        // Veto-letter expander: same lazy-load pattern as
+        // .at-expand. Reuses the at_detail_v51 localStorage cache so
+        // if the user already opened Full analysis, the letter renders
+        // instantly without a second fetch.
+        host.querySelectorAll('.at-veto-letter').forEach(function(el) {
+            el.addEventListener('toggle', function() {
+                if (!el.open) return;
+                var body = el.querySelector('.at-veto-letter-body');
+                if (body.dataset.loaded === '1') return;
+                var bn = el.dataset.billnumber;
+                var key = DETAIL_KEY_PREFIX + bn;
+
+                var cachedDetail = lsGet(key);
+                var renderedFromCache = false;
+                if (cachedDetail && cachedDetail.data) {
+                    body.innerHTML = renderVetoLetter(cachedDetail.data);
+                    body.dataset.loaded = '1';
+                    renderedFromCache = true;
+                } else {
+                    body.innerHTML = '<p class="loading-inline">Loading veto letter…</p>';
+                }
+                fetch('/api/bill/' + encodeURIComponent(bn) + '/decision-detail')
+                    .then(r => r.json())
+                    .then(function(resp) {
+                        if (resp.error) {
+                            if (!renderedFromCache) {
+                                body.innerHTML = '<p class="error">' + esc(resp.error) + '</p>';
+                            }
+                            return;
+                        }
+                        body.innerHTML = renderVetoLetter(resp.data);
+                        body.dataset.loaded = '1';
+                        lsSet(key, { data: resp.data, timestamp: Date.now() });
+                    })
+                    .catch(function(err) {
+                        if (!renderedFromCache) {
+                            body.innerHTML = '<p class="error">Failed: ' + esc(String(err)) + '</p>';
+                        }
+                    });
+            });
+        });
+    }
+
+    // Format the cached veto-letter payload as a copy-pasteable
+    // Dunleavy-format draft. The server stores all the boilerplate
+    // (salutation, constitutional cite, signature block) as discrete
+    // fields so the client can render them with predictable formatting
+    // independent of LLM output variance.
+    function renderVetoLetter(d) {
+        var vl = d && d.veto_letter;
+        if (!vl) {
+            return '<div class="at-veto-empty"><p>The veto-letter draft hasn\'t '
+                 + 'been generated yet. It runs in the background after you '
+                 + 'set the Governor\'s preference to VETO; refresh in a few '
+                 + 'minutes if you just tagged this bill.</p></div>';
+        }
+        var paras = (vl.body_paragraphs || []).map(function(p) {
+            return '<p>' + esc(p) + '</p>';
+        }).join('');
+        var titleQuoted = vl.legal_title
+            ? '<p class="at-vl-legal-title">&ldquo;' + esc(vl.legal_title) + '&rdquo;</p>'
+            : '';
+        var generated = vl.generated_at
+            ? '<p class="at-vl-meta">Generated by ' + esc(vl.model || 'Claude')
+                + ' &middot; ' + esc(new Date(vl.generated_at * 1000).toLocaleString())
+                + '. This is a DRAFT — review and revise before sending.</p>'
+            : '';
+        return '<div class="at-veto-letter-block">'
+             + generated
+             + '<div class="at-vl-letter">'
+             +   '<p class="at-vl-salutation">' + esc(vl.salutation) + '</p>'
+             +   '<p>' + esc(vl.constitutional_cite) + '</p>'
+             +   '<p class="at-vl-version">' + esc(vl.version_designator) + '</p>'
+             +   titleQuoted
+             +   '<p>' + esc(vl.transition) + '</p>'
+             +   paras
+             +   '<p class="at-vl-closing">' + esc(vl.closing) + '</p>'
+             +   '<p class="at-vl-sig">' + esc(vl.signature_line) + '<br>'
+             +     esc(vl.signer_name) + '<br>'
+             +     esc(vl.signer_title) + '</p>'
+             + '</div>'
+             + '</div>';
     }
 
     function renderRollCallCol(label, votes, count, date) {
@@ -2198,8 +2367,8 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v56';
-    var DETAIL_KEY_PREFIX = 'at_detail_v51:';
+    var LIST_KEY = 'at_list_v57';
+    var DETAIL_KEY_PREFIX = 'at_detail_v52:';
 
     function lsGet(key) {
         try {

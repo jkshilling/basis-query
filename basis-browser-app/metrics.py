@@ -2387,6 +2387,29 @@ def bill_decision_detail(billnumber, session="34"):
     except Exception:
         pass
 
+    # Veto-letter draft — only populated when the user has tagged
+    # flag_gov_pref == "VETO" for this bill. Read-only cache lookup;
+    # generation happens in the background refresh pipeline so the
+    # detail endpoint stays fast.
+    veto_letter = None
+    try:
+        import bill_flags as _bf_vl
+        if _bf_vl.get_flag(billnumber, "gov_pref") == "VETO":
+            import bill_summarizer as _summ_vl
+            import blue_sheets as _bs_vl
+            import briefing_packets as _bp_vl
+            veto_letter = _summ_vl.get_cached_veto_letter(
+                billnumber,
+                _bs_vl.sheets_for(billnumber),
+                _bp_vl.packets_for(billnumber),
+                bill_meta,
+                glo_payload,
+                dept_payload,
+                gov_pref="VETO",
+            )
+    except Exception:
+        pass
+
     result = {
         "billnumber": billnumber,
         "passage_votes": passage_votes,
@@ -2416,6 +2439,10 @@ def bill_decision_detail(billnumber, session="34"):
         # reasoning text each agency wrote in their blue sheet,
         # surfaced in the Recommendation Rationale section.
         "dept_action_justifications": _dept_action_justifications,
+        # Dunleavy-format veto-letter draft. Populated only when the
+        # user has tagged flag_gov_pref == 'VETO' for this bill; the
+        # 'Veto letter' card-level expander reads from this field.
+        "veto_letter": veto_letter,
     }
     _cache.put(cache_key, result)
     return result

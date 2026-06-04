@@ -896,6 +896,299 @@ def get_cached_stakeholders(billnumber, blue_sheets, briefing_packets, bill_meta
 
 
 # --------------------------------------------------------------------------
+# Veto-letter draft synthesis. Generates a Dunleavy-format veto message
+# ready to be cleaned up by GLO staff and sent out. Format is anchored
+# to the verified-from-the-Senate-Journal template:
+#
+#   Dear President/Speaker <name>:
+#   Under the authority vested in me by Article II, Section 15, of the
+#   Alaska Constitution, I have vetoed the following bill:
+#   <version-designator>
+#   "<full legal title>"
+#   I have vetoed <version-designator> for the following reasons:
+#   <body paragraphs>
+#   Sincerely,
+#   /s/
+#   Mike Dunleavy
+#   Governor
+#
+# We only generate when flag_gov_pref=='VETO' (gated by callers); the
+# cache key includes the gov_pref state so flipping the flag to/from
+# VETO is what controls (re)generation.
+# --------------------------------------------------------------------------
+
+_VETO_LETTER_PROMPT_VERSION = "v1"
+
+# Hard-coded for the 34th Legislature. President Stevens verified from
+# the April 22 2025 Senate Journal. Speaker Edgmon verified from House
+# membership rosters of the 34th. If the dashboard ever has to handle a
+# leadership change mid-session, replace with a BASIS member-lookup.
+_SENATE_PRESIDENT_LASTNAME = "Stevens"
+_HOUSE_SPEAKER_LASTNAME    = "Edgmon"
+
+_VETO_LETTER_SYSTEM_PROMPT = """You draft veto letters in the voice of \
+Alaska Governor Mike Dunleavy. Output ONLY a JSON object with one field:
+
+{
+  "body_paragraphs": ["<paragraph 1>", "<paragraph 2>", ...]
+}
+
+You do NOT write the salutation, constitutional citation, bill identification, \
+or signature block — those are added programmatically. You write ONLY the 2-4 \
+body paragraphs that explain WHY the Governor is vetoing this bill.
+
+VOICE — match Dunleavy's documented rhetorical patterns:
+- Open by acknowledging shared ground or the bill's stated goal. Dunleavy's \
+opening sentences are almost always non-adversarial: "We agree that...", \
+"While the goal of this bill is laudable...", "The administration shares the \
+concern that motivates this legislation, however...".
+- Sentences are SHORT and concrete. Avoid legal hedging, qualifiers, and \
+academic phrasing. Punch sentences ("The amount put forward in this bill \
+does not.") are part of the voice.
+- The actor is a PRINCIPLE, not a person. Dunleavy says "the fiscal reality \
+dictates" or "the administration cannot support" — not "I strongly oppose."
+- Close with a constructive offer to keep working with the legislature, OR \
+with a clear principle being asserted. The veto letter never slams the door.
+
+CONTENT — the body must be substantively grounded:
+- If the override note in the input carries the Governor's specific political \
+reasoning, that reasoning IS the spine. Paraphrase it into Dunleavy's voice.
+- If departmental blue sheets recommended SIGN/LWOS but the Governor is \
+vetoing anyway, address that gap explicitly: cite the broader principle that \
+overrides the operational view.
+- If departments recommended VETO, lean on their reasoning — paraphrase the \
+strongest objection from the blue sheets.
+- Cite specific statute numbers or program names when they appear in the source \
+material. Avoid generic "this bill is bad" framing.
+- DO NOT enumerate every objection. Pick the ONE or TWO strongest reasons. \
+A Dunleavy veto letter is 2-4 paragraphs, total length 200-400 words.
+
+STRUCTURE:
+- Paragraph 1: acknowledge the bill's goal or shared ground (1-2 sentences)
+- Paragraph 2: state the disagreement and the principle behind it (2-3 sentences)
+- Paragraph 3 (optional): elaborate or cite the specific concern (2-3 sentences)
+- Paragraph 4 (optional, for non-veto-proof bills only): offer to work toward \
+a revised bill the administration can support (1-2 sentences)
+
+DO NOT write the salutation, "Under the authority..." preamble, bill \
+identification, or signature block. Just body_paragraphs. Return ONLY the JSON \
+object. No markdown fence. No preamble."""
+
+
+def _veto_letter_input_hash(billnumber, blue_sheets, briefing_packets,
+                            bill_meta, glo_payload, dept_payload, gov_pref):
+    parts = [_VETO_LETTER_PROMPT_VERSION, billnumber.strip(), gov_pref or ""]
+    for s in sorted(blue_sheets or [],
+                    key=lambda x: (x.get("agency", ""), x.get("filename", ""))):
+        parts.append("|".join([
+            s.get("agency", ""),
+            s.get("recommendation", ""),
+            s.get("action_justification", ""),
+            s.get("description", ""),
+        ]))
+    for p in sorted(briefing_packets or [], key=lambda x: x.get("filename", "")):
+        parts.append("BP|" + (p.get("body_text") or ""))
+    if bill_meta:
+        parts.append(bill_meta.get("latest_version_title") or "")
+        parts.append(bill_meta.get("latest_version_letter") or "")
+    parts.append(json.dumps(glo_payload or {}, sort_keys=True))
+    parts.append(json.dumps(dept_payload or {}, sort_keys=True))
+    digest = hashlib.sha256("\n---\n".join(parts).encode("utf-8")).hexdigest()
+    return "vl:" + digest[:24]
+
+
+def _build_veto_letter_user_message(billnumber, blue_sheets, briefing_packets,
+                                    bill_meta, glo_payload, dept_payload):
+    lines = []
+    lines.append(f"Bill: {billnumber}")
+    if bill_meta:
+        if bill_meta.get("latest_version_title"):
+            lines.append(f"Legal title: {bill_meta['latest_version_title']}")
+    glo_rec = (glo_payload or {}).get("rec", "")
+    glo_note = (glo_payload or {}).get("note", "")
+    dept_rec = (dept_payload or {}).get("rec", "")
+    dept_note = (dept_payload or {}).get("note", "")
+    lines.append("")
+    lines.append(f"GLO recommendation: {glo_rec}")
+    if glo_note:
+        lines.append(f"GLO override / heuristic note (the Governor's "
+                     f"distilled political reasoning — this is the SPINE "
+                     f"of the veto letter): {glo_note}")
+    lines.append("")
+    lines.append(f"Departmental rollup: {dept_rec}")
+    if dept_note:
+        lines.append(f"Dept rollup note: {dept_note}")
+    lines.append("")
+    if blue_sheets:
+        lines.append("=== Departmental blue sheets ===")
+        for s in blue_sheets:
+            agency = s.get("agency") or "(unknown)"
+            rec = s.get("recommendation") or "no rec"
+            lines.append(f"--- {agency} (recommends: {rec}) ---")
+            desc = (s.get("description") or "").strip()
+            just = (s.get("action_justification") or "").strip()
+            if desc:
+                lines.append("What the bill does (from this dept):")
+                lines.append(desc)
+            if just:
+                lines.append("Dept's stated reasoning:")
+                lines.append(just)
+            lines.append("")
+    if briefing_packets:
+        lines.append("=== Briefing packet body ===")
+        for p in briefing_packets:
+            body = (p.get("body_text") or "").strip()
+            if body:
+                lines.append(body)
+                lines.append("")
+    return "\n".join(lines).strip()
+
+
+def synthesize_veto_letter(billnumber, blue_sheets, bill_meta,
+                           glo_payload, dept_payload,
+                           briefing_packets=None, gov_pref="VETO",
+                           *, force=False, timeout=60.0):
+    """Generate the body paragraphs of a Dunleavy-format veto letter
+    for one bill. Returns a dict with the structured letter ready to
+    render, or None on failure.
+
+    Caches by content-addressed hash that includes gov_pref state so
+    flipping the tag back and forth doesn't waste API calls. The
+    salutation and constitutional preamble are constants assembled
+    at render time, not stored in the cache.
+    """
+    bn = (billnumber or "").strip()
+    if not bn:
+        return None
+    h = _veto_letter_input_hash(bn, blue_sheets, briefing_packets,
+                                bill_meta, glo_payload, dept_payload,
+                                gov_pref)
+    cache = _load_cache()
+    if not force and h in cache:
+        return cache[h]
+
+    api_key = _read_api_key()
+    if not api_key:
+        log.warning("veto_letter.no_api_key bn=%s", bn)
+        return None
+
+    user_msg = _build_veto_letter_user_message(
+        bn, blue_sheets, briefing_packets, bill_meta, glo_payload, dept_payload,
+    )
+    body = {
+        "model": _MODEL,
+        "max_tokens": 900,
+        "system": _VETO_LETTER_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": user_msg}],
+    }
+    req = urllib.request.Request(
+        _API_URL,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": _API_VERSION,
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            resp = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            body_text = e.read().decode("utf-8", errors="replace")[:400]
+        except Exception:
+            body_text = ""
+        log.warning("veto_letter.http_error bn=%s status=%s body=%r",
+                    bn, e.code, body_text)
+        return None
+    except Exception as e:
+        log.warning("veto_letter.error bn=%s err=%r", bn, e)
+        return None
+
+    text = ""
+    for chunk in resp.get("content") or []:
+        if chunk.get("type") == "text":
+            text += chunk.get("text", "")
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.lstrip("`").lstrip()
+        if text.lower().startswith("json"):
+            text = text[4:].lstrip()
+        if text.endswith("```"):
+            text = text[:-3].rstrip()
+    try:
+        parsed = _forgiving_json_loads(text)
+    except json.JSONDecodeError:
+        log.warning("veto_letter.bad_json bn=%s raw=%r", bn, text[:300])
+        return None
+
+    paragraphs = [str(p).strip() for p in (parsed.get("body_paragraphs") or [])
+                  if str(p).strip()]
+    if not paragraphs:
+        log.warning("veto_letter.empty bn=%s", bn)
+        return None
+
+    # Pick salutation + addressee based on bill chamber. HB = Speaker
+    # (House origin), SB = President (Senate origin). For concurrent-
+    # resolution / joint-resolution chambers we follow the same rule.
+    prefix = bn.split()[0] if bn else ""
+    if prefix.startswith("H"):
+        salutation = f"Dear Speaker {_HOUSE_SPEAKER_LASTNAME}:"
+        addressee_chamber = "House"
+    else:
+        salutation = f"Dear President {_SENATE_PRESIDENT_LASTNAME}:"
+        addressee_chamber = "Senate"
+
+    # Bill version designator — e.g. "SCS CSHB 69(FIN)" — sourced from
+    # bill_meta. Falls back to bare billnumber if no version letter.
+    version_letter = (bill_meta or {}).get("latest_version_letter") or ""
+    version_designator = bn
+    if version_letter and version_letter.upper() != "A":
+        # Real version letter signals committee substitute / amended.
+        # We can't reconstruct the full SCS/CS prefix chain without the
+        # action history, so fall back to "<BN> (version <X>)" form.
+        version_designator = f"{bn} (version {version_letter})"
+    legal_title = (bill_meta or {}).get("latest_version_title") or ""
+
+    out = {
+        "salutation":         salutation,
+        "addressee_chamber":  addressee_chamber,
+        "constitutional_cite": ("Under the authority vested in me by Article II, "
+                                "Section 15, of the Alaska Constitution, I have "
+                                "vetoed the following bill:"),
+        "version_designator": version_designator,
+        "legal_title":        legal_title,
+        "transition":         f"I have vetoed {version_designator} "
+                              f"for the following reasons:",
+        "body_paragraphs":    paragraphs,
+        "closing":            "Sincerely,",
+        "signature_line":     "/s/",
+        "signer_name":        "Mike Dunleavy",
+        "signer_title":       "Governor",
+        "model":              _MODEL,
+        "generated_at":       int(time.time()),
+        "input_hash":         h,
+        "billnumber":         bn,
+    }
+    cache[h] = out
+    _save_cache()
+    return out
+
+
+def get_cached_veto_letter(billnumber, blue_sheets, briefing_packets,
+                           bill_meta, glo_payload, dept_payload,
+                           gov_pref="VETO"):
+    bn = (billnumber or "").strip()
+    if not bn:
+        return None
+    h = _veto_letter_input_hash(bn, blue_sheets, briefing_packets,
+                                bill_meta, glo_payload, dept_payload,
+                                gov_pref)
+    return _load_cache().get(h)
+
+
+# --------------------------------------------------------------------------
 # Manual CLI: python -m bill_summarizer <BN>
 # --------------------------------------------------------------------------
 

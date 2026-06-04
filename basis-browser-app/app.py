@@ -323,6 +323,85 @@ def _refresh_all():
         log.info("refresh.step name=detail_rewarm_stakeholders elapsed=%.1fs status=ok",
                  time.monotonic() - s)
 
+    # Stage 10: veto-letter drafts (LLM). Generates the Dunleavy-format
+    # body paragraphs for every bill where the user has tagged
+    # flag_gov_pref == 'VETO'. Gated entry: we don't pre-generate for
+    # every bill on the page — only the ones the Governor has
+    # explicitly queued for a veto. ~$0.01 per bill (~700 output tokens
+    # for the body); total cost for ~15 tagged bills is ~$0.15 per
+    # refresh until cached.
+    s = time.monotonic()
+    vl_made = vl_cached = vl_skipped = 0
+    try:
+        import bill_summarizer as _summ10
+        import blue_sheets as _bs10
+        import briefing_packets as _bp10
+        import bill_flags as _bf10
+        from fetch import fetch_all_bills
+        meta_by_bn10 = {}
+        for chamber in ("H", "S"):
+            for b in fetch_all_bills(chamber, "34",
+                                      queries=["Sponsors", "Subjects",
+                                               "Versions", "FiscalNotes"]):
+                meta_by_bn10[b.get("billnumber", "")] = b
+        # Need glo+dept payloads — read from the freshly-rebuilt
+        # awaiting_transmittal cache.
+        at_now = awaiting_transmittal()
+        all_now = (at_now.get("bills", []) + at_now.get("at_gov_bills", []) +
+                   at_now.get("resolutions_substantive", []) +
+                   at_now.get("resolutions_procedural", []))
+        for entry in all_now:
+            bn = entry.get("billnumber") or ""
+            if not bn:
+                continue
+            # The gate: only bills explicitly tagged gov_pref=VETO.
+            if _bf10.get_flag(bn, "gov_pref") != "VETO":
+                vl_skipped += 1
+                continue
+            sheets = _bs10.sheets_for(bn)
+            packets = _bp10.packets_for(bn)
+            meta = meta_by_bn10.get(bn)
+            glo_p = entry.get("glo_recommendation") or {}
+            dept_p = entry.get("dept_recommendation") or {}
+            if _summ10.get_cached_veto_letter(bn, sheets, packets, meta,
+                                              glo_p, dept_p, gov_pref="VETO"):
+                vl_cached += 1
+                continue
+            try:
+                if _summ10.synthesize_veto_letter(
+                        bn, sheets, meta, glo_p, dept_p,
+                        briefing_packets=packets, gov_pref="VETO"):
+                    vl_made += 1
+            except Exception as exc:
+                log.warning("refresh.veto_letter name=%s err=%r", bn, exc)
+        log.info("refresh.step name=veto_letters new=%d cached=%d skipped=%d "
+                 "elapsed=%.1fs status=ok",
+                 vl_made, vl_cached, vl_skipped, time.monotonic() - s)
+    except Exception as exc:
+        log.warning("refresh.step name=veto_letters elapsed=%.1fs "
+                    "status=fail err=%r", time.monotonic() - s, exc)
+
+    # Stage 11: re-warm bill_decision_detail for bills whose veto letter
+    # was just generated, so the next expander click serves the fresh
+    # letter without one cold rebuild.
+    if vl_made:
+        s = time.monotonic()
+        import bill_flags as _bf11
+        for entry in all_bill_entries:
+            bn = entry.get("billnumber") or ""
+            if not bn:
+                continue
+            if _bf11.get_flag(bn, "gov_pref") != "VETO":
+                continue
+            try:
+                from cache import _cache as _c
+                _c.pop(f"bill_decision_detail_v13_34_{bn}", None)
+                bill_decision_detail(bn)
+            except Exception:
+                pass
+        log.info("refresh.step name=detail_rewarm_veto_letters elapsed=%.1fs status=ok",
+                 time.monotonic() - s)
+
     log.info("refresh.complete total_elapsed=%.1fs", time.monotonic() - t0)
 
 
@@ -596,6 +675,13 @@ def api_bill_flag(billnumber):
         try:
             from cache import _cache as _c
             _c.pop("awaiting_transmittal_v44", None)
+            # When gov_pref flips, the bill's veto-letter expander
+            # appears/disappears AND the cached bill_decision_detail
+            # carries a now-stale veto_letter field. Drop the per-bill
+            # detail cache so the next expander click rebuilds with the
+            # correct gov_pref/veto_letter state.
+            if dimension == "gov_pref":
+                _c.pop(f"bill_decision_detail_v13_34_{billnumber}", None)
         except Exception:
             pass
         return jsonify({
