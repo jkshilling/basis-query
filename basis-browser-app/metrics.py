@@ -1887,8 +1887,35 @@ def awaiting_transmittal(session="34"):
         gov_days_left = None
         if is_at_gov:
             for c, _, jd, t in actions:
-                if c == "033" and jd and not transmit_date:
-                    transmit_date = jd
+                if c == "033" and not transmit_date:
+                    # PREFER the date embedded in the action TEXT over
+                    # the structured raw_date. BASIS occasionally updates
+                    # an action's structured date to its last-modified
+                    # timestamp while leaving the text body untouched —
+                    # e.g. an action recorded "10:44 A.M. 6/1/26
+                    # TRANSMITTED TO GOVERNOR" was observed with
+                    # raw_date=2026-06-04 after a BASIS re-index event.
+                    # The text body is the historical record of when the
+                    # bill actually reached the Governor's office; the
+                    # raw_date is unreliable for date-of-event purposes.
+                    parsed_text_date = None
+                    if t:
+                        m_tx = re.search(
+                            r"\b(\d{1,2})/(\d{1,2})/(\d{2,4})\s+TRANSMITTED",
+                            t, re.IGNORECASE,
+                        )
+                        if m_tx:
+                            mm, dd, yy = m_tx.groups()
+                            year = int(yy)
+                            if year < 100:
+                                year += 2000
+                            try:
+                                parsed_text_date = datetime(
+                                    year, int(mm), int(dd)
+                                ).date().strftime("%Y-%m-%d")
+                            except ValueError:
+                                pass
+                    transmit_date = parsed_text_date or jd
                 if c == "096" and t and not return_by_date_str:
                     # Text format: "DUE BACK FROM GOVERNOR 5/30/26"
                     m_due = re.search(
