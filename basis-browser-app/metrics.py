@@ -1667,6 +1667,21 @@ def awaiting_transmittal(session="34"):
         except Exception:
             pass
 
+        # Impacted-departments lookup — read-only cache hit. Returns
+        # a list of {name, filed, why} dicts, or None when not cached.
+        impacted_depts = None
+        try:
+            import bill_summarizer as _summ_id
+            cached_id = _summ_id.get_cached_impacted_departments(
+                compact_billnumber(bn),
+                _bluesheet_index.get(compact_billnumber(bn), []),
+                m_meta,
+            )
+            if cached_id:
+                impacted_depts = cached_id.get("departments")
+        except Exception:
+            pass
+
         # Compute veto_proof inline FIRST so glo_recs.guess() below
         # has the correct value for THIS bill. The full veto-override
         # math block lives further down (kept there because it ALSO
@@ -2029,6 +2044,14 @@ def awaiting_transmittal(session="34"):
             # SIGN/VETO/LWOS checkboxes from the blue-sheet PDFs,
             # without GLO's political-signal overlay.
             "dept_recommendation": dept_rec,
+            # Impacted departments — LLM-synthesized list of agencies
+            # this bill materially affects, with each marked as filed
+            # (blue sheet received) or missing (blue sheet expected
+            # but not received). Read-only cache lookup; generation
+            # happens in Stage 12 of the refresh pipeline. None when
+            # no cache entry exists yet — template falls back to
+            # showing the blue-sheet pills alone.
+            "impacted_departments": impacted_depts,
             # User-set flags, persisted server-side. Three independent
             # dimensions per bill (workflow / gov_pref / followup).
             # Each cycles through its own states via the

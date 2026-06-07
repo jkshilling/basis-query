@@ -1189,6 +1189,238 @@ def get_cached_veto_letter(billnumber, blue_sheets, briefing_packets,
 
 
 # --------------------------------------------------------------------------
+# Impacted-departments analysis — identifies the COMPLETE set of agencies
+# that materially impact a bill, distinguishing departments that have
+# already filed blue sheets from those that haven't but should have.
+# Powers the "Departments impacted" row on each card: shows the chase
+# list at a glance, with filed/missing visible as a visual property
+# rather than something the user has to compute manually.
+# --------------------------------------------------------------------------
+
+_IMPACTED_DEPTS_PROMPT_VERSION = "v1"
+
+_IMPACTED_DEPTS_SYSTEM_PROMPT = """You analyze Alaska bills to identify \
+which executive-branch departments and divisions are MATERIALLY IMPACTED \
+— meaning they would normally be asked to file a "blue sheet" analysis \
+(the formal departmental review submitted to the Governor's Legislative \
+Office for veto decisions).
+
+Given the bill's title, the legal description, and the list of \
+departments that have ALREADY filed blue sheets, identify the COMPLETE \
+set of agencies that impact analysis would reasonably expect on this bill.
+
+Return JSON with this exact shape:
+
+{
+  "departments": [
+    {"name": "DOR-TAX", "filed": false, "why": "<one short phrase>"},
+    {"name": "DOH",     "filed": true,  "why": "<one short phrase>"},
+    ...
+  ]
+}
+
+USE THESE Alaska state agency codes (and only these):
+
+- DOR (Revenue), and divisions: DOR-TAX, DOR-TRS (Treasury / PFD), CSSD
+- DOH (Health)
+- DFCS (Family and Community Services)
+- DEED (Education and Early Development)
+- DCCED (Commerce, Community and Economic Development), and divisions: \
+DCCED-CBPL (Corporations, Business and Professional Licensing), \
+DCCED-DBA (Banking and Securities), DCCED-DCRA (Community and Regional \
+Affairs), DCCED-AIDEA (Industrial Development and Export Authority)
+- DPS (Public Safety)
+- DFG (Fish and Game)
+- DEC (Environmental Conservation)
+- DOA (Administration), and divisions: DOA-DMV (Motor Vehicles), \
+DOA-DOE (Enterprise Tech), DOA-DOR (Retirement and Benefits, also \
+sometimes "DOA-Retirement")
+- DOC (Corrections)
+- DOL (Law)
+- DOLWD (Labor and Workforce Development)
+- DOT-PF (Transportation and Public Facilities)
+- DMVA (Military and Veterans Affairs)
+- DNR (Natural Resources)
+- UA (University of Alaska) — when bill directly affects UA
+- AIDEA — for bills directly affecting the Industrial Development and \
+Export Authority
+- OMB (Office of Management and Budget) — for appropriations bills
+- GLO (Governor's Legislative Office) — never list this; the GLO \
+synthesizes departmental input, it doesn't file blue sheets
+
+RULES:
+
+- 3 to 7 departments maximum. Pick only those genuinely material.
+- "filed": true only when the dept appears in the FILED AGENCIES list \
+provided in the input. Do not guess.
+- Prefer divisions over parent departments when the impact is clearly \
+on a specific division (e.g., DOR-TAX for a tax bill, not DOR; \
+DOA-DMV for a motor-vehicle bill, not DOA).
+- "why" should be ONE short phrase (5-15 words), grounded in the bill \
+title's actual provisions — not generic boilerplate.
+- For pure appropriations bills (titles starting "APPROP:"): list ONLY \
+"OMB" with why="appropriations review goes through OMB, not per-dept \
+blue sheets".
+- For ceremonial / honorific bills (snow classics, anniversary days, \
+non-substantive policy statements): return {"departments": []}.
+- If the bill amends specific statute sections naming an agency, that \
+agency is impacted.
+
+Return ONLY the JSON object. No markdown fence. No preamble."""
+
+
+def _impacted_depts_input_hash(billnumber, blue_sheets, bill_meta):
+    parts = [_IMPACTED_DEPTS_PROMPT_VERSION, billnumber.strip()]
+    # Filed agencies — sorted for hash stability
+    agencies_filed = sorted({
+        (s.get("agency") or "").strip().upper()
+        for s in (blue_sheets or [])
+        if s.get("agency")
+    })
+    parts.append("FILED|" + "|".join(agencies_filed))
+    if bill_meta:
+        parts.append(bill_meta.get("latest_version_title") or "")
+        parts.append(bill_meta.get("short_title") or "")
+    digest = hashlib.sha256("\n---\n".join(parts).encode("utf-8")).hexdigest()
+    return "id:" + digest[:24]
+
+
+def _build_impacted_depts_user_message(billnumber, blue_sheets, bill_meta):
+    lines = []
+    lines.append(f"Bill: {billnumber}")
+    if bill_meta:
+        if bill_meta.get("short_title"):
+            lines.append(f"Short title: {bill_meta['short_title']}")
+        if bill_meta.get("latest_version_title"):
+            lines.append(f"Legal title: {bill_meta['latest_version_title']}")
+    lines.append("")
+    # Pass the filed-agencies list so the LLM marks them correctly.
+    agencies_filed = sorted({
+        (s.get("agency") or "").strip().upper()
+        for s in (blue_sheets or [])
+        if s.get("agency") and s.get("agency") != "?"
+    })
+    if agencies_filed:
+        lines.append("FILED AGENCIES (blue sheets received from these depts):")
+        for a in agencies_filed:
+            lines.append(f"  - {a}")
+    else:
+        lines.append("FILED AGENCIES: (none — no blue sheets received yet)")
+    return "\n".join(lines).strip()
+
+
+def synthesize_impacted_departments(billnumber, blue_sheets, bill_meta,
+                                    *, force=False, timeout=60.0):
+    """Return the complete list of departments materially impacted by
+    a bill, distinguishing filed from missing. None on failure."""
+    bn = (billnumber or "").strip()
+    if not bn:
+        return None
+    h = _impacted_depts_input_hash(bn, blue_sheets, bill_meta)
+    cache = _load_cache()
+    if not force and h in cache:
+        return cache[h]
+
+    api_key = _read_api_key()
+    if not api_key:
+        log.warning("impacted_depts.no_api_key bn=%s", bn)
+        return None
+
+    user_msg = _build_impacted_depts_user_message(bn, blue_sheets, bill_meta)
+    body = {
+        "model": _MODEL,
+        "max_tokens": 600,
+        "system": _IMPACTED_DEPTS_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": user_msg}],
+    }
+    req = urllib.request.Request(
+        _API_URL,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": _API_VERSION,
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            resp = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            body_text = e.read().decode("utf-8", errors="replace")[:400]
+        except Exception:
+            body_text = ""
+        log.warning("impacted_depts.http_error bn=%s status=%s body=%r",
+                    bn, e.code, body_text)
+        return None
+    except Exception as e:
+        log.warning("impacted_depts.error bn=%s err=%r", bn, e)
+        return None
+
+    text = ""
+    for chunk in resp.get("content") or []:
+        if chunk.get("type") == "text":
+            text += chunk.get("text", "")
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.lstrip("`").lstrip()
+        if text.lower().startswith("json"):
+            text = text[4:].lstrip()
+        if text.endswith("```"):
+            text = text[:-3].rstrip()
+    try:
+        parsed = _forgiving_json_loads(text)
+    except json.JSONDecodeError:
+        log.warning("impacted_depts.bad_json bn=%s raw=%r", bn, text[:300])
+        return None
+
+    # Defensive normalization: keep only well-formed entries, drop unknown
+    # keys, normalize types, cap at 8 to defend against runaway model output.
+    raw_list = parsed.get("departments") or []
+    filed_set = {
+        (s.get("agency") or "").strip().upper()
+        for s in (blue_sheets or [])
+        if s.get("agency") and s.get("agency") != "?"
+    }
+    depts = []
+    seen = set()
+    for d in raw_list[:8]:
+        name = str(d.get("name", "")).strip().upper()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        why = str(d.get("why", "")).strip()
+        # Trust the LLM's "filed" flag but cross-check against actual
+        # filed list. Authoritative source: blue_sheets data, not LLM.
+        is_filed = name in filed_set
+        depts.append({
+            "name":  name,
+            "filed": is_filed,
+            "why":   why[:140],
+        })
+
+    out = {
+        "departments":  depts,
+        "model":        _MODEL,
+        "generated_at": int(time.time()),
+        "input_hash":   h,
+        "billnumber":   bn,
+    }
+    cache[h] = out
+    _save_cache()
+    return out
+
+
+def get_cached_impacted_departments(billnumber, blue_sheets, bill_meta):
+    bn = (billnumber or "").strip()
+    if not bn:
+        return None
+    h = _impacted_depts_input_hash(bn, blue_sheets, bill_meta)
+    return _load_cache().get(h)
+
+
+# --------------------------------------------------------------------------
 # Manual CLI: python -m bill_summarizer <BN>
 # --------------------------------------------------------------------------
 

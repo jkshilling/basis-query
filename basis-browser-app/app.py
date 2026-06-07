@@ -402,6 +402,62 @@ def _refresh_all():
         log.info("refresh.step name=detail_rewarm_veto_letters elapsed=%.1fs status=ok",
                  time.monotonic() - s)
 
+    # Stage 12: impacted-departments analysis (LLM). For every bill on
+    # the page, generate the complete list of materially-impacted
+    # agencies with filed/missing status. Powers the "Departments
+    # impacted" row on each card so the chase list is visible at a
+    # glance. ~$0.005 per bill (~500 output tokens). Total cost for
+    # ~74 bills is ~$0.40 once, free after caching. Hash invalidates
+    # automatically when blue sheets are added/removed.
+    s = time.monotonic()
+    id_made = id_cached = id_skipped = 0
+    try:
+        import bill_summarizer as _summ12
+        import blue_sheets as _bs12
+        from fetch import fetch_all_bills
+        meta_by_bn12 = {}
+        for chamber in ("H", "S"):
+            for b in fetch_all_bills(chamber, "34",
+                                      queries=["Sponsors", "Subjects",
+                                               "Versions", "FiscalNotes"]):
+                meta_by_bn12[b.get("billnumber", "")] = b
+        for entry in all_bill_entries:
+            bn = entry.get("billnumber") or ""
+            if not bn:
+                continue
+            sheets = _bs12.sheets_for(bn)
+            meta = meta_by_bn12.get(bn)
+            # Need either a legal title or sheets to have something to analyze.
+            has_title = bool(meta and meta.get("latest_version_title"))
+            if not (has_title or sheets):
+                id_skipped += 1
+                continue
+            if _summ12.get_cached_impacted_departments(bn, sheets, meta):
+                id_cached += 1
+                continue
+            try:
+                if _summ12.synthesize_impacted_departments(bn, sheets, meta):
+                    id_made += 1
+            except Exception as exc:
+                log.warning("refresh.impacted_depts name=%s err=%r", bn, exc)
+        log.info("refresh.step name=impacted_depts new=%d cached=%d skipped=%d "
+                 "elapsed=%.1fs status=ok",
+                 id_made, id_cached, id_skipped, time.monotonic() - s)
+    except Exception as exc:
+        log.warning("refresh.step name=impacted_depts elapsed=%.1fs "
+                    "status=fail err=%r", time.monotonic() - s, exc)
+
+    # Stage 13: invalidate awaiting_transmittal cache if any new
+    # impacted-departments lists were generated, so the next page
+    # fetch surfaces them on the cards.
+    if id_made:
+        try:
+            from cache import _cache as _c13
+            _c13.pop("awaiting_transmittal_v44", None)
+            awaiting_transmittal()  # warm
+        except Exception:
+            pass
+
     log.info("refresh.complete total_elapsed=%.1fs", time.monotonic() - t0)
 
 

@@ -668,6 +668,42 @@
         .at-rec-dot.LWOS { background: #f39c12; }
         .at-rec-dot.unknown { background: #b0b8c0; }
 
+        /* Departments-impacted row — visual distinction between filed
+           (received blue sheet) and missing (expected but not received).
+           Filed reads as solid/affirmative; missing reads as gap signal.
+           Cursor: help so users know to hover for the 'why'. */
+        .at-depts-row { margin-top: 2px; }
+        .at-chip.dept-impact {
+            font-size: 0.78rem;
+            padding: 2px 8px;
+            cursor: help;
+            background: #fafbfc;
+            border-color: #d8dde3;
+        }
+        .at-chip.dept-impact .at-dept-status {
+            font-weight: 700;
+            margin-right: 1px;
+        }
+        .at-chip.dept-impact.filed {
+            background: #eef7f2;
+            border-color: #cde6d8;
+            color: #2e6e3f;
+        }
+        .at-chip.dept-impact.filed .at-dept-status { color: #1e8449; }
+        .at-chip.dept-impact.missing {
+            background: #fff7ed;
+            border-color: #f5cb7f;
+            color: #8c6916;
+            border-style: dashed;
+        }
+        .at-chip.dept-impact.missing .at-dept-status { color: #c0392b; }
+        .at-chip.dept-impact:hover {
+            background: #f0f4f7;
+            text-decoration: none;
+        }
+        .at-chip.dept-impact.filed:hover { background: #dfeee5; }
+        .at-chip.dept-impact.missing:hover { background: #ffe9cc; }
+
         /* GLO recommendation chip — sits in column 3 above the vote
            bars. Color-codes the guess; tooltip explains the source
            and any override note. */
@@ -1557,6 +1593,35 @@
                     }
                     attach += '</div>';
                 }
+
+                // Departments impacted — LLM-derived row. Shows the
+                // COMPLETE set of agencies materially affected by the
+                // bill, with each marked filed (✓) or missing (◯).
+                // The blue-sheet pill row above shows only filed sheets;
+                // this row exposes the gap — which departments owe
+                // analysis the GLO office hasn't received yet.
+                var impactedDepts = b.impacted_departments;
+                if (impactedDepts && impactedDepts.length) {
+                    attach += '<div class="at-attach-row at-depts-row">';
+                    attach += '<span class="at-attach-lbl">Affected depts</span>';
+                    impactedDepts.forEach(function(dep) {
+                        var name = dep.name || '';
+                        var why = dep.why || '';
+                        var isFiled = !!dep.filed;
+                        var statusCls = isFiled ? 'filed' : 'missing';
+                        var statusIcon = isFiled ? '✓' : '◯';
+                        var tip = (isFiled
+                                   ? 'Blue sheet filed by ' + name
+                                   : name + ' has not filed a blue sheet')
+                                  + (why ? '\n\n' + why : '');
+                        attach += '<span class="at-chip dept-impact ' + statusCls +
+                                  '" title="' + esc(tip) + '">' +
+                                  '<span class="at-dept-status">' + statusIcon +
+                                  '</span> ' + esc(name) + '</span>';
+                    });
+                    attach += '</div>';
+                }
+
                 attach += '</div>';
                 html += attach;
             }
@@ -2367,7 +2432,7 @@
         });
     });
 
-    var LIST_KEY = 'at_list_v58';
+    var LIST_KEY = 'at_list_v59';
     var DETAIL_KEY_PREFIX = 'at_detail_v52:';
 
     function lsGet(key) {
