@@ -1197,7 +1197,7 @@ def get_cached_veto_letter(billnumber, blue_sheets, briefing_packets,
 # rather than something the user has to compute manually.
 # --------------------------------------------------------------------------
 
-_IMPACTED_DEPTS_PROMPT_VERSION = "v1"
+_IMPACTED_DEPTS_PROMPT_VERSION = "v2-enriched"
 
 _IMPACTED_DEPTS_SYSTEM_PROMPT = """You analyze Alaska bills to identify \
 which executive-branch departments and divisions are MATERIALLY IMPACTED \
@@ -1266,18 +1266,66 @@ non-substantive policy statements): return {"departments": []}.
 - If the bill amends specific statute sections naming an agency, that \
 agency is impacted.
 
+SPECIFIC AGENCY GUIDANCE:
+
+- DOL: Only list DOL when there is a SPECIFIC legal question on this \
+bill — constitutional concerns, federal preemption issues, ambiguous \
+statutory drafting that could invite litigation. Generic "legal review" \
+is NOT sufficient justification. If you list DOL, the "why" must name \
+the specific legal concern (e.g., "federal preemption under PL 116-94" \
+or "First Amendment concerns about contribution limits").
+- OMB: Only list OMB for pure appropriations bills (titles starting \
+"APPROP:") OR substantive bills with fiscal impact > $1M that wasn't \
+already covered by the originating department.
+- DOR-TAX vs DOR: Use DOR-TAX when the bill creates, modifies, or \
+repeals a state tax provision. Use DOR (parent) when the impact is on \
+revenue administration generally.
+- DOR-TRS vs DOR: Use DOR-TRS for any PFD program changes, state \
+investment policy, or retirement administration.
+- If a parent dept (e.g., DCCED) has already filed a blue sheet, do NOT \
+separately list a division (e.g., DCCED-CBPL) UNLESS the bill addresses \
+a specific division concern the parent sheet would not have covered. \
+Filed-parent typically covers divisions.
+
+USE THE BILL'S ACTUAL PROVISIONS — not just the title — when deciding \
+which depts are impacted. The user message will include a neutral \
+synthesis of what the bill does, the action_justification text from \
+each filed department, and any briefing-packet content. Anchor your \
+analysis in that substantive material.
+
 Return ONLY the JSON object. No markdown fence. No preamble."""
 
 
-def _impacted_depts_input_hash(billnumber, blue_sheets, bill_meta):
+def _impacted_depts_input_hash(billnumber, blue_sheets, bill_meta,
+                                briefing_packets=None, llm_summary=None):
     parts = [_IMPACTED_DEPTS_PROMPT_VERSION, billnumber.strip()]
-    # Filed agencies — sorted for hash stability
+    # Filed agencies sorted for hash stability.
     agencies_filed = sorted({
         (s.get("agency") or "").strip().upper()
         for s in (blue_sheets or [])
         if s.get("agency")
     })
     parts.append("FILED|" + "|".join(agencies_filed))
+    # Blue-sheet body content (action_justification + description +
+    # recommendation). Including these means a fresh OCR pass or a
+    # corrected agency analysis invalidates the impacted-depts cache.
+    for s in sorted(blue_sheets or [],
+                    key=lambda x: (x.get("agency", ""), x.get("filename", ""))):
+        parts.append("BS|" + "|".join([
+            s.get("agency", ""),
+            s.get("recommendation", ""),
+            (s.get("description") or "")[:800],
+            (s.get("action_justification") or "")[:1200],
+        ]))
+    # Briefing packet body — same caching invariant.
+    for p in sorted(briefing_packets or [], key=lambda x: x.get("filename", "")):
+        parts.append("BP|" + (p.get("body_text") or "")[:1200])
+    # LLM summary — strongest substantive signal. A re-summarization
+    # (new prompt version, new source material) automatically
+    # invalidates the impacted-depts cache too.
+    if llm_summary:
+        parts.append("SUM|" + (llm_summary.get("executive_summary") or ""))
+        parts.append("SUM|" + (llm_summary.get("summary") or "")[:1000])
     if bill_meta:
         parts.append(bill_meta.get("latest_version_title") or "")
         parts.append(bill_meta.get("short_title") or "")
@@ -1285,7 +1333,9 @@ def _impacted_depts_input_hash(billnumber, blue_sheets, bill_meta):
     return "id:" + digest[:24]
 
 
-def _build_impacted_depts_user_message(billnumber, blue_sheets, bill_meta):
+def _build_impacted_depts_user_message(billnumber, blue_sheets, bill_meta,
+                                        briefing_packets=None,
+                                        llm_summary=None):
     lines = []
     lines.append(f"Bill: {billnumber}")
     if bill_meta:
@@ -1294,29 +1344,77 @@ def _build_impacted_depts_user_message(billnumber, blue_sheets, bill_meta):
         if bill_meta.get("latest_version_title"):
             lines.append(f"Legal title: {bill_meta['latest_version_title']}")
     lines.append("")
-    # Pass the filed-agencies list so the LLM marks them correctly.
-    agencies_filed = sorted({
-        (s.get("agency") or "").strip().upper()
-        for s in (blue_sheets or [])
-        if s.get("agency") and s.get("agency") != "?"
-    })
-    if agencies_filed:
-        lines.append("FILED AGENCIES (blue sheets received from these depts):")
-        for a in agencies_filed:
-            lines.append(f"  - {a}")
+
+    # Neutral synthesis of what the bill actually does — the most
+    # substantive context available. Lets the LLM identify depts
+    # by provision rather than by title pattern alone.
+    if llm_summary and (llm_summary.get("summary") or
+                        llm_summary.get("executive_summary")):
+        lines.append("=== What the bill does (neutral synthesis) ===")
+        if llm_summary.get("executive_summary"):
+            lines.append(llm_summary["executive_summary"])
+            lines.append("")
+        if llm_summary.get("summary"):
+            lines.append((llm_summary["summary"] or "")[:1500])
+        lines.append("")
+
+    # Filed blue sheets WITH their reasoning. Tells the LLM which
+    # depts filed, what they said the bill does, and what concerns
+    # are already on the record.
+    agencies_with_text = [s for s in (blue_sheets or [])
+                          if (s.get("agency") or "").strip()
+                             and s.get("agency") != "?"]
+    if agencies_with_text:
+        lines.append("=== Filed blue sheets (departments that have weighed in) ===")
+        for s in agencies_with_text:
+            agency = s.get("agency", "?")
+            rec = (s.get("recommendation") or "no rec").upper()
+            just = (s.get("action_justification") or "").strip()
+            desc = (s.get("description") or "").strip()
+            lines.append(f"--- {agency} (recommends: {rec}) ---")
+            if desc:
+                lines.append(f"What dept says the bill does: {desc[:400]}")
+            if just:
+                lines.append(f"Stated reasoning: {just[:500]}")
+            lines.append("")
     else:
-        lines.append("FILED AGENCIES: (none — no blue sheets received yet)")
+        lines.append("=== Filed blue sheets: NONE ===")
+        lines.append("(no departments have filed blue sheets yet)")
+        lines.append("")
+
+    # Briefing-packet body — GLO decision binder content. Surfaces
+    # substantive context the blue sheets may have missed.
+    if briefing_packets:
+        for p in briefing_packets:
+            body = (p.get("body_text") or "").strip()
+            if body:
+                lines.append(f"=== Briefing packet excerpt ({p.get('filename', '')}) ===")
+                lines.append(body[:1000])
+                lines.append("")
+
+    lines.append("Using the bill's actual provisions above (NOT just the title), "
+                 "identify the COMPLETE set of departments materially impacted, "
+                 "marking each filed or missing. Follow all rules in the "
+                 "system prompt — including the DOL-only-with-specific-legal-"
+                 "concern rule and the no-redundant-divisions rule.")
     return "\n".join(lines).strip()
 
 
 def synthesize_impacted_departments(billnumber, blue_sheets, bill_meta,
+                                    briefing_packets=None, llm_summary=None,
                                     *, force=False, timeout=60.0):
     """Return the complete list of departments materially impacted by
-    a bill, distinguishing filed from missing. None on failure."""
+    a bill, distinguishing filed from missing. None on failure.
+
+    Enriched inputs (briefing_packets, llm_summary) let the LLM ground
+    its analysis in substantive bill content rather than title pattern
+    matching alone. Both are optional; absence falls back to the v1
+    title-driven behavior."""
     bn = (billnumber or "").strip()
     if not bn:
         return None
-    h = _impacted_depts_input_hash(bn, blue_sheets, bill_meta)
+    h = _impacted_depts_input_hash(bn, blue_sheets, bill_meta,
+                                   briefing_packets, llm_summary)
     cache = _load_cache()
     if not force and h in cache:
         return cache[h]
@@ -1326,10 +1424,16 @@ def synthesize_impacted_departments(billnumber, blue_sheets, bill_meta,
         log.warning("impacted_depts.no_api_key bn=%s", bn)
         return None
 
-    user_msg = _build_impacted_depts_user_message(bn, blue_sheets, bill_meta)
+    user_msg = _build_impacted_depts_user_message(bn, blue_sheets, bill_meta,
+                                                   briefing_packets, llm_summary)
     body = {
         "model": _MODEL,
-        "max_tokens": 600,
+        # v2 enriched-input prompt produces longer, more specific "why"
+        # explanations (cites statute sections, names specific
+        # provisions). Bumped from 600→1200 after observed mid-JSON
+        # truncation on HB 195 — the response had 3 well-formed dept
+        # entries and was cut off in the middle of the 4th.
+        "max_tokens": 1200,
         "system": _IMPACTED_DEPTS_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_msg}],
     }
@@ -1412,11 +1516,13 @@ def synthesize_impacted_departments(billnumber, blue_sheets, bill_meta,
     return out
 
 
-def get_cached_impacted_departments(billnumber, blue_sheets, bill_meta):
+def get_cached_impacted_departments(billnumber, blue_sheets, bill_meta,
+                                     briefing_packets=None, llm_summary=None):
     bn = (billnumber or "").strip()
     if not bn:
         return None
-    h = _impacted_depts_input_hash(bn, blue_sheets, bill_meta)
+    h = _impacted_depts_input_hash(bn, blue_sheets, bill_meta,
+                                   briefing_packets, llm_summary)
     return _load_cache().get(h)
 
 

@@ -414,6 +414,7 @@ def _refresh_all():
     try:
         import bill_summarizer as _summ12
         import blue_sheets as _bs12
+        import briefing_packets as _bp12
         from fetch import fetch_all_bills
         meta_by_bn12 = {}
         for chamber in ("H", "S"):
@@ -426,17 +427,36 @@ def _refresh_all():
             if not bn:
                 continue
             sheets = _bs12.sheets_for(bn)
+            packets = _bp12.packets_for(bn)
             meta = meta_by_bn12.get(bn)
-            # Need either a legal title or sheets to have something to analyze.
+            # Pull cached LLM summary so the impacted-depts analysis can
+            # ground itself in substantive bill content rather than the
+            # title alone. May be None if Stage 4 didn't summarize this
+            # bill (e.g., it has no source material AND no long title).
+            cached_summ = _summ12.get_cached(bn, sheets, meta, packets)
+            llm_summary_for_id = None
+            if cached_summ:
+                llm_summary_for_id = {
+                    "executive_summary": cached_summ.get("executive_summary", ""),
+                    "summary":           cached_summ.get("summary", ""),
+                }
+            # Need either a legal title or sheets or summary to have
+            # something substantive to analyze.
             has_title = bool(meta and meta.get("latest_version_title"))
-            if not (has_title or sheets):
+            if not (has_title or sheets or llm_summary_for_id):
                 id_skipped += 1
                 continue
-            if _summ12.get_cached_impacted_departments(bn, sheets, meta):
+            if _summ12.get_cached_impacted_departments(
+                    bn, sheets, meta,
+                    briefing_packets=packets,
+                    llm_summary=llm_summary_for_id):
                 id_cached += 1
                 continue
             try:
-                if _summ12.synthesize_impacted_departments(bn, sheets, meta):
+                if _summ12.synthesize_impacted_departments(
+                        bn, sheets, meta,
+                        briefing_packets=packets,
+                        llm_summary=llm_summary_for_id):
                     id_made += 1
             except Exception as exc:
                 log.warning("refresh.impacted_depts name=%s err=%r", bn, exc)

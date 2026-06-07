@@ -1669,13 +1669,19 @@ def awaiting_transmittal(session="34"):
 
         # Impacted-departments lookup — read-only cache hit. Returns
         # a list of {name, filed, why} dicts, or None when not cached.
+        # Passes the cached LLM summary and briefing packets so the
+        # hash matches what synthesize_impacted_departments() would
+        # produce with enriched inputs.
         impacted_depts = None
         try:
             import bill_summarizer as _summ_id
+            _compact_bn_id = compact_billnumber(bn)
             cached_id = _summ_id.get_cached_impacted_departments(
-                compact_billnumber(bn),
-                _bluesheet_index.get(compact_billnumber(bn), []),
+                _compact_bn_id,
+                _bluesheet_index.get(_compact_bn_id, []),
                 m_meta,
+                briefing_packets=_briefing_index.get(_compact_bn_id, []),
+                llm_summary=llm_summary,
             )
             if cached_id:
                 impacted_depts = cached_id.get("departments")
