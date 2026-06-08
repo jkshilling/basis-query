@@ -607,6 +607,25 @@ def api_governor():
         return jsonify({"data": None, "error": str(exc)})
 
 
+@app.route("/desk")
+def desk():
+    """Governor's Desk — principal-facing condensed view of bills
+    awaiting decision. Server-rendered (no JS dependency) so the
+    Governor can read on his phone or print for review meetings.
+    Reuses awaiting_transmittal() so any data correction propagates
+    to both this view and the operator dashboard at /awaiting-transmittal.
+    """
+    try:
+        data = awaiting_transmittal()
+    except Exception as exc:
+        log.warning("desk.fetch_failed err=%r", exc)
+        data = {"bills": [], "at_gov_bills": [],
+                "resolutions_substantive": [],
+                "resolutions_procedural": [],
+                "counts": {}, "gov_deadline_if_transmitted_today": 15}
+    return render_template("desk.html", data=data)
+
+
 @app.route("/action-codes")
 def action_codes():
     return render_template("action_codes.html")
