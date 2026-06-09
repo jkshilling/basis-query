@@ -121,6 +121,93 @@
       display: block;
     }
     .stat.urgent .n { color: var(--urgent); }
+    /* Deadline-buckets visualization. Horizontal bars per deadline
+       date, width proportional to count, color-coded by urgency.
+       Designed to answer "how many bills, how long do I have, when's
+       the next forced decision" at one glance. */
+    .timeline-card {
+      background: #fff;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      padding: 22px 24px;
+      margin: 28px 0 32px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04),
+                  0 2px 8px rgba(0,0,0,0.03);
+    }
+    .timeline-head {
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--rule-soft);
+      padding-bottom: 12px;
+    }
+    .timeline-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      margin-bottom: 4px;
+    }
+    .timeline-sub {
+      font-size: 0.88rem;
+      color: var(--ink-muted);
+      font-style: italic;
+    }
+    .timeline-rows { display: grid; gap: 12px; }
+    .timeline-row {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+    .timeline-when-date {
+      font-size: 0.96rem;
+      font-weight: 700;
+      color: var(--ink);
+    }
+    .timeline-when-days {
+      font-size: 0.78rem;
+      color: var(--ink-muted);
+      margin-top: 1px;
+    }
+    .timeline-bar-track {
+      background: var(--paper);
+      border: 1px solid var(--rule-soft);
+      border-radius: 4px;
+      height: 36px;
+      position: relative;
+      overflow: hidden;
+    }
+    .timeline-bar {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      padding-left: 12px;
+      transition: width 0.3s ease;
+      min-width: 60px;
+    }
+    .timeline-bar.urgent  { background: var(--urgent); }
+    .timeline-bar.medium  { background: var(--medium); }
+    .timeline-bar.normal  { background: #4b6584; }
+    .timeline-bar-count {
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.9rem;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      text-shadow: 0 1px 1px rgba(0,0,0,0.15);
+    }
+    /* Compact stacking for small screens */
+    @media (max-width: 560px) {
+      .timeline-row {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+      .timeline-when {
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+      }
+      .timeline-when-days::before { content: "·"; margin-right: 4px; }
+    }
+
     h2.section {
       font-size: 1.05rem;
       font-weight: 700;
@@ -256,6 +343,18 @@
         padding: 1px 6px;
       }
       .days.urgent, .days.medium { color: inherit !important; }
+      .timeline-card {
+        box-shadow: none;
+        border: 1px solid #888;
+        page-break-inside: avoid;
+      }
+      .timeline-bar.urgent,
+      .timeline-bar.medium,
+      .timeline-bar.normal {
+        background: #555 !important;
+        border-right: 1px solid #000;
+      }
+      .timeline-bar-count { color: #fff !important; }
       a { color: inherit; text-decoration: none; }
       .footer { display: none; }
     }
@@ -312,6 +411,67 @@
         </div>
       </div>
     </div>
+
+    {#- ───────── Deadline buckets graphic ─────────
+        Groups bills by their return-by date so the Governor can see
+        at a glance: "by Jun 18 I have to act on 24 bills; by Jun 22
+        another 3; by Jun 23 another 4." Each bar's width is
+        proportional to the count, color-coded by urgency. This is
+        the answer to "how many bills, how long do I have, when's
+        the next forced decision" in a single visual.
+
+        Bills without an explicit return_by_date fall into a
+        "deadline unclear" bucket so they're not silently lost. #}
+    {%- if at_gov_count > 0 %}
+    {%- set deadlines = {} %}
+    {%- for b in at_gov %}
+      {%- set key = b.return_by_date or "(deadline not yet logged)" %}
+      {%- set entry = deadlines.get(key) or {'count': 0, 'days': b.governor_days_left, 'date': key, 'bills': []} %}
+      {%- set _ = entry.update({'count': entry.count + 1, 'days': b.governor_days_left if b.governor_days_left is not none else entry.days}) %}
+      {%- set _ = entry.bills.append(b.billnumber) %}
+      {%- set _ = deadlines.update({key: entry}) %}
+    {%- endfor %}
+    {%- set max_count = (deadlines.values() | map(attribute='count') | max) if deadlines else 1 %}
+    {%- set sorted_buckets = deadlines.values() | sort(attribute='days') %}
+
+    <div class="timeline-card">
+      <div class="timeline-head">
+        <div class="timeline-title">You have {{ at_gov_count }} bill{{ "s" if at_gov_count != 1 else "" }} to act on</div>
+        <div class="timeline-sub">
+          Each row is a deadline. Bills become law without your signature on these dates if you do not act.
+        </div>
+      </div>
+      <div class="timeline-rows">
+        {%- for bkt in sorted_buckets %}
+          {%- set width_pct = (bkt.count * 100 / max_count) | round(0, 'ceil') | int %}
+          {%- set urgency = "urgent" if (bkt.days is not none and bkt.days < 5) else ("medium" if (bkt.days is not none and bkt.days < 10) else "normal") %}
+        <div class="timeline-row">
+          <div class="timeline-when">
+            <div class="timeline-when-date">By {{ bkt.date if bkt.date != "(deadline not yet logged)" else "—" }}</div>
+            <div class="timeline-when-days">
+              {%- if bkt.days is none -%}
+              deadline pending
+              {%- elif bkt.days == 0 -%}
+              today
+              {%- elif bkt.days < 0 -%}
+              overdue
+              {%- elif bkt.days == 1 -%}
+              tomorrow
+              {%- else -%}
+              {{ bkt.days }} days from today
+              {%- endif -%}
+            </div>
+          </div>
+          <div class="timeline-bar-track">
+            <div class="timeline-bar {{ urgency }}" style="width: {{ width_pct }}%">
+              <span class="timeline-bar-count">{{ bkt.count }} bill{{ "s" if bkt.count != 1 else "" }}</span>
+            </div>
+          </div>
+        </div>
+        {%- endfor %}
+      </div>
+    </div>
+    {%- endif %}
 
     {%- if at_gov_count > 0 %}
     <h2 class="section">At your desk <span class="sub">sorted by days remaining</span></h2>
