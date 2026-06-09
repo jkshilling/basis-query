@@ -615,6 +615,22 @@ def desk():
     Reuses awaiting_transmittal() so any data correction propagates
     to both this view and the operator dashboard at /awaiting-transmittal.
     """
+    # Wait briefly for the first prefetch cycle to complete so the
+    # very first /desk hit after a restart serves from warm cache
+    # rather than triggering a 30-60s cold rebuild that would make
+    # the page appear hung. The 90s ceiling guarantees this can never
+    # hold a request forever — if prefetch hasn't completed by then,
+    # we fall through and let awaiting_transmittal() rebuild on the
+    # request thread (slow but correct).
+    if not _first_prefetch_done.is_set():
+        # Observed first-warm time is ~100s (awaiting_transmittal() cold
+        # rebuild does scan_all_actions, fetch_all_bills × 2 chambers,
+        # blue_sheets.index, briefing_packets.index, fiscal note pulls,
+        # then per-bill aggregation). 180s gives ~80% headroom over the
+        # observed time. If we hit the ceiling, fall through and let
+        # awaiting_transmittal() handle the rebuild on the request thread
+        # — slow but correct, vs hanging forever.
+        _first_prefetch_done.wait(timeout=180.0)
     try:
         data = awaiting_transmittal()
     except Exception as exc:
@@ -1106,13 +1122,59 @@ def api_committee_detail(chamber, code):
 # (works under both `python app.py` and gunicorn).
 _prefetch_started = False
 
+# Set when the prefetch thread completes its first refresh cycle —
+# meaning awaiting_transmittal() and friends are in cache and any
+# request that reads them will get a fast warm-cache hit. Routes that
+# care about cold-rebuild latency (like /desk, which is Governor-
+# facing and unforgiving of slow loads) wait on this event briefly
+# before serving. Without it, the first visitor after a restart hits a
+# 30-60s cold rebuild — a UX problem for a public surface.
+_first_prefetch_done = threading.Event()
+
+
+def _prefetch_with_signal():
+    """Warm awaiting_transmittal() SYNCHRONOUSLY first, signal that
+    /desk can serve fast now, THEN run the full refresh (which
+    includes LLM-stage warming). Split this way because /desk only
+    needs awaiting_transmittal's cache to be warm — it doesn't need
+    the LLM rationale / stakeholders / veto-letter caches to render.
+    Firing the signal early means /desk requests unblock after ~30s
+    instead of waiting the ~5 min the full pipeline takes."""
+    log.info("startup.warm_awaiting_begin")
+    try:
+        awaiting_transmittal()  # Builds the cache; subsequent reads are fast.
+    except Exception as exc:
+        log.warning("startup.warm_awaiting_failed err=%r", exc)
+    finally:
+        # Signal "warm" regardless of error. If awaiting_transmittal()
+        # itself errored, the request thread will hit the same error
+        # on its own retry — better fast failure than indefinite wait.
+        _first_prefetch_done.set()
+        log.info("startup.warm_awaiting_done")
+
+    # Now run the heavier refresh (LLM artifacts, fiscal notes, etc.)
+    # in the background. Requests don't wait on this.
+    log.info("refresh.startup_begin")
+    try:
+        _refresh_all()
+    except Exception as exc:
+        log.warning("refresh.startup_failed err=%r", exc)
+    log.info("refresh.startup_done")
+    while True:
+        time.sleep(REFRESH_INTERVAL)
+        log.info("refresh.hourly_begin")
+        try:
+            _refresh_all()
+        except Exception as exc:
+            log.warning("refresh.hourly_failed err=%r", exc)
+
 
 def _start_prefetch_once():
     global _prefetch_started
     if _prefetch_started:
         return
     _prefetch_started = True
-    threading.Thread(target=prefetch, daemon=True).start()
+    threading.Thread(target=_prefetch_with_signal, daemon=True).start()
     # Separate daemon thread for the slow votes-index build so it can
     # run in parallel with the main prefetch and not block requests.
     threading.Thread(target=_build_votes_index_async, daemon=True).start()
