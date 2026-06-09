@@ -310,11 +310,6 @@
       border-radius: 3px;
       font-family: ui-sans-serif, system-ui, sans-serif;
     }
-    .badge.veto-proof {
-      background: #efe9ff;
-      color: #4c3a8c;
-      border: 1px solid #d6c8f5;
-    }
     .badge.approps {
       background: #fff4dc;
       color: #875f00;
@@ -589,7 +584,6 @@
       {%- endif %}
 
       {%- set badge_list = [] %}
-      {%- if b.veto_proof %}{% set _ = badge_list.append('<span class="badge veto-proof">Veto-proof</span>') %}{% endif %}
       {%- if b.is_appropriations %}{% set _ = badge_list.append('<span class="badge approps">Approps</span>') %}{% endif %}
       {%- if fiscal >= 5000000 %}{% set _ = badge_list.append('<span class="badge fiscal-big">$' ~ ((fiscal/1000000) | round(1)) ~ 'M</span>') %}{% endif %}
       {%- if badge_list %}
@@ -644,9 +638,6 @@
       {%- endif %}
       {%- if meta_bits %}
       <div class="meta-line">{{ meta_bits | join('<span class="meta-sep">·</span>') | safe }}</div>
-      {%- endif %}
-      {%- if b.veto_proof %}
-      <div class="badges"><span class="badge veto-proof">Veto-proof</span></div>
       {%- endif %}
       {%- if exec_s %}
       <p class="why">{{ exec_s }}</p>
