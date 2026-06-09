@@ -280,7 +280,22 @@
       padding: 3px 10px;
       border-radius: 4px;
       font-family: ui-sans-serif, system-ui, sans-serif;
+      text-decoration: none;          /* anchor reset — no underline */
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.12s ease;
     }
+    .bn:hover {
+      background: rgba(30, 58, 138, 0.14);
+    }
+    .bn-ext {
+      font-size: 0.72rem;
+      opacity: 0.6;
+      font-weight: 400;
+      transform: translateY(-1px);    /* visually center the arrow */
+    }
+    .bn:hover .bn-ext { opacity: 1; }
     .title {
       font-size: 1.0rem;
       font-weight: 700;
@@ -549,7 +564,7 @@
       {%- set sponsor_party = b.sponsor_party or "" %}
     <div class="bill urgency-{{ urgency }}">
       <div class="bill-head">
-        <span class="bn">{{ b.billnumber }}</span>
+        <a class="bn" href="{{ b.akleg_url }}" target="_blank" rel="noopener" title="Open {{ b.billnumber }} on akleg.gov">{{ b.billnumber }} <span class="bn-ext">↗</span></a>
         <span class="days {{ urgency if urgency != 'normal' else '' }}">
           {%- if dl is none -%}—
           {%- elif dl == 0 -%}DUE TODAY
@@ -616,7 +631,7 @@
       {%- set sponsor_party = b.sponsor_party or "" %}
     <div class="bill urgency-normal">
       <div class="bill-head">
-        <span class="bn">{{ b.billnumber }}</span>
+        <a class="bn" href="{{ b.akleg_url }}" target="_blank" rel="noopener" title="Open {{ b.billnumber }} on akleg.gov">{{ b.billnumber }} <span class="bn-ext">↗</span></a>
         <span class="days">passed {{ b.passed_both_date or "—" }}</span>
       </div>
       <div class="title">{{ b.title }}</div>
