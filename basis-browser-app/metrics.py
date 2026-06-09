@@ -1409,7 +1409,17 @@ def awaiting_transmittal(session="34"):
     adjournment, per Article II §17) does not start until transmittal,
     so this is the bucket of "passed legislation in suspended animation."
     """
-    cached = _cache.get("awaiting_transmittal_v44", max_age=300)
+    # max_age=7200 (2 hours) intentionally exceeds the hourly refresh
+    # cadence so the cache stays "valid" for reads between scheduled
+    # writes. The previous max_age=300 created a 55-minute-per-hour
+    # window where reads missed the cache and triggered ~100s cold
+    # rebuilds on the request thread — fine for the operator view
+    # which has localStorage absorbing it, fatal for /desk which is
+    # server-rendered. Refresh quality is unchanged (hourly writes
+    # still keep the data current); we just let reads use the data
+    # the writes have produced instead of pessimistically rebuilding.
+    # The 2-hour ceiling tolerates one failed refresh cycle gracefully.
+    cached = _cache.get("awaiting_transmittal_v44", max_age=7200)
     if cached is not None:
         return cached
 
