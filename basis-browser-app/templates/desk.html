@@ -4,6 +4,34 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Governor's Desk — Bills Awaiting Decision</title>
+
+  {#- OpenGraph + Twitter Card meta. SMS apps (iMessage, RCS, WhatsApp,
+      Telegram) and social platforms use these to generate the
+      link-preview when someone shares the URL. The og:image is
+      dynamically generated at /desk/og.png and shows current bill
+      counts, so the preview self-updates as the data changes. #}
+  {%- set at_gov_n = (data.at_gov_bills or []) | length %}
+  {%- set awaiting_n = (data.bills or []) | length %}
+  {%- set min_left = (data.at_gov_bills or []) | map(attribute='governor_days_left') | reject('none') | list %}
+  {%- set min_days = min_left | min if min_left else None %}
+  {%- set og_desc -%}
+    {{ at_gov_n }} bill{{ "s" if at_gov_n != 1 else "" }} currently awaiting decision
+    {%- if min_days is not none %} — earliest deadline in {{ min_days }} day{{ "s" if min_days != 1 else "" }}{% endif -%}
+    .
+  {%- endset %}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Office of the Governor of Alaska">
+  <meta property="og:title" content="Governor's Desk — Bills Awaiting Decision">
+  <meta property="og:description" content="{{ og_desc | trim }}">
+  <meta property="og:url" content="https://leg.alaskatargeting.com/desk">
+  <meta property="og:image" content="https://leg.alaskatargeting.com/desk/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="{{ at_gov_n }} bills awaiting decision">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Governor's Desk — Bills Awaiting Decision">
+  <meta name="twitter:description" content="{{ og_desc | trim }}">
+  <meta name="twitter:image" content="https://leg.alaskatargeting.com/desk/og.png">
   <style>
     :root {
       --ink: #1c1c1c;
@@ -108,50 +136,82 @@
       color: var(--ink-muted);
       margin-left: 8px;
     }
-    .bill {
-      padding: 14px 0;
-      border-bottom: 1px solid var(--rule-soft);
+    /* Bills are rendered as cards — distinct, scannable, each with
+       its own visual chrome. Designed to read well on a phone screen
+       held in one hand and to print cleanly when the Governor wants
+       a paper version for a briefing. */
+    .bill-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
     }
-    .bill:last-child { border-bottom: none; }
+    .bill {
+      background: #fff;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      padding: 16px 20px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04),
+                  0 2px 6px rgba(0,0,0,0.025);
+      transition: box-shadow 0.15s ease;
+    }
+    .bill:hover {
+      box-shadow: 0 1px 2px rgba(0,0,0,0.06),
+                  0 4px 12px rgba(0,0,0,0.05);
+    }
     .bill-head {
       display: flex;
       align-items: baseline;
-      gap: 10px;
+      gap: 12px;
       flex-wrap: wrap;
     }
     .bn {
       font-weight: 700;
-      font-size: 1.02rem;
+      font-size: 1.1rem;
       letter-spacing: 0.01em;
-      min-width: 60px;
+      color: var(--accent);
+      min-width: 64px;
     }
     .title {
       flex: 1;
-      font-size: 0.96rem;
+      font-size: 1.0rem;
+      font-weight: 600;
+      letter-spacing: 0.005em;
     }
     /* GLO/DEPT recommendation chips intentionally removed from /desk
        — this view shows neutral bill-tracker info only, no internal
        political positioning. CSS variables for --sign/--veto/--lwos
        retained because the days-left badge still uses --urgent. */
     .days {
-      font-size: 0.84rem;
-      font-weight: 600;
+      font-size: 0.82rem;
+      font-weight: 700;
       color: var(--ink-muted);
       text-align: right;
       white-space: nowrap;
+      padding: 3px 10px;
+      background: var(--paper);
+      border-radius: 4px;
+      border: 1px solid var(--rule-soft);
     }
-    .days.urgent { color: var(--urgent); font-weight: 700; }
-    .days.medium { color: var(--medium); }
+    .days.urgent {
+      color: #fff;
+      background: var(--urgent);
+      border-color: var(--urgent);
+    }
+    .days.medium {
+      color: #fff;
+      background: var(--medium);
+      border-color: var(--medium);
+    }
     .bill-meta {
-      font-size: 0.84rem;
+      font-size: 0.82rem;
       color: var(--ink-muted);
-      margin-top: 4px;
+      margin-top: 6px;
     }
     .why {
-      font-size: 0.9rem;
+      font-size: 0.94rem;
       color: var(--ink);
-      margin: 6px 0 0 0;
-      line-height: 1.4;
+      margin: 10px 0 0 0;
+      line-height: 1.45;
     }
     .why em { color: var(--ink-muted); }
     /* <details> / .expander / .exec removed — /desk no longer surfaces
@@ -175,11 +235,27 @@
     }
     .footer a { color: var(--accent); text-decoration: none; }
     .footer a:hover { text-decoration: underline; }
-    /* Print styling — strip backgrounds, trim chrome. */
+    /* Print styling — strip card chrome, render as flat compact rows. */
     @media print {
       body { background: #fff; }
       .page { padding: 12px 18px; max-width: 100%; }
       .summary-card, .stat { background: transparent; border-color: #ccc; }
+      .bill-list { display: block; }
+      .bill {
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid #ddd;
+        border-radius: 0;
+        box-shadow: none;
+        padding: 8px 0;
+        page-break-inside: avoid;
+      }
+      .days {
+        background: transparent !important;
+        border: 1px solid currentColor;
+        padding: 1px 6px;
+      }
+      .days.urgent, .days.medium { color: inherit !important; }
       a { color: inherit; text-decoration: none; }
       .footer { display: none; }
     }
@@ -240,6 +316,7 @@
     {%- if at_gov_count > 0 %}
     <h2 class="section">At your desk <span class="sub">sorted by days remaining</span></h2>
 
+    <div class="bill-list">
     {%- for b in at_gov %}
       {%- set dl = b.governor_days_left %}
       {%- set days_cls = "urgent" if (dl is not none and dl < 5) else ("medium" if (dl is not none and dl < 10) else "") %}
@@ -266,10 +343,12 @@
       {%- endif %}
     </div>
     {%- endfor %}
+    </div>
     {%- endif %}
 
     {%- if awaiting_count > 0 %}
     <h2 class="section">Coming to your desk <span class="sub">passed; awaiting formal transmittal</span></h2>
+    <div class="bill-list">
     {%- for b in awaiting %}
       {%- set ll = b.llm_summary or {} %}
       {%- set exec_s = ll.executive_summary or "" %}
@@ -284,6 +363,7 @@
       {%- endif %}
     </div>
     {%- endfor %}
+    </div>
     {%- endif %}
 
     {%- if at_gov_count == 0 and awaiting_count == 0 %}

@@ -626,6 +626,120 @@ def desk():
     return render_template("desk.html", data=data)
 
 
+@app.route("/desk/og.png")
+def desk_og_image():
+    """OpenGraph / Twitter Card preview image for /desk.
+
+    SMS apps (iMessage, RCS, WhatsApp, Telegram) and social platforms
+    fetch this URL when the /desk link is shared. The image is
+    generated server-side via Pillow so it shows CURRENT bill counts
+    rather than a static brand asset. Caches the PNG bytes briefly
+    so a viral share doesn't re-render on every preview-fetcher hit.
+
+    Sized 1200x630 — the OpenGraph canonical aspect ratio (1.91:1)
+    that all major messaging clients render without cropping.
+    """
+    from io import BytesIO
+    from PIL import Image, ImageDraw, ImageFont
+    import cache as _c_og
+    cached = _c_og.get("desk_og_png_v1", max_age=300)
+    if cached is not None:
+        return cached, 200, {"Content-Type": "image/png",
+                              "Cache-Control": "public, max-age=300"}
+
+    try:
+        data = awaiting_transmittal()
+    except Exception:
+        data = {"at_gov_bills": [], "bills": []}
+    at_gov = data.get("at_gov_bills") or []
+    awaiting = data.get("bills") or []
+    n_at_desk = len(at_gov)
+    n_awaiting = len(awaiting)
+    n_total = n_at_desk + n_awaiting
+    min_days = None
+    if at_gov:
+        days = [b.get("governor_days_left") for b in at_gov
+                if b.get("governor_days_left") is not None]
+        if days:
+            min_days = min(days)
+
+    W, H = 1200, 630
+    # Paper-toned background to match /desk
+    img = Image.new("RGB", (W, H), (252, 250, 245))
+    draw = ImageDraw.Draw(img)
+
+    # Find a serif font — fall back gracefully if not present.
+    serif_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSerif-Bold.ttf",
+    ]
+    sans_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+    def _font(paths, size):
+        for p in paths:
+            try:
+                return ImageFont.truetype(p, size)
+            except (OSError, IOError):
+                continue
+        return ImageFont.load_default()
+
+    f_title = _font(serif_paths, 56)
+    f_huge  = _font(serif_paths, 220)
+    f_label = _font(sans_paths, 28)
+    f_url   = _font(sans_paths, 24)
+    f_sub   = _font(serif_paths, 32)
+
+    ink = (28, 28, 28)
+    ink_muted = (90, 90, 90)
+    accent_urgent = (192, 57, 43)
+    rule = (200, 195, 180)
+
+    # Top rule and heading band
+    draw.line([(80, 100), (W - 80, 100)], fill=ink, width=3)
+    draw.text((W // 2, 60), "GOVERNOR'S DESK",
+              fill=ink, font=f_title, anchor="mm")
+
+    # The big number: bills at desk
+    big_color = accent_urgent if (min_days is not None and min_days < 5) else ink
+    draw.text((W // 2, 290), str(n_at_desk),
+              fill=big_color, font=f_huge, anchor="mm")
+
+    # Big-number label
+    label_text = ("BILL AWAITING DECISION" if n_at_desk == 1
+                  else "BILLS AWAITING DECISION")
+    draw.text((W // 2, 425), label_text,
+              fill=ink_muted, font=f_label, anchor="mm")
+
+    # Secondary line: earliest deadline / queued count
+    sub_parts = []
+    if min_days is not None:
+        unit = "day" if min_days == 1 else "days"
+        sub_parts.append(f"Earliest deadline: {min_days} {unit}")
+    if n_awaiting > 0:
+        sub_parts.append(
+            f"{n_awaiting} more queued for transmittal"
+        )
+    if sub_parts:
+        draw.text((W // 2, 490), "  ·  ".join(sub_parts),
+                  fill=ink, font=f_sub, anchor="mm")
+
+    # Bottom rule + URL
+    draw.line([(80, H - 100), (W - 80, H - 100)], fill=rule, width=2)
+    draw.text((W // 2, H - 60),
+              "leg.alaskatargeting.com/desk",
+              fill=ink_muted, font=f_url, anchor="mm")
+
+    buf = BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    png = buf.getvalue()
+    _c_og.put("desk_og_png_v1", png)
+    return png, 200, {"Content-Type": "image/png",
+                       "Cache-Control": "public, max-age=300"}
+
+
 @app.route("/action-codes")
 def action_codes():
     return render_template("action_codes.html")
