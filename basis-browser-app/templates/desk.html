@@ -223,61 +223,131 @@
       color: var(--ink-muted);
       margin-left: 8px;
     }
-    /* Bills are rendered as cards — distinct, scannable, each with
-       its own visual chrome. Designed to read well on a phone screen
-       held in one hand and to print cleanly when the Governor wants
-       a paper version for a briefing. */
+    /* Bill cards laid out as a responsive grid — square-ish proportions,
+       2-3 across on desktop, 1 column on phones. minmax(320px, 1fr) is
+       the canonical "auto-sizing card grid" pattern: column count is a
+       function of viewport width, not media queries. */
     .bill-list {
       display: grid;
-      gap: 12px;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
       margin-top: 14px;
     }
     .bill {
       background: #fff;
       border: 1px solid var(--rule);
-      border-radius: 6px;
-      padding: 16px 20px;
+      border-radius: 8px;
+      padding: 18px 20px;
       box-shadow: 0 1px 2px rgba(0,0,0,0.04),
-                  0 2px 6px rgba(0,0,0,0.025);
-      transition: box-shadow 0.15s ease;
+                  0 2px 8px rgba(0,0,0,0.03);
+      transition: box-shadow 0.18s ease, transform 0.18s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+      overflow: hidden;
+      /* Urgency-coded top accent band drawn via ::before pseudo. */
     }
+    .bill::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--rule);
+    }
+    .bill.urgency-urgent::before { background: var(--urgent); }
+    .bill.urgency-medium::before { background: var(--medium); }
+    .bill.urgency-normal::before { background: #6b7c93; }
     .bill:hover {
       box-shadow: 0 1px 2px rgba(0,0,0,0.06),
-                  0 4px 12px rgba(0,0,0,0.05);
+                  0 6px 16px rgba(0,0,0,0.06);
+      transform: translateY(-1px);
     }
     .bill-head {
       display: flex;
       align-items: baseline;
-      gap: 12px;
-      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 10px;
     }
     .bn {
       font-weight: 700;
-      font-size: 1.1rem;
-      letter-spacing: 0.01em;
+      font-size: 1.0rem;
+      letter-spacing: 0.02em;
       color: var(--accent);
-      min-width: 64px;
+      background: rgba(30, 58, 138, 0.08);
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-family: ui-sans-serif, system-ui, sans-serif;
     }
     .title {
-      flex: 1;
       font-size: 1.0rem;
-      font-weight: 600;
+      font-weight: 700;
       letter-spacing: 0.005em;
+      color: var(--ink);
+      line-height: 1.3;
+    }
+    .meta-line {
+      font-size: 0.82rem;
+      color: var(--ink-muted);
+      line-height: 1.45;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }
+    .meta-line .meta-sep { margin: 0 6px; color: var(--rule); }
+    .meta-line .meta-strong { color: var(--ink); font-weight: 600; }
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }
+    .badge.veto-proof {
+      background: #efe9ff;
+      color: #4c3a8c;
+      border: 1px solid #d6c8f5;
+    }
+    .badge.approps {
+      background: #fff4dc;
+      color: #875f00;
+      border: 1px solid #ebd8a0;
+    }
+    .badge.fiscal-big {
+      background: #fde8e8;
+      color: #8a2c2c;
+      border: 1px solid #f0c4c4;
+    }
+    .bill-foot {
+      font-size: 0.76rem;
+      color: var(--ink-muted);
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      margin-top: auto;  /* pushes to card bottom for consistent footers */
+      padding-top: 4px;
+      border-top: 1px dashed var(--rule-soft);
     }
     /* GLO/DEPT recommendation chips intentionally removed from /desk
        — this view shows neutral bill-tracker info only, no internal
        political positioning. CSS variables for --sign/--veto/--lwos
        retained because the days-left badge still uses --urgent. */
     .days {
-      font-size: 0.82rem;
+      font-size: 0.78rem;
       font-weight: 700;
       color: var(--ink-muted);
       text-align: right;
       white-space: nowrap;
-      padding: 3px 10px;
+      padding: 3px 9px;
       background: var(--paper);
       border-radius: 4px;
       border: 1px solid var(--rule-soft);
+      font-family: ui-sans-serif, system-ui, sans-serif;
     }
     .days.urgent {
       color: #fff;
@@ -289,16 +359,11 @@
       background: var(--medium);
       border-color: var(--medium);
     }
-    .bill-meta {
-      font-size: 0.82rem;
-      color: var(--ink-muted);
-      margin-top: 6px;
-    }
     .why {
-      font-size: 0.94rem;
+      font-size: 0.88rem;
       color: var(--ink);
-      margin: 10px 0 0 0;
-      line-height: 1.45;
+      margin: 4px 0 0 0;
+      line-height: 1.5;
     }
     .why em { color: var(--ink-muted); }
     /* <details> / .expander / .exec removed — /desk no longer surfaces
@@ -479,15 +544,18 @@
     <div class="bill-list">
     {%- for b in at_gov %}
       {%- set dl = b.governor_days_left %}
-      {%- set days_cls = "urgent" if (dl is not none and dl < 5) else ("medium" if (dl is not none and dl < 10) else "") %}
+      {%- set urgency = "urgent" if (dl is not none and dl < 5) else ("medium" if (dl is not none and dl < 10) else "normal") %}
       {%- set ll = b.llm_summary or {} %}
       {%- set exec_s = ll.executive_summary or "" %}
-      {%- set summ = ll.summary or "" %}
-    <div class="bill">
+      {%- set hv = b.house_vote or {} %}
+      {%- set sv = b.senate_vote or {} %}
+      {%- set fiscal = (b.fiscal_total or {}).get("total_dollars", 0) or 0 %}
+      {%- set sponsor_name = b.sponsor or "" %}
+      {%- set sponsor_party = b.sponsor_party or "" %}
+    <div class="bill urgency-{{ urgency }}">
       <div class="bill-head">
         <span class="bn">{{ b.billnumber }}</span>
-        <span class="title">{{ b.title }}</span>
-        <span class="days {{ days_cls }}">
+        <span class="days {{ urgency if urgency != 'normal' else '' }}">
           {%- if dl is none -%}—
           {%- elif dl == 0 -%}DUE TODAY
           {%- elif dl < 0 -%}OVERDUE
@@ -495,12 +563,47 @@
           {%- endif -%}
         </span>
       </div>
-      <div class="bill-meta">
-        Transmitted {{ b.transmit_date or "—" }}{% if b.return_by_date %} · due back {{ b.return_by_date }}{% endif %}
-      </div>
+      <div class="title">{{ b.title }}</div>
+
+      {#- Compact metadata line: sponsor · vote · fiscal — only fields
+          that have data render, joined by separator dots. All public
+          BASIS data, no political positioning. #}
+      {%- set meta_bits = [] %}
+      {%- if sponsor_name -%}
+        {%- set s_short = sponsor_name.split(" ")[-1] if " " in sponsor_name else sponsor_name -%}
+        {%- set _ = meta_bits.append('<span class="meta-strong">' ~ s_short ~ ('</span> (' ~ sponsor_party ~ ')' if sponsor_party else '</span>')) -%}
+      {%- endif %}
+      {%- if hv.yeas is defined and sv.yeas is defined and (hv.yeas or hv.nays) %}
+        {%- set _ = meta_bits.append('H ' ~ hv.yeas ~ '–' ~ hv.nays ~ ' · S ' ~ sv.yeas ~ '–' ~ sv.nays) %}
+      {%- endif %}
+      {%- if fiscal >= 100000 %}
+        {%- if fiscal >= 1000000 %}
+          {%- set fiscal_str = '$' ~ ((fiscal / 1000000) | round(1)) ~ 'M' %}
+        {%- else %}
+          {%- set fiscal_str = '$' ~ ((fiscal / 1000) | round(0) | int) ~ 'K' %}
+        {%- endif %}
+        {%- set _ = meta_bits.append('≈ ' ~ fiscal_str ~ ' fiscal') %}
+      {%- endif %}
+      {%- if meta_bits %}
+      <div class="meta-line">{{ meta_bits | join('<span class="meta-sep">·</span>') | safe }}</div>
+      {%- endif %}
+
+      {%- set badge_list = [] %}
+      {%- if b.veto_proof %}{% set _ = badge_list.append('<span class="badge veto-proof">Veto-proof</span>') %}{% endif %}
+      {%- if b.is_appropriations %}{% set _ = badge_list.append('<span class="badge approps">Approps</span>') %}{% endif %}
+      {%- if fiscal >= 5000000 %}{% set _ = badge_list.append('<span class="badge fiscal-big">$' ~ ((fiscal/1000000) | round(1)) ~ 'M</span>') %}{% endif %}
+      {%- if badge_list %}
+      <div class="badges">{{ badge_list | join('') | safe }}</div>
+      {%- endif %}
+
       {%- if exec_s %}
       <p class="why">{{ exec_s }}</p>
       {%- endif %}
+
+      <div class="bill-foot">
+        Transmitted {{ b.transmit_date or "—" }}
+        {%- if b.return_by_date %} · due back {{ b.return_by_date }}{% endif %}
+      </div>
     </div>
     {%- endfor %}
     </div>
@@ -512,12 +615,39 @@
     {%- for b in awaiting %}
       {%- set ll = b.llm_summary or {} %}
       {%- set exec_s = ll.executive_summary or "" %}
-    <div class="bill">
+      {%- set hv = b.house_vote or {} %}
+      {%- set sv = b.senate_vote or {} %}
+      {%- set fiscal = (b.fiscal_total or {}).get("total_dollars", 0) or 0 %}
+      {%- set sponsor_name = b.sponsor or "" %}
+      {%- set sponsor_party = b.sponsor_party or "" %}
+    <div class="bill urgency-normal">
       <div class="bill-head">
         <span class="bn">{{ b.billnumber }}</span>
-        <span class="title">{{ b.title }}</span>
         <span class="days">passed {{ b.passed_both_date or "—" }}</span>
       </div>
+      <div class="title">{{ b.title }}</div>
+      {%- set meta_bits = [] %}
+      {%- if sponsor_name -%}
+        {%- set s_short = sponsor_name.split(" ")[-1] if " " in sponsor_name else sponsor_name -%}
+        {%- set _ = meta_bits.append('<span class="meta-strong">' ~ s_short ~ ('</span> (' ~ sponsor_party ~ ')' if sponsor_party else '</span>')) -%}
+      {%- endif %}
+      {%- if hv.yeas is defined and sv.yeas is defined and (hv.yeas or hv.nays) %}
+        {%- set _ = meta_bits.append('H ' ~ hv.yeas ~ '–' ~ hv.nays ~ ' · S ' ~ sv.yeas ~ '–' ~ sv.nays) %}
+      {%- endif %}
+      {%- if fiscal >= 100000 %}
+        {%- if fiscal >= 1000000 %}
+          {%- set fiscal_str = '$' ~ ((fiscal / 1000000) | round(1)) ~ 'M' %}
+        {%- else %}
+          {%- set fiscal_str = '$' ~ ((fiscal / 1000) | round(0) | int) ~ 'K' %}
+        {%- endif %}
+        {%- set _ = meta_bits.append('≈ ' ~ fiscal_str ~ ' fiscal') %}
+      {%- endif %}
+      {%- if meta_bits %}
+      <div class="meta-line">{{ meta_bits | join('<span class="meta-sep">·</span>') | safe }}</div>
+      {%- endif %}
+      {%- if b.veto_proof %}
+      <div class="badges"><span class="badge veto-proof">Veto-proof</span></div>
+      {%- endif %}
       {%- if exec_s %}
       <p class="why">{{ exec_s }}</p>
       {%- endif %}

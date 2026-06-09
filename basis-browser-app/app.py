@@ -623,7 +623,18 @@ def desk():
                 "resolutions_substantive": [],
                 "resolutions_procedural": [],
                 "counts": {}, "gov_deadline_if_transmitted_today": 15}
-    return render_template("desk.html", data=data)
+    rendered = render_template("desk.html", data=data)
+    # Cache-Control: no-cache forces browsers to revalidate every visit
+    # rather than serve their stale local copy. Critical for a Governor-
+    # facing surface where data changes frequently (new transmittals,
+    # days_left tick-downs); without this, the browser may serve
+    # yesterday's view from its heuristic cache. The actual response
+    # body is still served; "no-cache" just means "revalidate before
+    # reuse," which is the right default for live data.
+    return rendered, 200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-cache, must-revalidate",
+    }
 
 
 @app.route("/desk/og.png")
