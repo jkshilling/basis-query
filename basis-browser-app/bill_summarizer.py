@@ -51,9 +51,13 @@ _KEY_PATHS = (
     "/srv/basis-browser/.anthropic-key",
 )
 
-# Model + endpoint. Sonnet 4.6 is the current generation as of
-# 2026-05-27 (4-7 is Opus-only at this writing).
+# Default model: Sonnet 4.6 — fast + cheap, fine for the high-volume
+# summaries (exec_summary, rationale, stakeholders, impacted_depts).
 _MODEL = "claude-sonnet-4-6"
+# High-stakes path: Opus 4.8 for veto-letter drafting. These letters
+# are 9 per session, go to the Governor's desk, and warrant the
+# stronger model. Cost is ~5× Sonnet per call but volume is tiny.
+_VETO_LETTER_MODEL = "claude-opus-4-8"
 _API_URL = "https://api.anthropic.com/v1/messages"
 _API_VERSION = "2023-06-01"
 
@@ -1076,7 +1080,7 @@ def synthesize_veto_letter(billnumber, blue_sheets, bill_meta,
         bn, blue_sheets, briefing_packets, bill_meta, glo_payload, dept_payload,
     )
     body = {
-        "model": _MODEL,
+        "model": _VETO_LETTER_MODEL,
         "max_tokens": 900,
         "system": _VETO_LETTER_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_msg}],
