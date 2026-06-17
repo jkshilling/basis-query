@@ -921,7 +921,7 @@ def get_cached_stakeholders(billnumber, blue_sheets, briefing_packets, bill_meta
 # VETO is what controls (re)generation.
 # --------------------------------------------------------------------------
 
-_VETO_LETTER_PROMPT_VERSION = "v2-dunleavy-format"
+_VETO_LETTER_PROMPT_VERSION = "v3-akleg-verified"
 
 # Hard-coded for the 34th Legislature. President Stevens verified from
 # the April 22 2025 Senate Journal. Speaker Edgmon verified from House
@@ -929,6 +929,49 @@ _VETO_LETTER_PROMPT_VERSION = "v2-dunleavy-format"
 # leadership change mid-session, replace with a BASIS member-lookup.
 _SENATE_PRESIDENT_LASTNAME = "Stevens"
 _HOUSE_SPEAKER_LASTNAME    = "Edgmon"
+_SENATE_PRESIDENT_FULL     = "Gary Stevens"
+_HOUSE_SPEAKER_FULL        = "Bryce Edgmon"
+_SENATE_PRESIDENT_ROOM     = "Capitol Building, Room 111"
+_HOUSE_SPEAKER_ROOM        = "Capitol Building, Room 208"
+_LEGISLATURE_ZIP           = "Juneau, AK 99801-1182"
+
+# Letterhead block — verbatim from the akleg.gov/PDF/34/Vetoes/* PDFs
+# (SB 64, HB 78, HB 26 transcribed via Claude vision OCR, 2026-06-17).
+# Two-column layout in the PDFs (Juneau on left, Anchorage on right);
+# rendered as a flat block for the plain-text Google Doc — staff
+# replaces with Word letterhead at finalization, but the draft
+# carries it for completeness.
+_LETTERHEAD = (
+    "STATE CAPITOL                  550 West Seventh Avenue, Suite 1700\n"
+    "P.O. Box 110001                Anchorage, AK 99501\n"
+    "Juneau, AK 99811-0001          907-269-7450\n"
+    "907-465-3500\n"
+    "\n"
+    "Governor Mike Dunleavy\n"
+    "STATE OF ALASKA"
+)
+
+
+def _format_designator_for_letter(name):
+    """Normalize a BASIS version name to formal-letter case.
+
+    BASIS stores 'HCS CSSB 24(FIN) am H' (lowercase 'am'). Real
+    Dunleavy veto letters use 'HCS CSSB 24(FIN) AM H' — uppercase
+    the bare ' am', ' am H', ' am S', and any '(EFD ... H/S)'
+    parenthetical that follows.
+    """
+    if not name:
+        return name
+    import re as _re
+    # Uppercase ' am ' / ' am$' (with optional H/S after)
+    out = _re.sub(r"\bam\b", "AM", name)
+    # Uppercase parentheticals that contain effective-date floor
+    # actions, e.g. '(efd add S)' -> '(EFD ADD S)', '(efd fld H)' ->
+    # '(EFD FLD H)'. These appear after AM markers in some bills.
+    def _up_parens(m):
+        return "(" + m.group(1).upper() + ")"
+    out = _re.sub(r"\((efd[^\)]*)\)", _up_parens, out, flags=_re.IGNORECASE)
+    return out
 
 _VETO_LETTER_SYSTEM_PROMPT = """You draft veto letters in the voice of \
 Alaska Governor Mike Dunleavy. Output ONLY a JSON object with one field:
@@ -973,10 +1016,11 @@ STRUCTURE:
 - Paragraph 3 (optional): elaborate or cite the specific concern (2-3 sentences)
 - Paragraph 4 (optional, for non-veto-proof bills only): offer to work toward \
 a revised bill the administration can support (1-2 sentences)
-- FINAL paragraph: MUST end with the exact sentence "For these reasons, I have \
-vetoed this bill." This matches the verbatim closing pattern of every Dunleavy \
-veto-transmittal letter on file. Do not paraphrase. Include this sentence as \
-the final sentence of the last paragraph (don't break it into its own paragraph).
+
+DO NOT write the closing sentence "For these reasons, I have vetoed this bill." \
+That sentence is appended programmatically as its own standalone paragraph after \
+your body — every Dunleavy veto-transmittal letter on file places it on its own \
+line between the body and "Sincerely,". If you write it, it will be duplicated.
 
 DO NOT write the salutation, "Under the authority..." preamble, bill \
 identification, or signature block. Just body_paragraphs. Return ONLY the JSON \
@@ -1144,15 +1188,32 @@ def synthesize_veto_letter(billnumber, blue_sheets, bill_meta,
     if prefix.startswith("H"):
         salutation = f"Dear Speaker {_HOUSE_SPEAKER_LASTNAME}:"
         addressee_chamber = "House"
+        recipient_block = (
+            f"The Honorable {_HOUSE_SPEAKER_FULL}\n"
+            f"Speaker of the House\n"
+            f"Alaska State Legislature\n"
+            f"{_HOUSE_SPEAKER_ROOM}\n"
+            f"{_LEGISLATURE_ZIP}"
+        )
     else:
         salutation = f"Dear President {_SENATE_PRESIDENT_LASTNAME}:"
         addressee_chamber = "Senate"
+        recipient_block = (
+            f"The Honorable {_SENATE_PRESIDENT_FULL}\n"
+            f"Senate President\n"
+            f"Alaska State Legislature\n"
+            f"{_SENATE_PRESIDENT_ROOM}\n"
+            f"{_LEGISLATURE_ZIP}"
+        )
 
-    # Bill version designator — e.g. "HCS CSSB 24(FIN) am H" —
+    # Bill version designator — e.g. "HCS CSSB 24(FIN) AM H" —
     # sourced from BASIS Versions data via the operative (latest
     # non-Z) version's `name` attribute. The Z version is the bare
     # "Enrolled SB X" form which is NOT what the Governor cites.
-    version_designator = (bill_meta or {}).get("operative_version_name") or bn
+    # Normalize to uppercase 'AM' / '(EFD ...)' per the verbatim
+    # akleg.gov veto letters on file.
+    version_designator = _format_designator_for_letter(
+        (bill_meta or {}).get("operative_version_name") or bn)
     # Pre-Z title arrives quoted with "An Act" prefix already in it —
     # use verbatim. Fall back to the Z (cleaned) title only as last
     # resort; it lacks the "An Act" prefix and surrounding quotes.
@@ -1161,6 +1222,12 @@ def synthesize_veto_letter(billnumber, blue_sheets, bill_meta,
                    or "")
 
     out = {
+        # Letterhead block — verbatim from akleg.gov vetoes. Two-column
+        # in the PDFs; flat block here.
+        "letterhead":         _LETTERHEAD,
+        # Placeholder — staff fills in the actual veto signing date.
+        "date_line":          "[DATE]",
+        "recipient_block":    recipient_block,
         "salutation":         salutation,
         "addressee_chamber":  addressee_chamber,
         # No comma after "Section 15" — matches verbatim Dunleavy
@@ -1170,11 +1237,11 @@ def synthesize_veto_letter(billnumber, blue_sheets, bill_meta,
                                 "vetoed the following bill:"),
         "version_designator": version_designator,
         "legal_title":        legal_title,
-        # No transition line. Real Dunleavy letters jump straight
-        # from the bill identifier block into the body paragraphs.
-        # Kept as empty string so the renderer can elide it cleanly.
         "transition":         "",
         "body_paragraphs":    paragraphs,
+        # Final standalone closing paragraph — verbatim convention
+        # from SB 64, HB 78, HB 26 (akleg.gov/PDF/34/Vetoes).
+        "final_statement":    "For these reasons, I have vetoed this bill.",
         "closing":            "Sincerely,",
         "signature_line":     "",
         "signer_name":        "Mike Dunleavy",
