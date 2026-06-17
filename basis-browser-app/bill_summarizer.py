@@ -921,7 +921,7 @@ def get_cached_stakeholders(billnumber, blue_sheets, briefing_packets, bill_meta
 # VETO is what controls (re)generation.
 # --------------------------------------------------------------------------
 
-_VETO_LETTER_PROMPT_VERSION = "v1"
+_VETO_LETTER_PROMPT_VERSION = "v2-dunleavy-format"
 
 # Hard-coded for the 34th Legislature. President Stevens verified from
 # the April 22 2025 Senate Journal. Speaker Edgmon verified from House
@@ -973,6 +973,10 @@ STRUCTURE:
 - Paragraph 3 (optional): elaborate or cite the specific concern (2-3 sentences)
 - Paragraph 4 (optional, for non-veto-proof bills only): offer to work toward \
 a revised bill the administration can support (1-2 sentences)
+- FINAL paragraph: MUST end with the exact sentence "For these reasons, I have \
+vetoed this bill." This matches the verbatim closing pattern of every Dunleavy \
+veto-transmittal letter on file. Do not paraphrase. Include this sentence as \
+the final sentence of the last paragraph (don't break it into its own paragraph).
 
 DO NOT write the salutation, "Under the authority..." preamble, bill \
 identification, or signature block. Just body_paragraphs. Return ONLY the JSON \
@@ -1144,32 +1148,38 @@ def synthesize_veto_letter(billnumber, blue_sheets, bill_meta,
         salutation = f"Dear President {_SENATE_PRESIDENT_LASTNAME}:"
         addressee_chamber = "Senate"
 
-    # Bill version designator — e.g. "SCS CSHB 69(FIN)" — sourced from
-    # bill_meta. Falls back to bare billnumber if no version letter.
-    version_letter = (bill_meta or {}).get("latest_version_letter") or ""
-    version_designator = bn
-    if version_letter and version_letter.upper() != "A":
-        # Real version letter signals committee substitute / amended.
-        # We can't reconstruct the full SCS/CS prefix chain without the
-        # action history, so fall back to "<BN> (version <X>)" form.
-        version_designator = f"{bn} (version {version_letter})"
-    legal_title = (bill_meta or {}).get("latest_version_title") or ""
+    # Bill version designator — e.g. "HCS CSSB 24(FIN) am H" —
+    # sourced from BASIS Versions data via the operative (latest
+    # non-Z) version's `name` attribute. The Z version is the bare
+    # "Enrolled SB X" form which is NOT what the Governor cites.
+    version_designator = (bill_meta or {}).get("operative_version_name") or bn
+    # Pre-Z title arrives quoted with "An Act" prefix already in it —
+    # use verbatim. Fall back to the Z (cleaned) title only as last
+    # resort; it lacks the "An Act" prefix and surrounding quotes.
+    legal_title = ((bill_meta or {}).get("operative_version_title")
+                   or (bill_meta or {}).get("latest_version_title")
+                   or "")
 
     out = {
         "salutation":         salutation,
         "addressee_chamber":  addressee_chamber,
+        # No comma after "Section 15" — matches verbatim Dunleavy
+        # veto-letter form on file.
         "constitutional_cite": ("Under the authority vested in me by Article II, "
-                                "Section 15, of the Alaska Constitution, I have "
+                                "Section 15 of the Alaska Constitution, I have "
                                 "vetoed the following bill:"),
         "version_designator": version_designator,
         "legal_title":        legal_title,
-        "transition":         f"I have vetoed {version_designator} "
-                              f"for the following reasons:",
+        # No transition line. Real Dunleavy letters jump straight
+        # from the bill identifier block into the body paragraphs.
+        # Kept as empty string so the renderer can elide it cleanly.
+        "transition":         "",
         "body_paragraphs":    paragraphs,
         "closing":            "Sincerely,",
-        "signature_line":     "/s/",
+        "signature_line":     "",
         "signer_name":        "Mike Dunleavy",
         "signer_title":       "Governor",
+        "footer":             "Enclosure",
         "model":              resp.get("model") or _VETO_LETTER_MODEL,
         "generated_at":       int(time.time()),
         "input_hash":         h,

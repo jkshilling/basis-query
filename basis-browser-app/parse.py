@@ -332,9 +332,18 @@ def parse_bills_extended(result):
             ver_count = 0
             latest_letter = ""
             latest_title = ""
+            # For veto letters / formal correspondence we need the
+            # canonical pre-engrossment designator (e.g.
+            # "HCS CSSB 24(FIN) am H"). The Z (enrolled) version's
+            # name is just "Enrolled SB 24"; the operative form is
+            # whichever non-Z version has the highest letter.
+            operative_letter = ""
+            operative_name = ""
+            operative_title_quoted = ""
             for ver in versions:
                 if strip_ns(ver.tag) == "Version":
                     letter = ver.attrib.get("versionletter", "")
+                    name = ver.attrib.get("name", "") or ""
                     if letter != "Z":
                         ver_count += 1
                     # Keep the alphabetically-latest version's title.
@@ -344,9 +353,19 @@ def parse_bills_extended(result):
                     if letter and letter > latest_letter:
                         latest_letter = letter
                         latest_title = title.strip().strip('"').strip()
+                    if letter and letter != "Z" and letter > operative_letter:
+                        operative_letter = letter
+                        operative_name = name.strip()
+                        # Pre-Z titles arrive with a leading quote +
+                        # "An Act" prefix; preserve verbatim for formal
+                        # correspondence rendering.
+                        operative_title_quoted = title.strip()
             bill["version_count"] = ver_count
             bill["latest_version_letter"] = latest_letter
             bill["latest_version_title"] = latest_title
+            bill["operative_version_letter"] = operative_letter
+            bill["operative_version_name"]   = operative_name
+            bill["operative_version_title"]  = operative_title_quoted
 
         bills.append(bill)
     return bills
