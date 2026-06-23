@@ -51,13 +51,23 @@ _KEY_PATHS = (
     "/srv/basis-browser/.anthropic-key",
 )
 
-# Default model: Sonnet 4.6 — fast + cheap, fine for the high-volume
-# summaries (exec_summary, rationale, stakeholders, impacted_depts).
-_MODEL = "claude-sonnet-4-6"
-# High-stakes path: Opus 4.8 for veto-letter drafting. These letters
-# are 9 per session, go to the Governor's desk, and warrant the
-# stronger model. Cost is ~5× Sonnet per call but volume is tiny.
-_VETO_LETTER_MODEL = "claude-opus-4-8"
+# Model tiers — picked per output's stakes:
+#
+#  - _MODEL (Sonnet 4.6): structural/internal outputs that don't
+#    surface as the Governor's-office-facing analysis. Used by
+#    stakeholders + impacted_departments. Cheap, plenty good.
+#
+#  - _HIGH_STAKES_MODEL (Opus 4.8): the analyses staff actually read
+#    when advising the Governor — executive_summary + rationale. A
+#    bad call here propagates into a veto/sign decision, so quality
+#    matters more than cost. ~5× per-call cost vs Sonnet, but volume
+#    is bounded (~30 at-Gov bills × 2 calls × ~hourly refresh).
+#
+#  - _VETO_LETTER_MODEL (Opus 4.8): final-product drafting that goes
+#    onto the Governor's desk under his signature.
+_MODEL              = "claude-sonnet-4-6"
+_HIGH_STAKES_MODEL  = "claude-opus-4-8"
+_VETO_LETTER_MODEL  = "claude-opus-4-8"
 _API_URL = "https://api.anthropic.com/v1/messages"
 _API_VERSION = "2023-06-01"
 
@@ -71,7 +81,7 @@ _CACHE: dict | None = None
 
 # Bump this when you change the prompt below — it gets folded into
 # the cache key so every cached summary regenerates automatically.
-_SYSTEM_PROMPT_VERSION = "v9-exec-22w-max"
+_SYSTEM_PROMPT_VERSION = "v9-exec-22w-max-opus"
 
 _SYSTEM_PROMPT = """You are writing analysis for a veto-decision-support dashboard \
 about Alaska bills. For each bill, return a JSON object with TWO fields:
@@ -412,7 +422,7 @@ def summarize_bill(billnumber: str, blue_sheets: list,
 
     user_msg = _build_user_message(bn, blue_sheets, bill_meta, briefing_packets)
     body = {
-        "model": _MODEL,
+        "model": _HIGH_STAKES_MODEL,
         "max_tokens": 600,  # ~250 words target + buffer
         "system": _SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_msg}],
@@ -499,7 +509,7 @@ def summarize_bill(billnumber: str, blue_sheets: list,
     out = {
         "executive_summary": exec_summary,
         "summary":           full_summary,
-        "model":             _MODEL,
+        "model":             resp.get("model") or _HIGH_STAKES_MODEL,
         "generated_at":      int(time.time()),
         "input_hash":        h,
         "billnumber":        bn,
@@ -529,7 +539,7 @@ def get_cached(billnumber: str, blue_sheets: list,
 # Recommendation rationale synthesis — separate prompt, separate cache.
 # --------------------------------------------------------------------------
 
-_RATIONALE_PROMPT_VERSION = "v1"
+_RATIONALE_PROMPT_VERSION = "v2-opus"
 
 _RATIONALE_SYSTEM_PROMPT = """You are helping a veto-decision-support dashboard \
 show WHY the various recommendation chips on a bill card landed where they did. \
@@ -639,7 +649,7 @@ def synthesize_rationale(billnumber, blue_sheets, bill_meta,
         bn, bill_meta, blue_sheets, glo_payload, dept_payload,
     )
     body = {
-        "model": _MODEL,
+        "model": _HIGH_STAKES_MODEL,
         "max_tokens": 700,
         "system": _RATIONALE_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_msg}],
@@ -691,7 +701,7 @@ def synthesize_rationale(billnumber, blue_sheets, bill_meta,
     out = {
         "glo_rationale":   str(parsed.get("glo_rationale", "")).strip(),
         "dept_rationales": parsed.get("dept_rationales", []) or [],
-        "model":           _MODEL,
+        "model":           resp.get("model") or _HIGH_STAKES_MODEL,
         "generated_at":    int(time.time()),
         "input_hash":      h,
     }
