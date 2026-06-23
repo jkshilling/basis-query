@@ -228,6 +228,23 @@ _REC_OPT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Manual recommendation overrides for sheets that defeat both the
+# strict and OCR-tolerant extractors. Keyed by exact filename. Use
+# only when a human has verified the actual rec from the sheet's
+# body text (Action Justification + position language).
+#
+# Audit trail: each entry should record WHY the auto-extractor failed
+# (OCR garble, scan-only PDF, non-standard form, etc.) and the
+# text-based evidence that supports the override.
+_REC_MANUAL_OVERRIDES = {
+    # SB 181 (DOLWD) — OCR mangled the checkbox row into
+    # "(R'SIGN. =O. VETO i LWOS"; the '(R'' is a filled radio button
+    # at SIGN. Body language confirms: "This legislation allows
+    # DOLWD to share information... will make it easier to share the
+    # data." Pure positive framing, no objections.
+    "Blue Sheet SB181.pdf": "SIGN",
+}
+
 
 def _extract_recommendation(filename):
     """Return 'SIGN' | 'VETO' | 'LWOS' | ''. Looks for the checked
@@ -246,6 +263,12 @@ def _extract_recommendation(filename):
     key = (filename, mtime)
     if key in _content_rec_cache:
         return _content_rec_cache[key]
+
+    # Manual override — checked first so it bypasses both extractors.
+    if filename in _REC_MANUAL_OVERRIDES:
+        found = _REC_MANUAL_OVERRIDES[filename]
+        _content_rec_cache[key] = found
+        return found
 
     # Read across all pages — some OCR'd PDFs have pages out of order
     # so the "Select one." recommendation block may not be on page 1.
