@@ -7,14 +7,47 @@ printed on. Multiple state agencies can submit separate blue sheets
 on the same bill (e.g. HB 133 has analyses from DOH, DPS, and
 DCCED), so each bill can have N sheets.
 
-Filename matching is intentionally forgiving: the first occurrence
-of a bill prefix (HB/SB/HJR/SJR/HCR/SCR/HR/SR/HSCR/SSCR) followed
-by digits wins, optionally preceded by a CS/HCS/SCS committee-
-substitute marker. Leading zeros stripped.
+============================================================
+CANONICAL FILENAME CONVENTION (enforced 2026-06-23 onward)
+============================================================
 
-When possible the filename also reveals which agency wrote the
-sheet (DOH, DPS, DCCED, etc.) and the date it was filed — both
-get pulled out for display.
+  <BILL>-<AGENCY>[-<SUBAGENCY>]-<YYYY-MM-DD>.<ext>
+
+Examples:
+  HB133-DOH-2026-05-12.pdf
+  HB126-DCCED-CBPL-2026-05-21.pdf
+  SB181-DOLWD-2026-05-20.pdf
+  HB23-GOV-2026-05-18.docx
+
+  - BILL: HB|SB (chamber prefix) + bare number, no spaces, no zeros
+  - AGENCY: known code (DOH, DPS, DCCED, DEED, DOA, DOLWD, DNR, DFG,
+           DOC, DEC, DOT, DOR, DMVA, UAA, UA, LAW, etc.)
+  - SUBAGENCY: optional, for departments where the division matters
+              (DCCED has CBPL, DBS, COMM, DCRA, DAS, etc.; DOH has
+              DBH, DPH, FMS; DOA has DMV, DPL, DRB; DPS has AS, AST)
+  - YYYY-MM-DD: ISO date the sheet was issued (filename date wins
+              over content date; if neither parseable, use mtime)
+  - <ext>: .pdf | .docx | .doc — preferably .pdf
+
+When two sheets share the same bill+agency+date, the indexer dedups
+preferring .pdf. When two sheets share bill+agency but differ in
+date, both are retained — the later one is the operative one but
+the earlier one is preserved for audit.
+
+Multi-bill sheets (e.g. "UA Blue Sheet HB10 and HB176.pdf") use the
+PRIMARY bill in the filename; the secondary bill is captured via
+content fallback inside _extract_billnumbers.
+
+The folder includes a hidden `.dropped/` subdirectory for files that
+were superseded during the 2026-06-23 normalization (true duplicates
+moved out of the live folder); also `.rename_log.json` records the
+full old->new mapping for reversibility.
+
+Filename matching for legacy / non-canonical drops is intentionally
+forgiving: the first occurrence of a bill prefix
+(HB/SB/HJR/SJR/HCR/SCR/HR/SR/HSCR/SSCR) followed by digits wins,
+optionally preceded by a CS/HCS/SCS committee-substitute marker.
+Leading zeros stripped.
 """
 
 import os
@@ -60,8 +93,61 @@ _AGENCY_PATTERNS = (
     ("DNR",   r"\bDNR\b"),
     ("DOL",   r"\bDOL\b"),
     ("DFG",   r"\bDFG\b"),
+    # LAW — Department of Law (Attorney General); enrolled in the
+    # 2026-06-23 canonical-filename normalization. Pattern is
+    # `-LAW-` (anchored) to avoid matching "Law" inside "Lawmaker"
+    # or stray substrings.
+    ("LAW",   r"(?:^|[\s\-_])LAW(?:[\s\-_]|$)"),
     ("UA",    r"\bUA\b"),
 )
+
+# Sub-agency divisions, recognized as a second hyphen-delimited token
+# in canonical names (HB133-DOH-FMS-2026-05-12.pdf has sub=FMS).
+# When present, the indexer uses (bill, agency, sub) for dedup so
+# DCCED-CBPL and DCCED-DBS don't collapse into one entry.
+_SUBAGENCY_BY_PARENT = {
+    "DCCED": ("CBPL", "DBS", "COMM", "DCRA", "DAS", "CED", "RCA", "AMCO"),
+    "DOH":   ("DBH", "DPH", "FMS", "HCS", "CO"),
+    "DOA":   ("DMV", "DPL", "DRB", "DBA"),
+    "DPS":   ("AS", "AST"),
+    "DNR":   ("DOG", "DPOR", "DPR", "DGGS"),
+    "DEED":  ("IEE",),
+}
+
+_CANONICAL_NAME_RE = re.compile(
+    r"^([HS])B(\d+)-([A-Z]+)(?:-([A-Z]+))?-(\d{4}-\d{2}-\d{2})\.(pdf|docx|doc)$",
+    re.IGNORECASE,
+)
+
+
+def _parse_canonical(filename):
+    """If filename follows the canonical convention, return a dict of
+    {bill, agency, sub, date, ext}; else None.
+
+    Canonical: <BILL>-<AGENCY>[-<SUBAGENCY>]-<YYYY-MM-DD>.<ext>
+    Reliable shortcut over the heuristic extractors. Falls back to
+    heuristic when missing — old filenames remain readable.
+    """
+    m = _CANONICAL_NAME_RE.match(filename)
+    if not m:
+        return None
+    chamber, num, ag, sub, date, ext = m.groups()
+    # Validate sub is actually a known subagency for this parent, NOT
+    # itself a primary agency code. If unknown, treat as no subagency
+    # and let it fall through to heuristic (rare edge case).
+    if sub:
+        valid_subs = _SUBAGENCY_BY_PARENT.get(ag.upper(), ())
+        if sub.upper() not in valid_subs:
+            # Could be a date fragment or unexpected token; safer to
+            # null-out and let heuristic re-derive
+            sub = None
+    return {
+        "bill":   f"{chamber.upper()}B {int(num)}",
+        "agency": ag.upper(),
+        "sub":    (sub or "").upper() or None,
+        "date":   date,
+        "ext":    ext.lower(),
+    }
 
 # Date patterns. Three forms:
 #   ISO:        YYYY-MM-DD            (e.g. 2026-05-14)
@@ -242,7 +328,7 @@ _REC_MANUAL_OVERRIDES = {
     # at SIGN. Body language confirms: "This legislation allows
     # DOLWD to share information... will make it easier to share the
     # data." Pure positive framing, no objections.
-    "Blue Sheet SB181.pdf": "SIGN",
+    "SB181-DOLWD-2026-05-20.pdf": "SIGN",
 }
 
 
@@ -570,22 +656,33 @@ def _scan():
     if not os.path.isdir(_DIR):
         return out
     for fn in sorted(os.listdir(_DIR)):
-        bns = _extract_billnumbers(fn)
-        if not bns:
-            continue
-        agency = (
-            _extract_agency(fn)
-            or _extract_agency_from_content(fn)
-            or "?"
-        )
-        # Date is still extracted for dedup keying within a bill (same
-        # agency dropped same sheet twice on different days = two
-        # distinct sheets) but NOT shown in the chip label — user
-        # explicitly asked for agency-only chips.
-        date = (
-            _extract_date(fn)
-            or _extract_date_from_content(fn)
-            or _mtime_date(fn)
+        # Fast path: canonical filename gives clean bill+agency+sub+date
+        # without any heuristic extraction. Old-format files fall
+        # through to the heuristic path below.
+        canon = _parse_canonical(fn)
+        if canon:
+            bns = [canon["bill"]]
+            agency = canon["agency"]
+            sub = canon["sub"]
+            date = canon["date"]
+        else:
+            bns = _extract_billnumbers(fn)
+            if not bns:
+                continue
+            agency = (
+                _extract_agency(fn)
+                or _extract_agency_from_content(fn)
+                or "?"
+            )
+            sub = None
+            # Date is still extracted for dedup keying within a bill (same
+            # agency dropped same sheet twice on different days = two
+            # distinct sheets) but NOT shown in the chip label — user
+            # explicitly asked for agency-only chips.
+            date = (
+                _extract_date(fn)
+                or _extract_date_from_content(fn)
+                or _mtime_date(fn)
         )
         # Departmental recommendation (SIGN/VETO/LWOS), analytical
         # description, action-justification text, and the full
@@ -602,7 +699,9 @@ def _scan():
         # Trim full_text to keep token cost predictable.
         if len(full_text) > 6000:
             full_text = full_text[:5980].rsplit(" ", 1)[0] + "…"
-        label = agency
+        # Label includes sub when present so the chip distinguishes
+        # DCCED-CBPL from DCCED-DBS visually.
+        label = f"{agency}-{sub}" if sub else agency
         # Index the same file under EVERY bill it references. Agency
         # blue sheets sometimes cover multiple bills (e.g.
         # "UA Blue Sheet HB 10 and HB 176.pdf" → both HB 10 and HB 176).
@@ -610,6 +709,7 @@ def _scan():
             out.setdefault(bn, []).append({
                 "filename":             fn,
                 "agency":               agency,
+                "sub":                  sub,
                 "date":                 date,
                 "label":                label,
                 "recommendation":       recommendation,
@@ -617,19 +717,16 @@ def _scan():
                 "action_justification": action_justification,
                 "full_text":            full_text,
             })
-    # De-dup within each bill: if two entries have identical (agency,
-    # date) keep only one — and prefer PDF over DOCX when both exist
-    # (PDFs render inline in browsers; DOCX forces a download even
-    # with a proper mimetype). Catches the "HB 249 DOA DMV Blue Sheet
-    # ...{docx,pdf}" pair and the "HB23 (1).docx" duplicate case.
+    # De-dup within each bill: keyed by (agency, sub, date) so that
+    # DCCED-CBPL vs DCCED-DBS (same parent dept, different divisions)
+    # don't collapse into one entry. Prefers .pdf over .docx when both
+    # exist (PDFs render inline; DOCX forces a download).
     def _format_score(fn):
-        # Lower score = preferred. .pdf wins over .docx.
         return 0 if fn.lower().endswith(".pdf") else 1
     for bn, lst in out.items():
-        # Group by (agency, date) and pick the best filename per group.
         by_key = {}
         for sheet in lst:
-            key = (sheet["agency"], sheet["date"])
+            key = (sheet["agency"], sheet.get("sub"), sheet["date"])
             existing = by_key.get(key)
             if existing is None or _format_score(sheet["filename"]) < _format_score(existing["filename"]):
                 by_key[key] = sheet
@@ -638,7 +735,7 @@ def _scan():
         seen = set()
         unique = []
         for sheet in lst:
-            key = (sheet["agency"], sheet["date"])
+            key = (sheet["agency"], sheet.get("sub"), sheet["date"])
             if key in seen:
                 continue
             seen.add(key)
