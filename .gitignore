@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 *.DS_Store
 basis-browser-app/.cache.json
+
+# Blue-sheet recovery dir — duplicates moved here during the 2026-06-23 normalization;
+# already preserved in git history under their pre-rename names.
+basis-browser-app/blue_sheets/.dropped/

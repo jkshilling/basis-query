@@ -1,0 +1,604 @@
+{
+  "executed_at": "2026-06-23T20:03:16.993248",
+  "renames": [
+    {
+      "old": "2026 BLUE SHEET_SB258.docx",
+      "new": "SB258-UNKNOWN-2026-06-10.docx",
+      "confidence": "MEDIUM",
+      "notes": "AIP-encrypted body; bill from filename; agency unknown"
+    },
+    {
+      "old": "2026 Blue Sheet - HB23.docx",
+      "new": "HB23-GOV-2026-05-18.docx",
+      "confidence": "HIGH",
+      "notes": "agency from content; date from content; dup: kept newest"
+    },
+    {
+      "old": "Blue Sheet HCSSB024(FIN)-DOH-DBH-DPH-5-17-26 (1).pdf",
+      "new": "SB24-DOH-DBH-2026-05-17.pdf",
+      "confidence": "HIGH",
+      "notes": "dup: kept newest"
+    },
+    {
+      "old": "DOLWD Blue Sheet SB181.pdf",
+      "new": "SB181-DOLWD-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content; dup: kept newest"
+    },
+    {
+      "old": "HB 027 2026 Blue Sheet DEED.pdf",
+      "new": "HB27-DEED-2026-05-19.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content; dup: kept newest"
+    },
+    {
+      "old": "HB 246 2026 DEED Blue Sheet.pdf",
+      "new": "HB246-DEED-2026-05-19.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content; dup: kept newest"
+    },
+    {
+      "old": "HB 28 DEED Blue Sheet.pdf",
+      "new": "HB28-DEED-2026-05-18.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content; dup: kept newest"
+    },
+    {
+      "old": "HB 96 Blue Sheet DOH.pdf",
+      "new": "HB96-DOH-2026-05-15.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content; dup: kept newest"
+    },
+    {
+      "old": "SB 23 2026 DEED Blue Sheet.pdf",
+      "new": "SB23-DEED-2026-05-17.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content; dup: kept newest"
+    },
+    {
+      "old": "SB146 2026 DEED Blue Sheet.pdf",
+      "new": "SB146-DEED-2026-05-12.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content; dup: kept newest"
+    },
+    {
+      "old": "Blue Sheet SB79.pdf",
+      "new": "SB79-LAW-2026-05-27.pdf",
+      "confidence": "MEDIUM",
+      "notes": "agency from content; date from mtime"
+    },
+    {
+      "old": "DOLWD Blue Sheet SB79.pdf",
+      "new": "SB79-DOLWD-2026-05-27.pdf",
+      "confidence": "MEDIUM",
+      "notes": "date from mtime"
+    },
+    {
+      "old": "UA Blue Sheet HB 10 and HB 176.pdf",
+      "new": "HB10-UA-2026-05-27.pdf",
+      "confidence": "MEDIUM",
+      "notes": "date from mtime"
+    },
+    {
+      "old": "2026 Blue Sheet HB 133.docx",
+      "new": "HB133-DOA-2026-05-20.docx",
+      "confidence": "HIGH",
+      "notes": "agency from content; date from content"
+    },
+    {
+      "old": "2026 Blue Sheet SB0143A IEE 5.14.2026.pdf",
+      "new": "SB143-DEED-2026-05-14.pdf",
+      "confidence": "HIGH",
+      "notes": "agency from content"
+    },
+    {
+      "old": "2026 Blue Sheet for HB1.docx",
+      "new": "HB1-DOA-2026-05-12.docx",
+      "confidence": "HIGH",
+      "notes": "agency from content; date from content"
+    },
+    {
+      "old": "2026 Blue Sheet for SB163.docx",
+      "new": "SB163-DOA-2026-06-15.docx",
+      "confidence": "HIGH",
+      "notes": "agency from content; date from content"
+    },
+    {
+      "old": "2026 DFG BS SB174 05.20.26.pdf",
+      "new": "SB174-DFG-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "2026 DOA Blue Sheet HB 133.pdf",
+      "new": "HB133-DOA-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content"
+    },
+    {
+      "old": "2026-05-14_HB194 Blue Sheet_DOG jjc dwn.pdf",
+      "new": "HB194-DNR-2026-05-14.pdf",
+      "confidence": "HIGH",
+      "notes": "bill from content; agency from content; date from content"
+    },
+    {
+      "old": "2026-05-20_SB230 Blue Sheet DNR Final.pdf",
+      "new": "SB230-DNR-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": "bill from content; date from content"
+    },
+    {
+      "old": "2026-05-22 SB 208 Blue Sheet DNR.pdf",
+      "new": "SB208-DNR-2026-05-22.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "2026-05-22_SB200 Blue Sheet DNR Final.pdf",
+      "new": "SB200-DNR-2026-05-21.pdf",
+      "confidence": "HIGH",
+      "notes": "bill from content; date from content"
+    },
+    {
+      "old": "Blue Sheet  SB09-DOH-HCS-5-11-26.pdf",
+      "new": "SB9-DOH-HCS-2026-05-11.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "Blue Sheet - HB110-DOH-DPH-5-26-26.pdf",
+      "new": "HB110-DOH-DPH-2026-05-26.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "Blue Sheet - HB117.pdf",
+      "new": "HB117-LAW-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": "agency from content; date from content"
+    },
+    {
+      "old": "Blue Sheet - HB133 5.18.26.pdf",
+      "new": "HB133-DNR-2026-05-18.pdf",
+      "confidence": "HIGH",
+      "notes": "agency from content"
+    },
+    {
+      "old": "Blue Sheet - HB133 5.20.26.pdf",
+      "new": "HB133-DNR-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": "agency from content"
+    },
+    {
+      "old": "Blue Sheet - HB93 5.18.26.pdf",
+      "new": "HB93-LAW-2026-05-18.pdf",
+      "confidence": "HIGH",
+      "notes": "agency from content"
+    },
+    {
+      "old": "Blue Sheet - SB 230 5.26.26.pdf",
+      "new": "SB230-LAW-2026-05-26.pdf",
+      "confidence": "HIGH",
+      "notes": "agency from content"
+    },
+    {
+      "old": "Blue Sheet DFG - HB117.pdf",
+      "new": "HB117-DFG-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content"
+    },
+    {
+      "old": "Blue Sheet DFG - HB133 5.20.26.pdf",
+      "new": "HB133-DFG-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "Blue Sheet DFG - HB93 5.18.26.pdf",
+      "new": "HB93-DFG-2026-05-18.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "Blue Sheet DFG - SB 230 5.26.26.pdf",
+      "new": "SB230-DFG-2026-05-26.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "Blue Sheet HB 73 - DOH-CO-5-12-26 docx.pdf",
+      "new": "HB73-DOH-2026-05-12.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "Blue Sheet HB027- DOH-DPH-5-18126.pdf",
+      "new": "HB27-DOH-DPH-2026-05-18.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content"
+    },
+    {
+      "old": "Blue Sheet SCS CSHB052-DOH-HCS-5-15-26.pdf",
+      "new": "HB52-DOH-HCS-2026-05-15.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "Blue Sheet SCS CSHB133-DOH-FMS-05-12-26.pdf",
+      "new": "HB133-DOH-FMS-2026-05-12.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "Blue Sheet SCS HB036-DOH-DBH-5-12-26.pdf",
+      "new": "HB36-DOH-DBH-2026-05-12.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "Bluesheet_DNR_HB79.pdf",
+      "new": "HB79-DNR-2026-05-21.pdf",
+      "confidence": "HIGH",
+      "notes": "bill from content; agency from content; date from content"
+    },
+    {
+      "old": "DFCS HB36 Blue Sheet signed.pdf",
+      "new": "HB36-DFCS-2026-05-15.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content"
+    },
+    {
+      "old": "DFCS HB52 Blue sheet signed.pdf",
+      "new": "HB52-DFCS-2026-05-18.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content"
+    },
+    {
+      "old": "DFCS SB 41 Blue Sheet.pdf",
+      "new": "SB41-DFCS-2026-05-12.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content"
+    },
+    {
+      "old": "DFCS SB9 Blue Sheet signed.pdf",
+      "new": "SB9-DFCS-2026-05-19.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content"
+    },
+    {
+      "old": "DOC BS HB239 5.20.26.pdf",
+      "new": "HB239-DOC-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "DOH Blue Sheet SB 178.pdf",
+      "new": "SB178-DOH-2026-05-15.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content"
+    },
+    {
+      "old": "HB 239 DOA DMV Blue Sheet 6.2.2026.docx",
+      "new": "HB239-DOA-DMV-2026-06-02.docx",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB 249 DOA DMV Blue Sheet 5.20.2026.docx",
+      "new": "HB249-DOA-DMV-2026-05-20.docx",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB 249 DOA DMV Blue Sheet 5.20.2026.pdf",
+      "new": "HB249-DOA-DMV-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB 25 2026 Blue Sheet.pdf",
+      "new": "HB25-LAW-2026-05-18.pdf",
+      "confidence": "HIGH",
+      "notes": "agency from content; date from content"
+    },
+    {
+      "old": "HB 39 DEED Blue Sheet.pdf",
+      "new": "HB39-DEED-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content"
+    },
+    {
+      "old": "HB 50 DOR-TAX Blue Sheet 6-2-26.pdf",
+      "new": "HB50-DOR-2026-06-02.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB093SCS(JUD)-5-15-26-DPS-BS.pdf",
+      "new": "HB93-DPS-2026-05-15.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB117SCSCS(RES)-DPS-AWT-5-12-26-BS.pdf",
+      "new": "HB117-DPS-2026-05-12.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB126SCSCS(L&C)-DCCED-CBPL-BS-05-21-26.pdf",
+      "new": "HB126-DCCED-CBPL-2026-05-21.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB126SCSCS(L&C)-DCCED-DBS-BS-05-21-26.docx.pdf",
+      "new": "HB126-DCCED-DBS-2026-05-21.pdf",
+      "confidence": "HIGH",
+      "notes": "stripped .docx.pdf"
+    },
+    {
+      "old": "HB133(FIN)SCSCSamS-DPS-AS-5-18-26-BS.pdf",
+      "new": "HB133-DPS-AS-2026-05-18.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB133CS(FIN)am-DCCED-DAS-BS-05-22-26.pdf",
+      "new": "HB133-DCCED-DAS-2026-05-22.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB173SCSCS(FIN)amS-DCCED-CBPL-BS-05-21-26.pdf",
+      "new": "HB173-DCCED-CBPL-2026-05-21.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB184SCSCS(FIN)-DCCED-AIDEA-05-20-26.docx.pdf",
+      "new": "HB184-DCCED-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": "stripped .docx.pdf"
+    },
+    {
+      "old": "HB195 Blue Sheet DOH.pdf",
+      "new": "HB195-DOH-2026-05-15.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content"
+    },
+    {
+      "old": "HB214(CS)(combined with SB35) - Insurance Transport Delivery Network Co - 2026 Blue Sheet (002).pdf",
+      "new": "HB214-LAW-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": "agency from content; date from content"
+    },
+    {
+      "old": "HB216SCS(CRA)-DCCED-ARRC-BS-05-20-26.pdf",
+      "new": "HB216-DCCED-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB243-DCCED-CBPL-BS-05-12-26.pdf",
+      "new": "HB243-DCCED-CBPL-2026-05-12.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB244-DCCED-CBPL-BS-05-14-26.pdf",
+      "new": "HB244-DCCED-CBPL-2026-05-14.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB278CS(STA)-DCCED-COMM-BS-05-22-26.pdf",
+      "new": "HB278-DCCED-COMM-2026-05-22.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB302SCSCS(TRA)amS-DCCED-DOI-BS-05-26-26.pdf",
+      "new": "HB302-DCCED-2026-05-26.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB314 DEC DOW.pdf",
+      "new": "HB314-DEC-2026-05-14.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content"
+    },
+    {
+      "old": "HB314am-DCCED-CBPL-BS-05-12-26.pdf",
+      "new": "HB314-DCCED-CBPL-2026-05-12.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB363CS(MLV)-DCCED-AMCO-BS-05-18-26.pdf",
+      "new": "HB363-DCCED-2026-05-18.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "HB388CS(FIN)-DCCED-DCRA-BS-06-11-26.pdf",
+      "new": "HB388-DCCED-DCRA-2026-06-11.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB 104 DOA DMV Blue Sheet 5.18.2026.docx",
+      "new": "SB104-DOA-DMV-2026-05-18.docx",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB 104 DOA DMV Blue Sheet 5.18.2026.pdf",
+      "new": "SB104-DOA-DMV-2026-05-18.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB 164 DOR-Tax Blue Sheet 6-2-26.pdf",
+      "new": "SB164-DOR-2026-06-02.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB 167 DOR-PFD Blue Sheet 6-5-26.pdf",
+      "new": "SB167-DOR-2026-06-05.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB 192 Blue Sheet DMVA 08 MAY 26.pdf",
+      "new": "SB192-DMVA-2026-05-08.pdf",
+      "confidence": "HIGH",
+      "notes": "date from content"
+    },
+    {
+      "old": "SB 21 DOR-TRSPFD Blue Sheet 5-28-26.pdf",
+      "new": "SB21-DOR-2026-05-28.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB 237 DOA DMV Blue Sheet 5.22.2026 v2.docx",
+      "new": "SB237-DOA-DMV-2026-05-22.docx",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB 239 DOA DMV Blue Sheet 5.22.2026 v3.docx",
+      "new": "SB239-DOA-DMV-2026-05-22.docx",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB 24 DOR-Tax Blue Sheet 6-2-26.pdf",
+      "new": "SB24-DOR-2026-06-02.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB024HCSCS(FIN)amH-DCCED-CBPL-BS-05-21-26.pdf",
+      "new": "SB24-DCCED-CBPL-2026-05-21.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB029HCS(FIN)-DCCED-CBPL-BS-05-19-26.pdf",
+      "new": "SB29-DCCED-CBPL-2026-05-19.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB063am-DCCED-DCRA-05-13-26.pdf",
+      "new": "SB63-DCCED-DCRA-2026-05-13.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB086HCSCS(FIN)-DCCED-DBS-BS-05-13-26.pdf",
+      "new": "SB86-DCCED-DBS-2026-05-13.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB089HCSCSSB89(HSS)-DCCED-CBPL-BS-05-12-26.pdf",
+      "new": "SB89-DCCED-CBPL-2026-05-12.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB130 DOR-TAX Blue Sheet 5-20-26.pdf",
+      "new": "SB130-DOR-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB143CS(CRA)am-DCCED-DCRA-BS-05-13-26.pdf",
+      "new": "SB143-DCCED-DCRA-2026-05-13.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB187 2026 DEED Blue Sheet 5.14.2026.pdf",
+      "new": "SB187-DEED-2026-05-14.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB200HCSCS(CRA)amH-DCCED-DCRA-BS-05-21-26.pdf",
+      "new": "SB200-DCCED-DCRA-2026-05-21.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB249HCSCS(L&C)-DCCED-DBS-BS-05-15-26.pdf",
+      "new": "SB249-DCCED-DBS-2026-05-15.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SB272 Blue Sheet -DOH-CO-05-07-26.pdf",
+      "new": "SB272-DOH-2026-05-07.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    },
+    {
+      "old": "SCSCSHB239(FIN)-DPS-AST-5-20-26-BS.pdf",
+      "new": "HB239-DPS-AST-2026-05-20.pdf",
+      "confidence": "HIGH",
+      "notes": ""
+    }
+  ],
+  "drops": [
+    {
+      "old": "2026 Blue Sheet - HB23 (1).docx",
+      "moved_to": ".dropped/2026 Blue Sheet - HB23 (1).docx",
+      "reason": "(drop \u2014 identical to 2026 Blue Sheet - HB23.docx)"
+    },
+    {
+      "old": "Blue Sheet CSHB96(LC)am.pdf",
+      "moved_to": ".dropped/Blue Sheet CSHB96(LC)am.pdf",
+      "reason": "(drop \u2014 identical to HB 96 Blue Sheet DOH.pdf)"
+    },
+    {
+      "old": "Blue Sheet HCSSB024(FIN)-DOH-DBH-DPH-5-17-26.pdf",
+      "moved_to": ".dropped/Blue Sheet HCSSB024(FIN)-DOH-DBH-DPH-5-17-26.pdf",
+      "reason": "(drop \u2014 identical to Blue Sheet HCSSB024(FIN)-DOH-DBH-DPH-5-17-26 (1).pdf)"
+    },
+    {
+      "old": "Blue Sheet SB181.pdf",
+      "moved_to": ".dropped/Blue Sheet SB181.pdf",
+      "reason": "(drop \u2014 identical to DOLWD Blue Sheet SB181.pdf)"
+    },
+    {
+      "old": "HB 246 2026 Blue Sheet.pdf",
+      "moved_to": ".dropped/HB 246 2026 Blue Sheet.pdf",
+      "reason": "(drop \u2014 identical to HB 246 2026 DEED Blue Sheet.pdf)"
+    },
+    {
+      "old": "HB 27 2026 Blue Sheet Revised.pdf",
+      "moved_to": ".dropped/HB 27 2026 Blue Sheet Revised.pdf",
+      "reason": "(drop \u2014 identical to HB 027 2026 Blue Sheet DEED.pdf)"
+    },
+    {
+      "old": "HB 28 2026 Blue Sheet.pdf",
+      "moved_to": ".dropped/HB 28 2026 Blue Sheet.pdf",
+      "reason": "(drop \u2014 identical to HB 28 DEED Blue Sheet.pdf)"
+    },
+    {
+      "old": "SB 23 2026 Blue Sheet.pdf",
+      "moved_to": ".dropped/SB 23 2026 Blue Sheet.pdf",
+      "reason": "(drop \u2014 identical to SB 23 2026 DEED Blue Sheet.pdf)"
+    },
+    {
+      "old": "SB146 2026 Blue Sheet.pdf",
+      "moved_to": ".dropped/SB146 2026 Blue Sheet.pdf",
+      "reason": "(drop \u2014 identical to SB146 2026 DEED Blue Sheet.pdf)"
+    }
+  ]
+}
