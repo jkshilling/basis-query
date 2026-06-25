@@ -47,11 +47,13 @@ log = logging.getLogger("basis_browser.summarizer")
 
 # API key search path. First match wins. Dedicated BASIS Query workspace key
 # (isolated billing) is preferred; the shared key remains a fallback.
+# Prod key lives in /etc/credentials (root-owned, OUTSIDE the app dir) — readable
+# but NOT writable by the www-data service user, so a compromised app process
+# cannot tamper with or replace it. Matches the social-manager hardening pattern.
 _KEY_PATHS = (
     os.path.expanduser("~/Documents/Claude/.anthropic-key-basis-query"),
-    "/srv/basis-browser/.anthropic-key-basis-query",
+    "/etc/credentials/anthropic-key-basis-query",
     os.path.expanduser("~/Documents/Claude/.anthropic-key"),
-    "/srv/basis-browser/.anthropic-key",
 )
 
 # Model tiers — picked per output's stakes:
