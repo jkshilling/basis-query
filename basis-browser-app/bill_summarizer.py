@@ -45,8 +45,11 @@ import urllib.request
 
 log = logging.getLogger("basis_browser.summarizer")
 
-# API key search path. First match wins.
+# API key search path. First match wins. Dedicated BASIS Query workspace key
+# (isolated billing) is preferred; the shared key remains a fallback.
 _KEY_PATHS = (
+    os.path.expanduser("~/Documents/Claude/.anthropic-key-basis-query"),
+    "/srv/basis-browser/.anthropic-key-basis-query",
     os.path.expanduser("~/Documents/Claude/.anthropic-key"),
     "/srv/basis-browser/.anthropic-key",
 )
