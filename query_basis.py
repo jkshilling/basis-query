@@ -24,7 +24,12 @@ from xml.dom import minidom
 from xml.parsers.expat import ExpatError
 
 
-DEFAULT_BASE_URL = "https://www.akleg.gov/publicservice/basis"
+import os
+# Base URL for BASIS. Overridable via BASIS_HOST env var so a
+# deployment behind a Cloudflare Worker proxy (or similar) can point
+# at the proxy without a code change. Default is the direct origin.
+_BASIS_HOST = os.environ.get("BASIS_HOST", "https://www.akleg.gov").rstrip("/")
+DEFAULT_BASE_URL = f"{_BASIS_HOST}/publicservice/basis"
 DEFAULT_VERSION = "1.4"
 VALID_SECTIONS = ("bills", "members", "committees", "sessions", "meetings")
 

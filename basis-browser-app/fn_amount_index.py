@@ -64,11 +64,23 @@ def _save_cache():
             log.warning("fn_amount_cache.save_failed err=%r", e)
 
 
+def _rewrite_to_proxy(url: str) -> str:
+    """Rewrite www.akleg.gov URLs to the configured BASIS_HOST if
+    set. Lets the Cloudflare Worker proxy transparently front akleg
+    for hosts (like our droplet) whose IP got blocked. No-op when
+    BASIS_HOST is the default origin."""
+    host = os.environ.get("BASIS_HOST", "https://www.akleg.gov").rstrip("/")
+    if host == "https://www.akleg.gov":
+        return url
+    return url.replace("https://www.akleg.gov", host, 1)
+
+
 def _download_pdf(url: str, timeout: float = 25.0) -> bytes | None:
     """Fetch one FN PDF. Returns body bytes or None on any failure."""
+    fetch_url = _rewrite_to_proxy(url)
     try:
         req = urllib.request.Request(
-            url,
+            fetch_url,
             headers={"User-Agent": "basis-browser/0.1"},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:

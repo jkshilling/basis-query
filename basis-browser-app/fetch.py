@@ -33,8 +33,11 @@ import query_basis  # noqa: E402
 
 log = logging.getLogger("basis_browser.fetch")
 
-SCHEDULE_URL = "https://www.akleg.gov/basis/Meeting/Index"
-FLOOR_URL = "https://www.akleg.gov/basis/floor.asp"
+# BASIS host — env-configurable so a deployment behind a Cloudflare
+# Worker proxy can override without a code change. Default = origin.
+_BASIS_HOST = os.environ.get("BASIS_HOST", "https://www.akleg.gov").rstrip("/")
+SCHEDULE_URL = f"{_BASIS_HOST}/basis/Meeting/Index"
+FLOOR_URL = f"{_BASIS_HOST}/basis/floor.asp"
 
 
 def is_procedural_resolution(billnumber, title):
@@ -615,7 +618,7 @@ def fetch_passed_bills(session="34"):
     if cached is not None:
         return cached
 
-    url = f"https://www.akleg.gov/basis/Bill/Passed/{session}"
+    url = f"{_BASIS_HOST}/basis/Bill/Passed/{session}"
     try:
         req = urllib.request.Request(
             url, headers={"User-Agent": "basis-browser/1"},
