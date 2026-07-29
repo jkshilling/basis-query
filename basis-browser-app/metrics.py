@@ -1991,7 +1991,15 @@ def awaiting_transmittal(session="34"):
         # Stale awaiting filter: anything in the awaiting bucket whose
         # most recent meaningful action is more than 60 days old is
         # almost certainly stuck or the legislature is dead. Drop.
-        if is_awaiting and last_date:
+        #
+        # EXCEPTION: if the legislature itself has explicitly logged
+        # action code 049 (AWAITING TRANSMITTAL TO GOV) and no
+        # subsequent disposal action has fired (033/034/036/038),
+        # respect that positive signal — the bill is genuinely stuck
+        # in engrossment, not a bookkeeping ghost. HB 10 was
+        # invisible for weeks because it triggered this filter at 74
+        # days with a legitimate 049 action and no follow-up.
+        if is_awaiting and last_date and not latest_049:
             try:
                 last_d = datetime.strptime(last_date, "%Y-%m-%d").date()
                 if (today - last_d).days > 60:
